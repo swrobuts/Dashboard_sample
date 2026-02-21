@@ -1,53 +1,265 @@
 """
-exchange_helpers.py — Exchange-Anbindung für PHIL PIM Dashboard.
+exchange_helpers.py — Mail-Anbindung für PHIL PIM Dashboard.
 
-Verbindet sich mit Exchange-Postfächern von THWS und DHBW via EWS
-(Exchange Web Services / Autodiscover).
+THWS: zwei Protokolle parallel
+  - IMAP  Port 993 SSL   → E-Mails lesen (imaplib)
+  - EWS   Port 443 HTTPS → Kalender + Aufgaben (exchangelib)
+  Server: webmail.thws.de
+
+DHBW: nur EWS (autodiscover)
 
 Sicherheitsprinzip:
     Credentials werden NIEMALS gespeichert — nur im RAM der laufenden Session.
     Diese Datei enthält keine Passwörter, Keys oder sensible Daten.
 """
 
+import email
+import imaplib
 from datetime import datetime, timedelta
-from exchangelib import Account, Credentials, DELEGATE, CalendarItem, Task as EWSTask
+from email.header import decode_header
+from email.utils import parsedate_to_datetime
+
+from exchangelib import (
+    DELEGATE,
+    NTLM,
+    Account,
+    CalendarItem,
+    Configuration,
+    Credentials,
+    Task as EWSTask,
+)
 
 # ── Institution-Konfiguration ─────────────────────────────────────────────────
-# Neue Institutionen hier eintragen: Schlüssel = Anzeigename, domain = E-Mail-Domain
 
 INSTITUTIONS: dict[str, dict] = {
     "THWS": {
-        "domain": "thws.de",
         "display": "THWS Würzburg-Schweinfurt",
-        "username_hint": "vorname.nachname  (→ @thws.de)",
+        "username_hint": "butscher  oder  robert.butscher@fhws.de",
+        # IMAP — E-Mails
+        "protocol": "imap+ews",
+        "imap_host": "webmail.thws.de",
+        "imap_port": 993,
+        # EWS — Kalender + Aufgaben (manuell konfiguriert, kein autodiscover)
+        "ews_host": "webmail.thws.de",
+        "ews_url": "https://webmail.thws.de/EWS/Exchange.asmx",
     },
     "DHBW": {
-        "domain": "dhbw.de",
         "display": "DHBW",
         "username_hint": "vollständige E-Mail  (z.B. name@dhbw-xyz.de)",
+        "protocol": "ews",
+        "ews_url": None,   # autodiscover
     },
 }
 
 
-def connect_to_exchange(username: str, password: str, institution: str) -> Account:
+# ── IMAP ──────────────────────────────────────────────────────────────────────
+
+def connect_to_imap(username: str, password: str, host: str, port: int = 993) -> dict:
     """
-    Baut eine Verbindung zum Exchange-Server über Autodiscover auf.
+    Testet IMAP-Credentials und gibt ein Konfigurations-Dict zurück.
 
-    Unterstützt zwei Eingabeformate für den Benutzernamen:
-        - Nur Name:        "robert.butscher"   → wird zu "robert.butscher@thws.de"
-        - Volle E-Mail:    "name@dhbw-xyz.de"  → wird unverändert übernommen
-
-    Args:
-        username:    Benutzername oder vollständige E-Mail-Adresse
-        password:    Passwort — bleibt im RAM, wird nie gespeichert
-        institution: Schlüssel aus INSTITUTIONS ("THWS" oder "DHBW")
+    Probiert Login-Formate:
+        "butscher"          → zuerst butscher (plain), dann butscher@fhws.de
+        "butscher@fhws.de"  → direkt
 
     Returns:
-        exchangelib.Account — authentifiziert, bereit für Postfach-Zugriff
+        {"host", "port", "username", "password", "inbox_count"}
 
     Raises:
-        ValueError:  Unbekannte Institution
-        Exception:   Verbindungs- oder Authentifizierungsfehler von exchangelib
+        imaplib.IMAP4.error bei Login-Fehler
+    """
+    if "@" in username:
+        candidates = [username]
+    else:
+        # Plain zuerst (wie MAIL_LOGIN in der Konfiguration), dann mit Domain
+        candidates = [username, f"{username}@fhws.de", f"{username}@thws.de"]
+
+    last_error: Exception = Exception("IMAP-Verbindung fehlgeschlagen")
+    for uname in candidates:
+        try:
+            mail = imaplib.IMAP4_SSL(host, port)
+            mail.login(uname, password)
+            mail.select("INBOX")
+            _, msgs = mail.search(None, "UNSEEN")
+            unread = len(msgs[0].split()) if msgs[0] else 0
+            mail.logout()
+            return {
+                "host": host,
+                "port": port,
+                "username": uname,
+                "password": password,
+                "inbox_count": unread,
+            }
+        except imaplib.IMAP4.error as e:
+            last_error = e
+    raise last_error
+
+
+def fetch_emails_imap(
+    imap_config: dict,
+    max_count: int = 20,
+    unread_only: bool = True,
+) -> list[dict]:
+    """
+    Lädt E-Mails via IMAP (neue Verbindung pro Aufruf).
+
+    Returns:
+        Liste von Dicts: [{subject, sender, body, datetime_received, is_read}, ...]
+    """
+    mail = imaplib.IMAP4_SSL(imap_config["host"], imap_config["port"])
+    try:
+        mail.login(imap_config["username"], imap_config["password"])
+        mail.select("INBOX")
+
+        criteria = "UNSEEN" if unread_only else "ALL"
+        _, msgs = mail.search(None, criteria)
+        ids = msgs[0].split() if msgs[0] else []
+
+        # IMAP liefert älteste zuerst → umkehren, dann abschneiden
+        ids = ids[::-1][:max_count]
+
+        emails = []
+        for eid in ids:
+            try:
+                _, data = mail.fetch(eid, "(RFC822)")
+                for part in data:
+                    if not isinstance(part, tuple):
+                        continue
+                    msg = email.message_from_bytes(part[1])
+
+                    # Betreff dekodieren
+                    raw_subj = decode_header(msg.get("Subject") or "")
+                    subject = ""
+                    for chunk, enc in raw_subj:
+                        if isinstance(chunk, bytes):
+                            subject += chunk.decode(enc or "utf-8", errors="replace")
+                        else:
+                            subject += str(chunk)
+
+                    # Absender dekodieren (MIME-encoded words möglich)
+                    raw_from = msg.get("From", "Unbekannt")
+                    decoded_parts = []
+                    for chunk, enc in decode_header(raw_from):
+                        if isinstance(chunk, bytes):
+                            decoded_parts.append(chunk.decode(enc or "utf-8", errors="replace"))
+                        else:
+                            decoded_parts.append(str(chunk))
+                    sender = "".join(decoded_parts) or "Unbekannt"
+
+                    # Body extrahieren
+                    body = ""
+                    if msg.is_multipart():
+                        for p in msg.walk():
+                            if (
+                                p.get_content_type() == "text/plain"
+                                and p.get("Content-Disposition") is None
+                            ):
+                                payload = p.get_payload(decode=True)
+                                if payload:
+                                    enc = p.get_content_charset() or "utf-8"
+                                    body = payload.decode(enc, errors="replace")
+                                    break
+                    else:
+                        payload = msg.get_payload(decode=True)
+                        if payload:
+                            enc = msg.get_content_charset() or "utf-8"
+                            body = payload.decode(enc, errors="replace")
+
+                    if len(body) > 3_000:
+                        body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
+
+                    # Datum parsen
+                    try:
+                        dt = parsedate_to_datetime(msg.get("Date", ""))
+                        dt = dt.replace(tzinfo=None)
+                    except Exception:
+                        dt = None
+
+                    emails.append({
+                        "subject": subject or "(kein Betreff)",
+                        "sender": sender,
+                        "body": body,
+                        "datetime_received": dt,
+                        "is_read": not unread_only,
+                    })
+            except Exception:
+                pass
+
+        return emails
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+
+
+# ── EWS Connect ───────────────────────────────────────────────────────────────
+
+def connect_to_exchange_thws(username: str, password: str) -> Account:
+    """
+    Baut EWS-Verbindung zu THWS auf (webmail.thws.de/EWS/Exchange.asmx).
+    Autodiscover ist deaktiviert — direkter Endpoint.
+
+    Probiert 5 Username-Formate automatisch durch:
+        1. THWS\\{base}
+        2. thws\\{base}
+        3. {base}           (plain)
+        4. {base}@thws.de
+        5. {base}@fhws.de
+
+    Raises:
+        Exception wenn alle Formate scheitern
+    """
+    ews_url = INSTITUTIONS["THWS"]["ews_url"]
+
+    # Basis-Username extrahieren (ohne Domain, ohne DOMAIN\)
+    if "\\" in username:
+        base = username.split("\\", 1)[1]
+    elif "@" in username:
+        base = username.split("@")[0]
+    else:
+        base = username
+
+    # primary_smtp für EWS — wir nehmen @fhws.de als primäre Adresse
+    primary_smtp = f"{base}@fhws.de"
+
+    candidates = [
+        f"THWS\\{base}",
+        f"thws\\{base}",
+        base,
+        f"{base}@thws.de",
+        f"{base}@fhws.de",
+    ]
+
+    last_error: Exception = Exception("EWS-Verbindung fehlgeschlagen")
+    for uname in candidates:
+        try:
+            credentials = Credentials(username=uname, password=password)
+            config = Configuration(
+                service_endpoint=ews_url,
+                credentials=credentials,
+                auth_type=NTLM,
+            )
+            account = Account(
+                primary_smtp_address=primary_smtp,
+                config=config,
+                autodiscover=False,
+                access_type=DELEGATE,
+            )
+            # Erster echter Netzwerk-Call — testet die Credentials
+            _ = account.inbox.total_count
+            return account
+        except Exception as e:
+            last_error = e
+
+    raise last_error
+
+
+def connect_to_exchange(username: str, password: str, institution: str) -> Account:
+    """
+    Baut eine EWS-Verbindung auf.
+    THWS → connect_to_exchange_thws (manueller Endpoint + Username-Fallback)
+    DHBW → NTLM + autodiscover
     """
     if institution not in INSTITUTIONS:
         raise ValueError(
@@ -55,43 +267,58 @@ def connect_to_exchange(username: str, password: str, institution: str) -> Accou
             f"Erlaubt: {sorted(INSTITUTIONS.keys())}"
         )
 
-    # Volle E-Mail direkt verwenden, sonst Domain anhängen
+    if institution == "THWS":
+        return connect_to_exchange_thws(username, password)
+
+    # DHBW und andere EWS-Institutionen
+    inst = INSTITUTIONS[institution]
+    if inst.get("protocol") != "ews":
+        raise ValueError(f"Institution '{institution}' nutzt nicht EWS.")
+
+    inst_domain = inst.get("domain", "")
     if "@" in username:
         primary_smtp = username
+        ntlm_username = username
     else:
-        domain = INSTITUTIONS[institution]["domain"]
-        primary_smtp = f"{username}@{domain}"
+        primary_smtp = f"{username}@{inst_domain}"
+        ntlm_username = username
 
-    credentials = Credentials(username=primary_smtp, password=password)
+    credentials = Credentials(username=ntlm_username, password=password)
+    ews_url = inst.get("ews_url")
 
-    account = Account(
-        primary_smtp_address=primary_smtp,
-        credentials=credentials,
-        autodiscover=True,
-        access_type=DELEGATE,
-    )
+    if ews_url:
+        config = Configuration(
+            service_endpoint=ews_url,
+            credentials=credentials,
+            auth_type=NTLM,
+        )
+        account = Account(
+            primary_smtp_address=primary_smtp,
+            config=config,
+            autodiscover=False,
+            access_type=DELEGATE,
+        )
+    else:
+        config = Configuration(credentials=credentials, auth_type=NTLM)
+        account = Account(
+            primary_smtp_address=primary_smtp,
+            config=config,
+            autodiscover=True,
+            access_type=DELEGATE,
+        )
     return account
 
+
+# ── EWS Email ─────────────────────────────────────────────────────────────────
 
 def fetch_emails(
     account: Account,
     max_count: int = 20,
     unread_only: bool = True,
 ) -> list[dict]:
-    """
-    Lädt E-Mails aus dem Posteingang, sortiert nach Empfangsdatum (neueste zuerst).
-
-    Returns:
-        Liste von Dicts: [{subject, sender, body, datetime_received, is_read}, ...]
-        Das letzte Element kann einen Sonderschlüssel "_skipped" enthalten.
-    """
+    """Lädt E-Mails via EWS, sortiert nach Empfangsdatum (neueste zuerst)."""
     inbox = account.inbox
-
-    if unread_only:
-        items = inbox.filter(is_read=False)
-    else:
-        items = inbox.all()
-
+    items = inbox.filter(is_read=False) if unread_only else inbox.all()
     items = items.order_by("-datetime_received")[:max_count]
 
     emails = []
@@ -100,10 +327,8 @@ def fetch_emails(
         try:
             sender_str = str(item.sender) if item.sender else "Unbekannt"
             body = item.text_body or item.body or ""
-
             if len(body) > 3_000:
                 body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
-
             emails.append({
                 "subject": item.subject or "(kein Betreff)",
                 "sender": sender_str,
@@ -116,7 +341,6 @@ def fetch_emails(
 
     if skipped:
         emails.append({"_skipped": skipped})
-
     return emails
 
 
@@ -124,7 +348,6 @@ def build_email_text(email_dict: dict) -> str:
     """Formatiert ein E-Mail-Dict als Plaintext für analyze_email()."""
     dt = email_dict.get("datetime_received")
     dt_str = dt.strftime("%d.%m.%Y %H:%M") if dt else "unbekannt"
-
     return (
         f"Von: {email_dict.get('sender', 'Unbekannt')}\n"
         f"Betreff: {email_dict.get('subject', '(kein Betreff)')}\n"
@@ -133,7 +356,7 @@ def build_email_text(email_dict: dict) -> str:
     )
 
 
-# ── Calendar ──────────────────────────────────────────────────────────────────
+# ── EWS Calendar ──────────────────────────────────────────────────────────────
 
 def fetch_calendar(account: Account, days_ahead: int = 14) -> list[dict]:
     """Lädt Kalender-Einträge der nächsten `days_ahead` Tage."""
@@ -184,7 +407,7 @@ def create_calendar_entry(
     return {"id": item.id, "subject": item.subject}
 
 
-# ── Tasks ─────────────────────────────────────────────────────────────────────
+# ── EWS Tasks ─────────────────────────────────────────────────────────────────
 
 def fetch_tasks(account: Account, max_count: int = 100) -> list[dict]:
     """Lädt offene Aufgaben (nicht 'Completed')."""

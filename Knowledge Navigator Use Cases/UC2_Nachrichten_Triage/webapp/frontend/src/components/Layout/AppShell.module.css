@@ -1,0 +1,43 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 3-column when PHIL panel open on desktop */
+@media (min-width: 800px) {
+  .shell[data-phil-open="true"] {
+    grid-template-columns: var(--sidebar-w) 1fr var(--phil-w);
+  }
+}
+
+.content {
+  overflow-y: auto;
+  background: var(--content-bg);
+  min-height: 100vh;
+}
+
+/* Mobile */
+@media (max-width: 799px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    height: 100vh;
+  }
+  .content {
+    padding-bottom: var(--bottom-nav-h);
+  }
+}
+
+.backdrop {
+  position: fixed; inset: 0; z-index: 199;
+  background: rgba(0,0,0,.4);
+}
+
+.mobileOnly {
+  display: none;
+}
+@media (max-width: 799px) {
+  .mobileOnly { display: block; }
+}

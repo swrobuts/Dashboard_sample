@@ -82,11 +82,17 @@ class AnalyzeRequest(BaseModel):
 @app.post("/api/analyze")
 def analyze(req: AnalyzeRequest):
     prompt = COSTAR_PROMPT.format(email_text=req.email_text)
-    response = anthropic_client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIStatusError as e:
+        status = e.status_code if hasattr(e, "status_code") else 500
+        if status == 529 or status == 429:
+            raise HTTPException(status_code=503, detail="KI-Dienst vorübergehend ausgelastet. Bitte kurz warten.")
+        raise HTTPException(status_code=502, detail=f"Claude API Fehler: {e}")
     raw = _strip_fences(response.content[0].text)
     try:
         return json.loads(raw)
@@ -123,17 +129,24 @@ def tts(req: TTSRequest):
 
 
 from backend.exchange_helpers import (
-    connect_to_exchange,
-    fetch_emails,
-    fetch_calendar,
-    fetch_tasks,
+    INSTITUTIONS,
+    build_email_text,
     complete_task,
-    create_task,
+    connect_to_exchange,
+    connect_to_exchange_thws,
+    connect_to_imap,
     create_calendar_entry,
+    create_task,
+    fetch_calendar,
+    fetch_emails,
+    fetch_emails_imap,
+    fetch_tasks,
 )
 
 # ── Session-Management (In-Memory) ────────────────────────────────────────
-# _sessions: session_id → {account, username, institution}
+# _sessions: session_id → {protocol, username, institution, ...}
+#   IMAP: {protocol:"imap", imap_config:{host,port,username,password,inbox_count}, ...}
+#   EWS:  {protocol:"ews",  account:<Account>, ...}
 _sessions: dict[str, dict] = {}
 
 # ── Brute-force-Schutz ────────────────────────────────────────────────────
@@ -168,11 +181,27 @@ def _reset_lockout(ip: str):
     _lockout.pop(ip, None)
 
 
-def _get_account(session_id: str | None):
-    """Helper: prüft Session, gibt Account zurück."""
+def _get_session(session_id: str | None) -> dict:
+    """Helper: prüft Session, gibt Session-Dict zurück."""
     if not session_id or session_id not in _sessions:
         raise HTTPException(status_code=401, detail="Nicht angemeldet.")
-    return _sessions[session_id]["account"]
+    return _sessions[session_id]
+
+
+def _get_account(session_id: str | None):
+    """Helper: gibt EWS-Account zurück.
+    - 'ews': account direkt
+    - 'imap+ews': account wenn EWS-Login erfolgreich war, sonst 400
+    - 'imap': kein EWS, 400
+    """
+    session = _get_session(session_id)
+    account = session.get("account")
+    if account is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Kalender/Aufgaben nicht verfügbar (kein EWS-Zugang für diese Institution).",
+        )
+    return account
 
 
 class ConnectRequest(BaseModel):
@@ -187,22 +216,65 @@ class ConnectRequest(BaseModel):
 def auth_login(req: ConnectRequest, request: Request):
     ip = request.client.host
     _check_lockout(ip)
+    inst = INSTITUTIONS.get(req.institution, {})
+    protocol = inst.get("protocol", "ews")
     try:
-        account = connect_to_exchange(req.username, req.password, req.institution)
-    except Exception:
+        if protocol == "imap+ews":
+            # THWS: IMAP für E-Mail (Pflicht), EWS für Kalender/Aufgaben (optional)
+            result = connect_to_imap(
+                req.username, req.password,
+                inst["imap_host"], inst["imap_port"],
+            )
+            inbox_count = result["inbox_count"]
+            session_data = {
+                "protocol": "imap+ews",
+                "imap_config": result,
+                "username": result["username"],
+                "institution": req.institution,
+                "account": None,  # wird unten befüllt wenn EWS klappt
+            }
+            # EWS-Verbindung für Kalender/Aufgaben — optional, Fehler werden ignoriert
+            try:
+                ews_account = connect_to_exchange_thws(req.username, req.password)
+                session_data["account"] = ews_account
+            except Exception:
+                pass  # Kalender/Aufgaben nicht verfügbar, aber Login trotzdem ok
+        elif protocol == "imap":
+            result = connect_to_imap(
+                req.username, req.password,
+                inst["imap_host"], inst["imap_port"],
+            )
+            inbox_count = result["inbox_count"]
+            session_data = {
+                "protocol": "imap",
+                "imap_config": result,
+                "username": result["username"],
+                "institution": req.institution,
+                "account": None,
+            }
+        else:
+            account = connect_to_exchange(req.username, req.password, req.institution)
+            # inbox.total_count ist der erste echte EWS-Call — Authentifizierung passiert hier
+            inbox_count = account.inbox.total_count
+            session_data = {
+                "protocol": "ews",
+                "account": account,
+                "username": req.username,
+                "institution": req.institution,
+            }
+    except Exception as e:
+        import traceback; traceback.print_exc()
         _record_failure(ip)
-        raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten.")
+        raise HTTPException(status_code=401, detail=f"Verbindung fehlgeschlagen: {type(e).__name__}: {e}")
     _reset_lockout(ip)
     session_id = str(uuid.uuid4())
-    _sessions[session_id] = {
-        "account": account,
-        "username": req.username,
-        "institution": req.institution,
-    }
+    _sessions[session_id] = session_data
     resp = JSONResponse({
         "status": "ok",
-        "username": req.username,
-        "inbox_count": account.inbox.total_count,
+        "username": session_data["username"],
+        "institution": session_data["institution"],
+        "inbox_count": inbox_count,
+        "ews_connected": session_data.get("account") is not None,
     })
     resp.set_cookie(
         key="session_id",
@@ -228,7 +300,13 @@ def auth_me(session_id: str | None = Cookie(default=None)):
     if not session_id or session_id not in _sessions:
         raise HTTPException(status_code=401)
     s = _sessions[session_id]
-    return {"username": s["username"], "institution": s["institution"]}
+    imap_cfg = s.get("imap_config") or {}
+    return {
+        "username": s["username"],
+        "institution": s["institution"],
+        "ews_connected": s.get("account") is not None,
+        "inbox_count": imap_cfg.get("inbox_count", 0),
+    }
 
 
 # ── Legacy Exchange Endpoints (kept for backwards compat) ─────────────────
@@ -244,6 +322,7 @@ def exchange_connect(req: ConnectRequest):
 
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
+        "protocol": "ews",
         "account": account,
         "username": req.username,
         "institution": req.institution,
@@ -273,8 +352,12 @@ def exchange_fetch(
     req: FetchRequest,
     session_id: str | None = Cookie(default=None),
 ):
-    account = _get_account(session_id)
-    emails = fetch_emails(account, max_count=req.max_count, unread_only=req.unread_only)
+    session = _get_session(session_id)
+    if "imap_config" in session:
+        # THWS (imap+ews) oder reines IMAP — E-Mails immer via IMAP
+        emails = fetch_emails_imap(session["imap_config"], max_count=req.max_count, unread_only=req.unread_only)
+    else:
+        emails = fetch_emails(session["account"], max_count=req.max_count, unread_only=req.unread_only)
     skipped = 0
     if emails and "_skipped" in emails[-1]:
         skipped = emails[-1]["_skipped"]
@@ -298,7 +381,10 @@ def get_calendar(
     days_ahead: int = 14,
     session_id: str | None = Cookie(default=None),
 ):
-    account = _get_account(session_id)
+    session = _get_session(session_id)
+    account = session.get("account")
+    if account is None:
+        return {"items": []}
     return {"items": fetch_calendar(account, days_ahead)}
 
 
@@ -323,7 +409,10 @@ def post_create_calendar(
 
 @app.get("/api/tasks")
 def get_tasks(session_id: str | None = Cookie(default=None)):
-    account = _get_account(session_id)
+    session = _get_session(session_id)
+    account = session.get("account")
+    if account is None:
+        return {"tasks": []}
     return {"tasks": fetch_tasks(account)}
 
 
@@ -393,16 +482,22 @@ def _build_context(mails: list, cal_items: list, tasks: list) -> str:
 
 @app.post("/api/chat")
 def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
-    account = _get_account(session_id)
+    session = _get_session(session_id)
 
     context_str = ""
     if req.include_context:
         try:
-            mails = fetch_emails(account, max_count=10, unread_only=True)
-            if mails and "_skipped" in mails[-1]:
-                mails = mails[:-1]
-            cal = fetch_calendar(account, days_ahead=7)
-            tasks = fetch_tasks(account, max_count=20)
+            # E-Mails: IMAP wenn vorhanden, sonst EWS
+            if "imap_config" in session:
+                mails = fetch_emails_imap(session["imap_config"], max_count=10, unread_only=True)
+            else:
+                mails = fetch_emails(session["account"], max_count=10, unread_only=True)
+                if mails and "_skipped" in mails[-1]:
+                    mails = mails[:-1]
+            # Kalender/Aufgaben: nur wenn EWS-Account vorhanden
+            account = session.get("account")
+            cal: list = fetch_calendar(account, days_ahead=7) if account else []
+            tasks: list = fetch_tasks(account, max_count=20) if account else []
             context_str = _build_context(mails, cal, tasks)
         except Exception:
             context_str = ""
@@ -423,7 +518,20 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-# Frontend statisch servieren
-_frontend = Path(__file__).parent.parent / "frontend"
-if _frontend.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
+# Frontend statisch servieren (React build → static/)
+_static = Path(__file__).parent.parent / "static"
+if _static.exists():
+    # Serve JS/CSS chunks
+    _assets = _static / "assets"
+    if _assets.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
+
+    from fastapi.responses import FileResponse
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str = ""):
+        index = _static / "index.html"
+        if index.is_file():
+            return FileResponse(str(index))
+        return {"error": "Frontend not built. Run: cd frontend && npm run build"}

@@ -1,0 +1,18 @@
+.view { padding: 1.5rem 2rem; max-width: 780px; }
+.header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.title { font-size: var(--text-xl); font-weight: 700; font-family: var(--font); }
+.loading { color: #9CA3AF; font-size: var(--text-sm); }
+
+.filters { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.pill {
+  padding: .35rem .9rem; border-radius: 999px;
+  font-size: var(--text-sm); font-family: var(--font);
+  border: 1.5px solid var(--content-border);
+  background: var(--card-bg); color: #374151;
+  transition: all var(--transition);
+}
+.pill:hover { border-color: var(--amber); color: var(--amber-dark); }
+.pill.active { background: var(--amber); border-color: var(--amber); color: white; font-weight: 600; }
+
+.list { display: flex; flex-direction: column; gap: 10px; }
+.empty { color: #6B7280; font-size: var(--text-sm); padding: 2rem 0; text-align: center; }

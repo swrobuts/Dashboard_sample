@@ -12,14 +12,32 @@ def get_client():
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _login(client, mocker, inbox_count=5):
-    """Helper: Mock Exchange, do auth/login, return session_id."""
-    mock_account = mocker.MagicMock()
-    mock_account.inbox.total_count = inbox_count
-    mocker.patch("backend.main.connect_to_exchange", return_value=mock_account)
+    """Helper: Mock IMAP (THWS), do auth/login, return (response, imap_config_dict)."""
+    mock_config = {
+        "host": "webmail.thws.de",
+        "port": 993,
+        "username": "robert.butscher",
+        "password": "geheim",
+        "inbox_count": inbox_count,
+    }
+    mocker.patch("backend.main.connect_to_imap", return_value=mock_config)
     r = client.post("/api/auth/login", json={
         "username": "robert.butscher",
         "password": "geheim",
         "institution": "THWS",
+    })
+    return r, mock_config
+
+
+def _login_ews(client, mocker, inbox_count=5):
+    """Helper: Mock EWS (DHBW), do auth/login, return (response, mock_account)."""
+    mock_account = mocker.MagicMock()
+    mock_account.inbox.total_count = inbox_count
+    mocker.patch("backend.main.connect_to_exchange", return_value=mock_account)
+    r = client.post("/api/auth/login", json={
+        "username": "max.mustermann@dhbw-test.de",
+        "password": "geheim",
+        "institution": "DHBW",
     })
     return r, mock_account
 
@@ -186,8 +204,9 @@ def test_auth_login_success(mocker):
 def test_auth_login_wrong_credentials(mocker):
     """POST /api/auth/login mit falschen Credentials → 401."""
     _clear_lockout()
-    mocker.patch("backend.main.connect_to_exchange",
-                 side_effect=Exception("Authentication failed"))
+    import imaplib
+    mocker.patch("backend.main.connect_to_imap",
+                 side_effect=imaplib.IMAP4.error(b"LOGIN failed."))
     client = get_client()
     r = client.post("/api/auth/login", json={
         "username": "wrong", "password": "nope", "institution": "THWS",
@@ -198,8 +217,9 @@ def test_auth_login_wrong_credentials(mocker):
 def test_auth_login_lockout(mocker):
     """3 Fehlversuche → 4. Versuch gibt 429 zurück."""
     _clear_lockout()
-    mocker.patch("backend.main.connect_to_exchange",
-                 side_effect=Exception("bad credentials"))
+    import imaplib
+    mocker.patch("backend.main.connect_to_imap",
+                 side_effect=imaplib.IMAP4.error(b"LOGIN failed."))
     client = get_client()
     payload = {"username": "u", "password": "x", "institution": "THWS"}
 
@@ -246,6 +266,7 @@ def test_auth_me_with_session(mocker):
     data = r2.json()
     assert data["username"] == "robert.butscher"
     assert data["institution"] == "THWS"
+    assert "ews_connected" in data
 
 
 def test_auth_me_without_session():
@@ -274,10 +295,10 @@ def test_tasks_requires_session():
 
 
 def test_tasks_create(mocker):
-    """POST /api/tasks/create mit Session → 200."""
+    """POST /api/tasks/create mit EWS-Session (DHBW) → 200."""
     _clear_lockout()
     client = get_client()
-    r, mock_account = _login(client, mocker)
+    r, mock_account = _login_ews(client, mocker)
     session_id = r.cookies["session_id"]
 
     # Mock create_task
@@ -292,10 +313,10 @@ def test_tasks_create(mocker):
 
 
 def test_calendar_create(mocker):
-    """POST /api/calendar/create mit Session → 200."""
+    """POST /api/calendar/create mit EWS-Session (DHBW) → 200."""
     _clear_lockout()
     client = get_client()
-    r, mock_account = _login(client, mocker)
+    r, mock_account = _login_ews(client, mocker)
     session_id = r.cookies["session_id"]
 
     # Mock create_calendar_entry
@@ -333,10 +354,8 @@ def test_chat_returns_stream(mocker):
     r, mock_account = _login(client, mocker)
     session_id = r.cookies["session_id"]
 
-    # Mock fetch_emails / fetch_calendar / fetch_tasks to return empty
-    mocker.patch("backend.main.fetch_emails", return_value=[])
-    mocker.patch("backend.main.fetch_calendar", return_value=[])
-    mocker.patch("backend.main.fetch_tasks", return_value=[])
+    # THWS-Session is IMAP → fetch_emails_imap is used; calendar/tasks return []
+    mocker.patch("backend.main.fetch_emails_imap", return_value=[])
 
     # Mock Anthropic streaming
     mock_stream_ctx = mocker.MagicMock()
