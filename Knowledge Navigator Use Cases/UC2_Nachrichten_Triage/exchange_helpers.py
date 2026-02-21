@@ -86,7 +86,10 @@ def fetch_emails(
         unread_only: Nur ungelesene Mails (Standard: True)
 
     Returns:
-        Liste von Dicts: [{subject, sender, body, datetime_received, is_read}, ...]
+        Liste von Dicts: [{subject, sender, body, datetime_received, is_read, _skipped}, ...]
+        Das letzte Element enthält einen Sonderschlüssel "_skipped" mit der Anzahl
+        übersprungener Items (z.B. Kalendereinladungen, korrupte Nachrichten).
+        Normale Einträge enthalten "_skipped" nicht.
     """
     inbox = account.inbox
 
@@ -98,12 +101,15 @@ def fetch_emails(
     items = items.order_by("-datetime_received")[:max_count]
 
     emails = []
+    skipped = 0
     for item in items:
         try:
             sender_str = str(item.sender) if item.sender else "Unbekannt"
             body = item.text_body or item.body or ""
 
             # Sehr lange E-Mails kürzen — Claude hat ein Token-Limit
+            # 3 000 Zeichen ≈ 750 Tokens Input — weit unter dem Modell-Limit,
+            # aber ausreichend für eine Triage-Entscheidung.
             if len(body) > 3_000:
                 body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
 
@@ -115,8 +121,12 @@ def fetch_emails(
                 "is_read": item.is_read,
             })
         except Exception:
-            # Einzelne fehlerhafte Items (z.B. Kalendereinladungen) überspringen
-            continue
+            # Einzelne fehlerhafte Items (z.B. Kalendereinladungen, korrupte Nachrichten)
+            # überspringen — wird am Ende als _skipped gezählt zurückgegeben.
+            skipped += 1
+
+    if skipped:
+        emails.append({"_skipped": skipped})
 
     return emails
 
