@@ -3,417 +3,640 @@
 
 // ── State ─────────────────────────────────────────────────────────────────
 const state = {
-  exchangeConnected: false,
-  currentAudio: null,
+  user: null,           // {username, institution}
+  mails: [],            // raw exchange mails
+  triaged: [],          // [{...mail, kategorie, priorität, zusammenfassung, empfohlene_aktion}]
+  calendar: [],         // calendar items
+  tasks: [],            // task items
+  currentView: 'dashboard',
+  mailFilter: 'all',
+  chatMessages: [],
+  philAudio: null,
 };
 
-// ── DOM Refs ──────────────────────────────────────────────────────────────
-const phil          = document.getElementById('phil');
-const speechText    = document.getElementById('speech-text');
-const speechBubble  = document.getElementById('speech-bubble');
-const audioControls = document.getElementById('audio-controls');
-const audioPlayer   = document.getElementById('audio-player');
-const waveformCanvas = document.getElementById('waveform');
-
-const tabs          = document.querySelectorAll('.tab');
-const panels        = document.querySelectorAll('.tab-panel');
-
-const emailInput    = document.getElementById('email-input');
-const btnAnalyze    = document.getElementById('btn-analyze');
-const resultsEl     = document.getElementById('results');
-
-// Exchange
-const credentialForm   = document.getElementById('credential-form');
-const connectedState   = document.getElementById('connected-state');
-const connectedInfo    = document.getElementById('connected-info');
-const btnConnect       = document.getElementById('btn-connect');
-const btnDisconnect    = document.getElementById('btn-disconnect');
-const btnLiveTriage    = document.getElementById('btn-live-triage');
-
-// Audio buttons
-const btnPlay  = document.getElementById('btn-play');
-const btnPause = document.getElementById('btn-pause');
-const btnStop  = document.getElementById('btn-stop');
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-function setPhilState(s) {
-  phil.dataset.state = s;
-}
-
-let _typewriterTimer = null;
-function typewrite(text, delay = 20) {
-  speechText.textContent = '';
-  clearTimeout(_typewriterTimer);
-  let i = 0;
-  function step() {
-    if (i < text.length) {
-      speechText.textContent += text[i++];
-      _typewriterTimer = setTimeout(step, delay);
-    }
-  }
-  step();
-}
-
-function philSay(text) {
-  typewrite(text);
-}
-
-// ── Kategorie → CSS-Klasse + Emoji ───────────────────────────────────────
-const KATEGORIE_META = {
-  'VIP':          { cls: 'card--vip',        emoji: '🔴', label: 'VIP' },
-  'Aktion nötig': { cls: 'card--aktion',     emoji: '🟡', label: 'Aktion nötig' },
-  'Nur Info':     { cls: 'card--info',       emoji: '🔵', label: 'Nur Info' },
-  'Ignorieren':   { cls: 'card--ignorieren', emoji: '⚫', label: 'Ignorieren' },
-};
-
-// ── Karte rendern ─────────────────────────────────────────────────────────
-function renderCard(result, index, emailPreview = '') {
-  const meta = KATEGORIE_META[result.kategorie] ?? KATEGORIE_META['Ignorieren'];
-  const card = document.createElement('div');
-  card.className = `card ${meta.cls}`;
-  card.style.animationDelay = `${index * 80}ms`;
-
-  // Sprechtext für TTS
-  const ttsText =
-    `${meta.label}. Priorität ${result.priorität}. ` +
-    `${result.zusammenfassung} ` +
-    `Empfehlung: ${result.empfohlene_aktion}`;
-
-  card.innerHTML = `
-    <div class="card__header" role="button" tabindex="0"
-         aria-expanded="false" aria-controls="card-detail-${index}">
-      <span class="card__prio">${meta.emoji} ${meta.label} · ${result.priorität}/4</span>
-      <span class="card__summary">${escHtml(result.zusammenfassung)}</span>
-      <button class="card__play-btn" aria-label="Vorlesen" data-tts="${escAttr(ttsText)}">▶</button>
-    </div>
-    <div class="card__details" id="card-detail-${index}" role="region">
-      <div class="card__details-inner">
-        <span class="card__detail-label">Empfehlung</span>
-        <span class="card__detail-value">${escHtml(result.empfohlene_aktion)}</span>
-        ${emailPreview ? `<span class="card__meta">Vorschau: ${escHtml(emailPreview.slice(0, 100))}…</span>` : ''}
-      </div>
-    </div>
-  `;
-
-  // Expand/Collapse
-  const header  = card.querySelector('.card__header');
-  const details = card.querySelector('.card__details');
-  header.addEventListener('click', (e) => {
-    if (e.target.closest('.card__play-btn')) return;
-    const open = details.classList.toggle('card__details--open');
-    header.setAttribute('aria-expanded', open);
-  });
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      header.click();
-    }
-  });
-
-  // Play-Button
-  card.querySelector('.card__play-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const text = e.currentTarget.dataset.tts;
-    playTTS(text);
-  });
-
-  return card;
-}
-
-function escHtml(s) {
-  return String(s)
+// ── Utils ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-function escAttr(s) { return escHtml(s); }
 
-// ── API ───────────────────────────────────────────────────────────────────
-async function apiAnalyze(emailText) {
-  const res = await fetch('/api/analyze', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email_text: emailText }),
-  });
-  if (!res.ok) throw new Error(`Analyse fehlgeschlagen (${res.status})`);
-  return res.json();
-}
-
-async function apiTTS(text) {
-  const res = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) throw new Error(`TTS fehlgeschlagen (${res.status})`);
-  return res.blob();
-}
-
-// ── TTS Playback ──────────────────────────────────────────────────────────
-async function playTTS(text) {
+function fmt(iso) {
+  if (!iso) return '?';
   try {
-    setPhilState('thinking');
-    const blob = await apiTTS(text);
-    const url  = URL.createObjectURL(blob);
-
-    if (state.currentAudio) {
-      URL.revokeObjectURL(state.currentAudio);
-    }
-    state.currentAudio = url;
-
-    audioPlayer.src = url;
-    audioPlayer.play();
-    audioControls.hidden = false;
-    drawWaveformIdle();
-  } catch (err) {
-    setPhilState('idle');
-    console.error('TTS error:', err);
-  }
+    return new Date(iso).toLocaleString('de-DE', {
+      weekday: 'short', day: '2-digit', month: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
 }
 
-audioPlayer.addEventListener('play',  () => { setPhilState('speaking'); drawWaveformAnimated(); });
-audioPlayer.addEventListener('pause', () => { setPhilState('idle');     stopWaveform(); });
-audioPlayer.addEventListener('ended', () => {
-  setPhilState('done');
-  setTimeout(() => setPhilState('idle'), 400);
-  stopWaveform();
-});
-
-btnPlay.addEventListener('click',  () => audioPlayer.play());
-btnPause.addEventListener('click', () => audioPlayer.pause());
-btnStop.addEventListener('click',  () => { audioPlayer.pause(); audioPlayer.currentTime = 0; });
-
-// ── Waveform (Canvas, simpel) ─────────────────────────────────────────────
-let _waveAnim = null;
-const waveCtx = waveformCanvas.getContext('2d');
-
-function drawWaveformIdle() {
-  waveCtx.clearRect(0, 0, 120, 32);
-  waveCtx.fillStyle = getComputedStyle(document.documentElement)
-    .getPropertyValue('--text-muted').trim();
-  for (let x = 4; x < 116; x += 6) {
-    waveCtx.fillRect(x, 14, 3, 4);
-  }
-}
-
-function drawWaveformAnimated() {
-  stopWaveform();
-  function frame() {
-    waveCtx.clearRect(0, 0, 120, 32);
-    waveCtx.fillStyle = '#18181B';
-    const t = Date.now() / 200;
-    for (let i = 0; i < 18; i++) {
-      const x = 4 + i * 6.5;
-      const h = 4 + Math.abs(Math.sin(t + i * 0.8)) * 18;
-      waveCtx.fillRect(x, 16 - h / 2, 3, h);
-    }
-    _waveAnim = requestAnimationFrame(frame);
-  }
-  frame();
-}
-
-function stopWaveform() {
-  if (_waveAnim) { cancelAnimationFrame(_waveAnim); _waveAnim = null; }
-  drawWaveformIdle();
-}
-
-// ── Tab-Switching ─────────────────────────────────────────────────────────
-tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    tabs.forEach(t => { t.classList.remove('tab--active'); t.setAttribute('aria-selected', 'false'); });
-    panels.forEach(p => p.classList.add('tab-panel--hidden'));
-
-    tab.classList.add('tab--active');
-    tab.setAttribute('aria-selected', 'true');
-    const targetId = `panel-${tab.dataset.tab}`;
-    document.getElementById(targetId).classList.remove('tab-panel--hidden');
-  });
-});
-
-// ── Paste-Modus: Analyse ──────────────────────────────────────────────────
-btnAnalyze.addEventListener('click', async () => {
-  const text = emailInput.value.trim();
-  if (!text) {
-    philSay('Bitte zuerst einen E-Mail-Text einfügen.');
-    return;
-  }
-
-  btnAnalyze.disabled = true;
-  btnAnalyze.innerHTML = '<span class="spinner"></span> Analysiere…';
-  setPhilState('thinking');
-  philSay('Ich analysiere die E-Mail…');
-  resultsEl.innerHTML = '';
-
+function fmtDate(iso) {
+  if (!iso) return '';
   try {
-    const result = await apiAnalyze(text);
-    resultsEl.appendChild(renderCard(result, 0, text));
+    return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch { return iso; }
+}
 
-    const summary =
-      `Analyse abgeschlossen. Kategorie: ${result.kategorie}. ` +
-      `${result.zusammenfassung}`;
-    philSay(summary);
-    await playTTS(summary);
-  } catch (err) {
-    philSay(`Fehler: ${err.message}`);
-    setPhilState('idle');
-  } finally {
-    btnAnalyze.disabled = false;
-    btnAnalyze.innerHTML = 'Analysieren';
+// ── Init ──────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const me = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    if (me.ok) {
+      state.user = await me.json();
+      showApp();
+      loadAllData();
+    } else {
+      showLogin();
+    }
+  } catch {
+    showLogin();
   }
+}
+
+function showLogin() {
+  document.getElementById('login-screen').hidden = false;
+  document.getElementById('app').hidden = true;
+}
+
+function showApp() {
+  document.getElementById('login-screen').hidden = true;
+  document.getElementById('app').hidden = false;
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────
+document.getElementById('login-institution').addEventListener('change', (e) => {
+  const hints = { THWS: 'vorname.nachname', DHBW: 'vollstaendige@email.de' };
+  document.getElementById('login-username').placeholder = hints[e.target.value] ?? 'Benutzername';
+  document.getElementById('login-username').value = '';
 });
 
-// ── Exchange API ──────────────────────────────────────────────────────────
-async function apiConnect(username, password, institution) {
-  const res = await fetch('/api/exchange/connect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, institution }),
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Verbindung fehlgeschlagen' }));
-    throw new Error(err.detail ?? 'Verbindung fehlgeschlagen');
-  }
-  return res.json();
-}
-
-async function apiDisconnect() {
-  await fetch('/api/exchange/disconnect', {
-    method: 'POST',
-    credentials: 'same-origin',
-  });
-}
-
-async function apiFetch(maxCount, unreadOnly) {
-  const res = await fetch('/api/exchange/fetch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ max_count: maxCount, unread_only: unreadOnly }),
-    credentials: 'same-origin',
-  });
-  if (!res.ok) throw new Error('Fetch fehlgeschlagen — bitte erneut verbinden.');
-  return res.json();
-}
-
-// ── Institution Placeholder ───────────────────────────────────────────────
-const usernameInput   = document.getElementById('username');
-const institutionSel  = document.getElementById('institution');
-const INSTITUTION_HINTS = {
-  THWS: 'vorname.nachname',
-  DHBW: 'vollstaendige@email.de',
-};
-institutionSel.addEventListener('change', () => {
-  usernameInput.placeholder = INSTITUTION_HINTS[institutionSel.value] ?? '';
-  usernameInput.value = '';
-});
-
-// ── Connect ───────────────────────────────────────────────────────────────
-credentialForm.addEventListener('submit', async (e) => {
+document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const username    = usernameInput.value.trim();
-  const password    = document.getElementById('password').value;
-  const institution = institutionSel.value;
+  const btn = document.getElementById('btn-login');
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const institution = document.getElementById('login-institution').value;
+  const lockoutMsg = document.getElementById('lockout-msg');
 
-  if (!username || !password) {
-    philSay('Bitte Benutzername und Passwort eingeben.');
+  if (!username || !password) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Verbinde…';
+  lockoutMsg.hidden = true;
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, institution }),
+      credentials: 'same-origin',
+    });
+
+    if (res.status === 429) {
+      const data = await res.json();
+      const detail = data.detail ?? data;
+      const mins = Math.ceil((detail.retry_after ?? 300) / 60);
+      lockoutMsg.textContent = `Zu viele Fehlversuche. Bitte ${mins} Minute(n) warten.`;
+      lockoutMsg.hidden = false;
+    } else if (!res.ok) {
+      lockoutMsg.textContent = 'Ungültige Anmeldedaten. Bitte erneut versuchen.';
+      lockoutMsg.hidden = false;
+    } else {
+      const data = await res.json();
+      state.user = { username: data.username, institution };
+      document.getElementById('login-password').value = '';
+      showApp();
+      loadAllData();
+    }
+  } catch {
+    lockoutMsg.textContent = 'Verbindungsfehler. Bitte prüfen Sie Ihre Netzwerkverbindung.';
+    lockoutMsg.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Anmelden';
+  }
+});
+
+// ── Data Loading ──────────────────────────────────────────────────────────
+async function loadAllData() {
+  try {
+    const [calRes, tasksRes, mailsRes] = await Promise.all([
+      fetch('/api/calendar', { credentials: 'same-origin' }),
+      fetch('/api/tasks', { credentials: 'same-origin' }),
+      fetch('/api/exchange/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_count: 50, unread_only: false }),
+        credentials: 'same-origin',
+      }),
+    ]);
+
+    if (calRes.ok) state.calendar = (await calRes.json()).items ?? [];
+    if (tasksRes.ok) state.tasks = (await tasksRes.json()).tasks ?? [];
+    if (mailsRes.ok) {
+      const d = await mailsRes.json();
+      state.mails = d.emails ?? [];
+      if (state.mails.length && '_skipped' in state.mails[state.mails.length - 1]) {
+        state.mails = state.mails.slice(0, -1);
+      }
+    }
+  } catch { /* best effort */ }
+
+  renderDashboard();
+  renderCalendarView();
+  renderTasksView();
+
+  // Triage up to 20 mails in the background
+  triageMails();
+}
+
+// ── Triage ────────────────────────────────────────────────────────────────
+const KATEGORIE_CSS = {
+  'VIP': 'vip',
+  'Aktion nötig': 'aktion',
+  'Nur Info': 'info',
+  'Ignorieren': 'ignorieren',
+};
+
+async function triageMails() {
+  const toTriage = state.mails.slice(0, 20);
+  state.triaged = [];
+
+  for (const mail of toTriage) {
+    try {
+      const emailText = `Von: ${mail.sender}\nBetreff: ${mail.subject}\n\n${mail.body ?? ''}`;
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_text: emailText }),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const analysis = await res.json();
+        state.triaged.push({ ...mail, ...analysis });
+        updateTileCounts();
+        renderMailsView();
+      }
+    } catch { /* skip failed */ }
+  }
+}
+
+function updateTileCounts() {
+  const counts = { VIP: 0, 'Aktion nötig': 0, 'Nur Info': 0, Ignorieren: 0 };
+  for (const t of state.triaged) counts[t.kategorie] = (counts[t.kategorie] ?? 0) + 1;
+  document.getElementById('count-vip').textContent = counts.VIP;
+  document.getElementById('count-aktion').textContent = counts['Aktion nötig'];
+  document.getElementById('count-info').textContent = counts['Nur Info'];
+  document.getElementById('count-ignorieren').textContent = counts.Ignorieren;
+}
+
+// ── Dashboard Render ──────────────────────────────────────────────────────
+function renderDashboard() {
+  updateTileCounts();
+
+  // Calendar widget — today & tomorrow
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 2);
+  const calPreview = document.getElementById('calendar-preview');
+  const todayItems = state.calendar.filter(c => {
+    if (!c.start) return false;
+    const d = new Date(c.start);
+    return d >= now && d < tomorrow;
+  }).slice(0, 4);
+
+  if (todayItems.length === 0) {
+    calPreview.innerHTML = '<p class="widget-empty">Keine Termine heute oder morgen.</p>';
+  } else {
+    calPreview.innerHTML = todayItems.map(c => `
+      <div class="widget-item">
+        <span class="widget-item-dot"></span>
+        <div class="widget-item-text">
+          <div class="widget-item-title">${esc(c.subject)}</div>
+          <div class="widget-item-meta">${fmt(c.start)}${c.location ? ` · ${esc(c.location)}` : ''}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Tasks widget — top 5
+  const tasksPreview = document.getElementById('tasks-preview');
+  const topTasks = state.tasks.slice(0, 5);
+  if (topTasks.length === 0) {
+    tasksPreview.innerHTML = '<p class="widget-empty">Keine offenen Aufgaben.</p>';
+  } else {
+    tasksPreview.innerHTML = topTasks.map(t => `
+      <div class="widget-item">
+        <span class="widget-item-dot widget-item-dot--task"></span>
+        <div class="widget-item-text">
+          <div class="widget-item-title">${esc(t.subject)}</div>
+          <div class="widget-item-meta">${t.due_date ? `Fällig: ${fmtDate(t.due_date)}` : 'Kein Datum'}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+
+// ── Mails View Render ─────────────────────────────────────────────────────
+function renderMailsView() {
+  const list = document.getElementById('mails-list');
+  let items = state.triaged;
+
+  if (state.mailFilter !== 'all') {
+    items = items.filter(m => m.kategorie === state.mailFilter);
+  }
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">✉</span><span>Keine Mails in dieser Kategorie.</span></div>';
     return;
   }
 
-  btnConnect.disabled = true;
-  btnConnect.innerHTML = '<span class="spinner"></span> Verbinde…';
-  setPhilState('thinking');
-  philSay('Verbinde mit Exchange…');
+  list.innerHTML = '';
+  items.forEach((m, i) => {
+    const cls = KATEGORIE_CSS[m.kategorie] ?? 'ignorieren';
+    const card = document.createElement('div');
+    card.className = `mail-card mail-card--${cls}`;
+    card.style.animationDelay = `${i * 40}ms`;
 
-  try {
-    const data = await apiConnect(username, password, institution);
-    state.exchangeConnected = true;
+    const ttsText = `${m.kategorie}. ${m.zusammenfassung} Empfehlung: ${m.empfohlene_aktion}`;
+    card.innerHTML = `
+      <div class="mail-card__header">
+        <span class="mail-card__badge">${esc(m.kategorie)}</span>
+        <div class="mail-card__body">
+          <div class="mail-card__subject">${esc(m.subject)}</div>
+          <div class="mail-card__sender">${esc(m.sender)}</div>
+          <div class="mail-card__summary">${esc(m.zusammenfassung)}</div>
+        </div>
+      </div>
+      <div class="mail-card__detail">
+        <div class="mail-card__actions">
+          <button class="btn btn--ghost btn--sm js-tts" data-tts="${esc(ttsText)}">▶ Vorlesen</button>
+          <span style="flex:1"></span>
+          <span style="font-size:.8125rem;color:var(--text-muted)">${esc(m.empfohlene_aktion)}</span>
+        </div>
+      </div>`;
 
-    // Passwort sofort löschen
-    document.getElementById('password').value = '';
+    card.querySelector('.mail-card__header').addEventListener('click', () => {
+      const detail = card.querySelector('.mail-card__detail');
+      detail.classList.toggle('mail-card__detail--open');
+    });
+    card.querySelector('.js-tts').addEventListener('click', (e) => {
+      e.stopPropagation();
+      playTTS(e.currentTarget.dataset.tts);
+    });
+    list.appendChild(card);
+  });
+}
 
-    credentialForm.hidden  = true;
-    connectedState.hidden  = false;
-    connectedInfo.textContent =
-      `✓ Verbunden mit ${institution} · ${data.inbox_count} Mails im Posteingang`;
-
-    const msg = `Verbindung hergestellt. Sie haben ${data.inbox_count} Mails.`;
-    philSay(msg);
-    await playTTS(msg);
-  } catch (err) {
-    philSay(`Verbindung fehlgeschlagen: ${err.message}`);
-    setPhilState('idle');
-  } finally {
-    btnConnect.disabled = false;
-    btnConnect.innerHTML = 'Verbinden';
+// ── Calendar View Render ──────────────────────────────────────────────────
+function renderCalendarView() {
+  const list = document.getElementById('calendar-list');
+  if (state.calendar.length === 0) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">⊡</span><span>Keine Termine in den nächsten 14 Tagen.</span></div>';
+    return;
   }
+  list.innerHTML = state.calendar.map((c, i) => `
+    <div class="cal-item" style="animation-delay:${i * 30}ms">
+      <div class="cal-item__date">${fmt(c.start)}</div>
+      <div class="cal-item__title">${esc(c.subject)}</div>
+      <div class="cal-item__meta">
+        ${c.location ? esc(c.location) + ' · ' : ''}
+        bis ${fmt(c.end)}
+        ${c.is_recurring ? ' · wiederkehrend' : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ── Tasks View Render ─────────────────────────────────────────────────────
+function renderTasksView() {
+  const list = document.getElementById('tasks-list');
+  if (state.tasks.length === 0) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">✓</span><span>Keine offenen Aufgaben.</span></div>';
+    return;
+  }
+  list.innerHTML = '';
+  state.tasks.forEach((t, i) => {
+    const prio = t.priority === 'High' ? 'High' : t.priority === 'Low' ? 'Low' : 'Normal';
+    const item = document.createElement('div');
+    item.className = 'task-item';
+    item.style.animationDelay = `${i * 30}ms`;
+    item.innerHTML = `
+      <button class="task-check" data-id="${esc(t.id)}" data-ck="${esc(t.changekey)}" title="Als erledigt markieren">✓</button>
+      <div class="task-item__body">
+        <span class="task-priority task-priority--${prio}">${esc(t.priority)}</span>
+        <div class="task-item__title">${esc(t.subject)}</div>
+        <div class="task-item__meta">${t.due_date ? 'Fällig: ' + fmtDate(t.due_date) : 'Kein Datum'}</div>
+      </div>`;
+    item.querySelector('.task-check').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await fetch(`/api/tasks/${encodeURIComponent(btn.dataset.id)}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ changekey: btn.dataset.ck }),
+          credentials: 'same-origin',
+        });
+        state.tasks = state.tasks.filter(x => x.id !== btn.dataset.id);
+        renderTasksView();
+        renderDashboard();
+      } catch { btn.disabled = false; }
+    });
+    list.appendChild(item);
+  });
+}
+
+// ── View Switching ────────────────────────────────────────────────────────
+function switchView(viewName) {
+  document.querySelectorAll('.view').forEach(v => v.classList.add('view--hidden'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('nav-item--active'));
+  document.getElementById(`view-${viewName}`)?.classList.remove('view--hidden');
+  document.querySelector(`[data-view="${viewName}"]`)?.classList.add('nav-item--active');
+  state.currentView = viewName;
+}
+
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
 
-// ── Disconnect ────────────────────────────────────────────────────────────
-btnDisconnect.addEventListener('click', async () => {
-  await apiDisconnect();
-  state.exchangeConnected = false;
-  credentialForm.hidden = false;
-  connectedState.hidden = true;
-  resultsEl.innerHTML   = '';
-  philSay('Verbindung getrennt.');
+// Tile click → go to mails filtered
+document.querySelectorAll('.tile').forEach(tile => {
+  tile.addEventListener('click', () => {
+    state.mailFilter = tile.dataset.filter;
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('pill--active'));
+    document.querySelector(`.pill[data-cat="${tile.dataset.filter}"]`)?.classList.add('pill--active');
+    switchView('mails');
+    renderMailsView();
+  });
 });
 
-// ── Live-Triage ───────────────────────────────────────────────────────────
-btnLiveTriage.addEventListener('click', async () => {
-  const maxCount  = parseInt(document.getElementById('max-count').value, 10) || 10;
-  const unreadOnly = document.getElementById('unread-only').checked;
+// Mail filter pills
+document.querySelectorAll('.pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('pill--active'));
+    pill.classList.add('pill--active');
+    state.mailFilter = pill.dataset.cat;
+    renderMailsView();
+  });
+});
 
-  btnLiveTriage.disabled = true;
-  btnLiveTriage.innerHTML = '<span class="spinner"></span> Lade Mails…';
-  setPhilState('thinking');
-  philSay('Lade E-Mails aus dem Postfach…');
-  resultsEl.innerHTML = '';
+// ── Phil Chat Panel ───────────────────────────────────────────────────────
+const chatPanel = document.getElementById('phil-chat');
+const chatBackdrop = document.getElementById('chat-backdrop');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+
+function openChat() {
+  chatPanel.classList.add('chat-panel--open');
+  chatPanel.setAttribute('aria-hidden', 'false');
+  chatBackdrop.classList.remove('backdrop--hidden');
+  chatInput.focus();
+}
+
+function closeChat() {
+  chatPanel.classList.remove('chat-panel--open');
+  chatPanel.setAttribute('aria-hidden', 'true');
+  chatBackdrop.classList.add('backdrop--hidden');
+}
+
+document.getElementById('btn-phil-chat').addEventListener('click', openChat);
+document.getElementById('btn-close-chat').addEventListener('click', closeChat);
+chatBackdrop.addEventListener('click', closeChat);
+
+function appendChatMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = `chat-msg chat-msg--${role}`;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+async function sendChatMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  chatInput.value = '';
+  appendChatMessage('user', text);
+
+  const philMsg = appendChatMessage('phil', '');
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner spinner--dark';
+  philMsg.appendChild(spinner);
 
   try {
-    const { emails, skipped } = await apiFetch(maxCount, unreadOnly);
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, include_context: true }),
+      credentials: 'same-origin',
+    });
 
-    if (emails.length === 0) {
-      philSay('Keine E-Mails gefunden.');
-      setPhilState('idle');
+    if (!resp.ok) {
+      philMsg.textContent = 'Fehler beim Abrufen der Antwort.';
       return;
     }
 
-    philSay(`Analysiere ${emails.length} E-Mail${emails.length !== 1 ? 's' : ''}…`);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    philMsg.textContent = '';
 
-    const results = [];
-    for (const email of emails) {
-      const emailText =
-        `Von: ${email.sender}\nBetreff: ${email.subject}\n\n${email.body ?? ''}`;
-      const result = await apiAnalyze(emailText);
-      results.push({ result, email });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') break;
+          philMsg.textContent += data;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      }
     }
 
-    results.forEach(({ result, email }, i) => {
-      resultsEl.appendChild(renderCard(result, i, email.subject));
+    if (philMsg.textContent) {
+      playTTS(philMsg.textContent.slice(0, 400));
+    }
+  } catch {
+    philMsg.textContent = 'Verbindungsfehler.';
+  }
+}
+
+document.getElementById('btn-chat-send').addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+});
+
+// ── Settings Modal ────────────────────────────────────────────────────────
+const settingsModal = document.getElementById('settings-modal');
+const modalBackdrop = document.getElementById('modal-backdrop');
+
+function openSettings() {
+  document.getElementById('settings-info').innerHTML = `
+    <p><strong>Angemeldet als:</strong> ${esc(state.user?.username ?? '—')}</p>
+    <p><strong>Institution:</strong> ${esc(state.user?.institution ?? '—')}</p>
+    <p><strong>Mails:</strong> ${state.mails.length} geladen, ${state.triaged.length} analysiert</p>`;
+  settingsModal.classList.remove('modal--hidden');
+  modalBackdrop.classList.remove('backdrop--hidden');
+  modalBackdrop.style.zIndex = '290';
+}
+
+function closeSettings() {
+  settingsModal.classList.add('modal--hidden');
+  modalBackdrop.classList.add('backdrop--hidden');
+}
+
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('btn-close-settings').addEventListener('click', closeSettings);
+modalBackdrop.addEventListener('click', () => {
+  closeSettings();
+  closeEventModal();
+  closeTaskModal();
+});
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  location.reload();
+});
+
+document.getElementById('btn-reload-mails').addEventListener('click', async () => {
+  closeSettings();
+  state.mails = [];
+  state.triaged = [];
+  state.calendar = [];
+  state.tasks = [];
+  renderDashboard();
+  renderMailsView();
+  renderCalendarView();
+  renderTasksView();
+  await loadAllData();
+});
+
+// ── Create Event Modal ────────────────────────────────────────────────────
+const eventModal = document.getElementById('event-modal');
+const formBackdrop = document.getElementById('form-backdrop');
+
+function openEventModal() {
+  eventModal.classList.remove('modal--hidden');
+  formBackdrop.classList.remove('backdrop--hidden');
+  formBackdrop.style.zIndex = '290';
+  document.getElementById('event-subject').focus();
+}
+
+function closeEventModal() {
+  eventModal.classList.add('modal--hidden');
+  formBackdrop.classList.add('backdrop--hidden');
+}
+
+document.getElementById('btn-add-event').addEventListener('click', openEventModal);
+document.getElementById('btn-close-event').addEventListener('click', closeEventModal);
+
+document.getElementById('event-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn-save-event');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Speichern…';
+
+  try {
+    const res = await fetch('/api/calendar/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: document.getElementById('event-subject').value.trim(),
+        start: document.getElementById('event-start').value,
+        end: document.getElementById('event-end').value,
+        location: document.getElementById('event-location').value.trim(),
+        body: document.getElementById('event-body').value.trim(),
+      }),
+      credentials: 'same-origin',
     });
-
-    const vipCount    = results.filter(r => r.result.kategorie === 'VIP').length;
-    const aktionCount = results.filter(r => r.result.kategorie === 'Aktion nötig').length;
-    const parts = [];
-    if (vipCount)    parts.push(`${vipCount} VIP-Mail${vipCount !== 1 ? 's' : ''}`);
-    if (aktionCount) parts.push(`${aktionCount} Aktion nötig`);
-    const summary = parts.length
-      ? `Analyse abgeschlossen. ${parts.join(', ')} — sofortige Aufmerksamkeit erforderlich.`
-      : `Analyse abgeschlossen. Keine dringenden Mails.`;
-
-    if (skipped > 0) {
-      const notice = document.createElement('p');
-      notice.style.cssText = 'font-size:.8125rem;color:var(--text-muted);margin-top:8px';
-      notice.textContent = `⚠ ${skipped} Mail${skipped !== 1 ? 's' : ''} konnten nicht geladen werden.`;
-      resultsEl.appendChild(notice);
+    if (res.ok) {
+      closeEventModal();
+      document.getElementById('event-form').reset();
+      // Reload calendar
+      const calRes = await fetch('/api/calendar', { credentials: 'same-origin' });
+      if (calRes.ok) {
+        state.calendar = (await calRes.json()).items ?? [];
+        renderCalendarView();
+        renderDashboard();
+      }
     }
-
-    philSay(summary);
-    await playTTS(summary);
-  } catch (err) {
-    philSay(`Fehler: ${err.message}`);
-    setPhilState('idle');
   } finally {
-    btnLiveTriage.disabled = false;
-    btnLiveTriage.innerHTML = 'Live-Triage starten';
+    btn.disabled = false;
+    btn.innerHTML = 'Speichern';
   }
 });
+
+// ── Create Task Modal ─────────────────────────────────────────────────────
+const taskModal = document.getElementById('task-modal');
+
+function openTaskModal() {
+  taskModal.classList.remove('modal--hidden');
+  formBackdrop.classList.remove('backdrop--hidden');
+  formBackdrop.style.zIndex = '290';
+  document.getElementById('task-subject').focus();
+}
+
+function closeTaskModal() {
+  taskModal.classList.add('modal--hidden');
+  formBackdrop.classList.add('backdrop--hidden');
+}
+
+document.getElementById('btn-add-task').addEventListener('click', openTaskModal);
+document.getElementById('btn-close-task').addEventListener('click', closeTaskModal);
+
+document.getElementById('task-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn-save-task');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Speichern…';
+
+  try {
+    const res = await fetch('/api/tasks/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: document.getElementById('task-subject').value.trim(),
+        due_date: document.getElementById('task-due').value || null,
+        priority: document.getElementById('task-priority').value,
+        body: document.getElementById('task-body').value.trim(),
+      }),
+      credentials: 'same-origin',
+    });
+    if (res.ok) {
+      closeTaskModal();
+      document.getElementById('task-form').reset();
+      const tasksRes = await fetch('/api/tasks', { credentials: 'same-origin' });
+      if (tasksRes.ok) {
+        state.tasks = (await tasksRes.json()).tasks ?? [];
+        renderTasksView();
+        renderDashboard();
+      }
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Speichern';
+  }
+});
+
+// ── TTS ───────────────────────────────────────────────────────────────────
+const audioPlayer = document.getElementById('audio-player');
+
+async function playTTS(text) {
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 500) }),
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    if (state.philAudio) URL.revokeObjectURL(state.philAudio);
+    state.philAudio = URL.createObjectURL(blob);
+    audioPlayer.src = state.philAudio;
+    audioPlayer.play().catch(() => {});
+  } catch { /* TTS non-critical */ }
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────
+init();

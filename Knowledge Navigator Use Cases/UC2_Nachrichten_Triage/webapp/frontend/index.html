@@ -3,132 +3,228 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PHIL · Nachrichten-Triage</title>
+  <title>PHIL · PIM Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 
-  <header class="site-header">
-    <span class="site-header__brand">PHIL</span>
-    <span class="site-header__title">Nachrichten-Triage</span>
-    <span class="site-header__year">1987 → 2026</span>
-  </header>
+  <!-- ── Login Screen ─────────────────────────────────────────────────── -->
+  <div id="login-screen" class="login-screen" hidden>
+    <div class="login-card">
+      <img src="phil.png" class="login-avatar" alt="PHIL"/>
+      <h1 class="login-title">PHIL</h1>
+      <p class="login-subtitle">Persönlicher Hochschul-Assistent</p>
+      <form id="login-form" novalidate>
+        <select id="login-institution" class="select" name="institution">
+          <option value="THWS">THWS Würzburg-Schweinfurt</option>
+          <option value="DHBW">DHBW</option>
+        </select>
+        <input id="login-username" type="text" class="input" name="username"
+               placeholder="vorname.nachname" autocomplete="off" spellcheck="false"/>
+        <input id="login-password" type="password" class="input" name="password"
+               placeholder="Passwort" autocomplete="current-password"/>
+        <div id="lockout-msg" class="lockout-msg" hidden></div>
+        <button type="submit" class="btn btn--primary btn--full" id="btn-login">
+          Anmelden
+        </button>
+      </form>
+      <p class="security-notice">⚠ Credentials werden nicht gespeichert.</p>
+    </div>
+  </div>
 
-  <main class="layout">
+  <!-- ── App ──────────────────────────────────────────────────────────── -->
+  <div id="app" hidden>
 
-    <aside class="phil-column">
-
-      <div class="phil-avatar" data-state="idle" id="phil">
-        <img src="phil.png" alt="Phil — dein Nachrichten-Assistent" class="phil-img"/>
+    <!-- Header -->
+    <header class="app-header">
+      <span class="app-brand">PHIL</span>
+      <div class="header-actions">
+        <button id="btn-settings" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙</button>
+        <button id="btn-phil-chat" class="phil-fab" aria-label="PHIL Chat öffnen">
+          <img src="phil.png" class="phil-fab-img" alt="Phil"/>
+        </button>
       </div>
+    </header>
 
-      <div class="speech-bubble" id="speech-bubble" aria-live="polite">
-        <p class="speech-bubble__text" id="speech-text"></p>
-      </div>
+    <!-- Main Content -->
+    <main id="main-content" class="main-content">
 
-      <div class="audio-controls" id="audio-controls" hidden>
-        <canvas class="waveform" id="waveform" width="120" height="32" aria-hidden="true"></canvas>
-        <div class="audio-buttons">
-          <button class="audio-btn" id="btn-play"  aria-label="Abspielen">▶</button>
-          <button class="audio-btn" id="btn-pause" aria-label="Pause">⏸</button>
-          <button class="audio-btn" id="btn-stop"  aria-label="Stopp">⏹</button>
+      <!-- Dashboard View -->
+      <div id="view-dashboard" class="view">
+        <div class="view-scroll">
+          <div class="tile-grid">
+            <div class="tile tile--vip" data-filter="VIP" role="button" tabindex="0" aria-label="VIP Mails">
+              <span class="tile-count" id="count-vip">0</span>
+              <span class="tile-label">VIP</span>
+            </div>
+            <div class="tile tile--aktion" data-filter="Aktion nötig" role="button" tabindex="0" aria-label="Aktion nötig">
+              <span class="tile-count" id="count-aktion">0</span>
+              <span class="tile-label">Aktion nötig</span>
+            </div>
+            <div class="tile tile--info" data-filter="Nur Info" role="button" tabindex="0" aria-label="Nur Info">
+              <span class="tile-count" id="count-info">0</span>
+              <span class="tile-label">Nur Info</span>
+            </div>
+            <div class="tile tile--ignorieren" data-filter="Ignorieren" role="button" tabindex="0" aria-label="Ignorieren">
+              <span class="tile-count" id="count-ignorieren">0</span>
+              <span class="tile-label">Ignorieren</span>
+            </div>
+          </div>
+
+          <section class="widget" id="calendar-widget">
+            <h2 class="widget-title">Kalender — Heute &amp; Morgen</h2>
+            <div id="calendar-preview" class="widget-content">
+              <p class="widget-empty">Lade Kalender…</p>
+            </div>
+          </section>
+
+          <section class="widget" id="tasks-widget">
+            <h2 class="widget-title">Offene Aufgaben</h2>
+            <div id="tasks-preview" class="widget-content">
+              <p class="widget-empty">Lade Aufgaben…</p>
+            </div>
+          </section>
         </div>
       </div>
 
-    </aside>
-
-    <section class="content-column">
-
-      <div class="tabs" role="tablist">
-        <button class="tab tab--active" role="tab" aria-selected="true"
-                data-tab="paste" id="tab-paste">
-          E-Mail einfügen
-        </button>
-        <button class="tab" role="tab" aria-selected="false"
-                data-tab="exchange" id="tab-exchange">
-          Live Exchange
-        </button>
+      <!-- Mails View -->
+      <div id="view-mails" class="view view--hidden">
+        <div class="view-scroll">
+          <div class="filter-pills" id="mail-filters" role="group" aria-label="Mail-Filter">
+            <button class="pill pill--active" data-cat="all">Alle</button>
+            <button class="pill pill--vip" data-cat="VIP">VIP</button>
+            <button class="pill pill--aktion" data-cat="Aktion nötig">Aktion</button>
+            <button class="pill pill--info" data-cat="Nur Info">Info</button>
+            <button class="pill pill--ignorieren" data-cat="Ignorieren">Ignorieren</button>
+          </div>
+          <div id="mails-list" aria-live="polite"></div>
+        </div>
       </div>
 
-      <div class="tab-panel" id="panel-paste" role="tabpanel">
-        <label class="field-label" for="email-input">E-Mail-Text</label>
-        <textarea
-          id="email-input"
-          class="email-textarea"
-          placeholder="Von: name@example.com&#10;Betreff: Betreffzeile&#10;&#10;Text der E-Mail..."
-          rows="9"
-          aria-label="E-Mail-Text einfügen"
-        ></textarea>
-        <button class="btn btn--primary" id="btn-analyze">
-          Analysieren
-        </button>
+      <!-- Kalender View -->
+      <div id="view-calendar" class="view view--hidden">
+        <div class="view-scroll">
+          <div id="calendar-list" aria-live="polite"></div>
+        </div>
+        <button class="fab" id="btn-add-event" aria-label="Termin erstellen">+</button>
       </div>
 
-      <div class="tab-panel tab-panel--hidden" id="panel-exchange" role="tabpanel">
+      <!-- Aufgaben View -->
+      <div id="view-tasks" class="view view--hidden">
+        <div class="view-scroll">
+          <div id="tasks-list" aria-live="polite"></div>
+        </div>
+        <button class="fab" id="btn-add-task" aria-label="Aufgabe erstellen">+</button>
+      </div>
 
-        <form class="credential-form" id="credential-form" novalidate>
-          <div class="form-row">
-            <label class="field-label" for="institution">Institution</label>
-            <select class="select" id="institution" name="institution">
-              <option value="THWS">THWS Würzburg-Schweinfurt</option>
-              <option value="DHBW">DHBW</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label class="field-label" for="username">Benutzername</label>
-            <input class="input" id="username" name="username" type="text"
-                   placeholder="vorname.nachname" autocomplete="off" spellcheck="false"/>
-          </div>
-          <div class="form-row">
-            <label class="field-label" for="password">Passwort</label>
-            <input class="input" id="password" name="password" type="password"
-                   placeholder="••••••••" autocomplete="off"/>
-          </div>
-          <p class="security-notice">
-            ⚠ Ihre Daten werden nicht gespeichert — nur im Arbeitsspeicher dieser Session.
-          </p>
-          <div class="form-actions">
-            <button type="submit" class="btn btn--primary" id="btn-connect">
-              Verbinden
-            </button>
-          </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" role="navigation" aria-label="Hauptnavigation">
+      <button class="nav-item nav-item--active" data-view="dashboard">
+        <span class="nav-icon">⊞</span>
+        <span>Start</span>
+      </button>
+      <button class="nav-item" data-view="mails">
+        <span class="nav-icon">✉</span>
+        <span>Mails</span>
+      </button>
+      <button class="nav-item" data-view="calendar">
+        <span class="nav-icon">⊡</span>
+        <span>Kalender</span>
+      </button>
+      <button class="nav-item" data-view="tasks">
+        <span class="nav-icon">✓</span>
+        <span>Aufgaben</span>
+      </button>
+    </nav>
+
+    <!-- Phil Chat Panel -->
+    <div id="phil-chat" class="chat-panel chat-panel--closed" role="dialog"
+         aria-label="PHIL Chat" aria-hidden="true">
+      <div class="chat-header">
+        <img src="phil.png" class="chat-avatar" alt="Phil"/>
+        <span class="chat-title">Frag PHIL</span>
+        <button id="btn-close-chat" class="icon-btn" aria-label="Chat schließen">✕</button>
+      </div>
+      <div id="chat-messages" class="chat-messages" role="log" aria-live="polite"></div>
+      <div class="chat-input-row">
+        <input id="chat-input" class="input chat-input" placeholder="Stell PHIL eine Frage…"
+               aria-label="Nachricht an PHIL"/>
+        <button id="btn-chat-send" class="btn btn--primary" aria-label="Senden">→</button>
+      </div>
+    </div>
+    <div id="chat-backdrop" class="backdrop backdrop--hidden" aria-hidden="true"></div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal modal--hidden" role="dialog"
+         aria-label="Einstellungen" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">Einstellungen</h2>
+          <button id="btn-close-settings" class="icon-btn" aria-label="Schließen">✕</button>
+        </div>
+        <div id="settings-info" class="settings-info"></div>
+        <div class="modal-actions">
+          <button class="btn btn--ghost btn--full" id="btn-reload-mails">
+            ↺ Mails neu laden
+          </button>
+          <button class="btn btn--danger btn--full" id="btn-logout">
+            Abmelden
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="modal-backdrop" class="backdrop backdrop--hidden" aria-hidden="true"></div>
+
+    <!-- Create Event Modal -->
+    <div id="event-modal" class="modal modal--hidden" role="dialog"
+         aria-label="Termin erstellen" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">Termin erstellen</h2>
+          <button id="btn-close-event" class="icon-btn" aria-label="Schließen">✕</button>
+        </div>
+        <form id="event-form" class="create-form" novalidate>
+          <input class="input" id="event-subject" placeholder="Titel" required/>
+          <input class="input" id="event-start" type="datetime-local" required/>
+          <input class="input" id="event-end" type="datetime-local" required/>
+          <input class="input" id="event-location" placeholder="Ort (optional)"/>
+          <textarea class="input textarea-sm" id="event-body" placeholder="Beschreibung (optional)" rows="2"></textarea>
+          <button type="submit" class="btn btn--primary btn--full" id="btn-save-event">Speichern</button>
         </form>
-
-        <div class="connected-state" id="connected-state" hidden>
-          <div class="connected-info" id="connected-info"></div>
-          <div class="live-controls">
-            <label class="field-label field-label--inline">
-              <input type="checkbox" id="unread-only" checked/>
-              Nur ungelesene E-Mails
-            </label>
-            <label class="field-label field-label--inline">
-              Max. Mails:
-              <input type="number" id="max-count" value="10" min="1" max="50"
-                     class="input input--narrow" aria-label="Maximale Anzahl E-Mails"/>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button class="btn btn--primary" id="btn-live-triage">
-              Live-Triage starten
-            </button>
-            <button class="btn btn--ghost" id="btn-disconnect">
-              Trennen
-            </button>
-          </div>
-        </div>
-
       </div>
+    </div>
 
-      <div class="results" id="results" aria-live="polite"></div>
+    <!-- Create Task Modal -->
+    <div id="task-modal" class="modal modal--hidden" role="dialog"
+         aria-label="Aufgabe erstellen" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">Aufgabe erstellen</h2>
+          <button id="btn-close-task" class="icon-btn" aria-label="Schließen">✕</button>
+        </div>
+        <form id="task-form" class="create-form" novalidate>
+          <input class="input" id="task-subject" placeholder="Bezeichnung" required/>
+          <input class="input" id="task-due" type="date"/>
+          <select class="select" id="task-priority">
+            <option value="Normal">Priorität: Normal</option>
+            <option value="High">Priorität: Hoch</option>
+            <option value="Low">Priorität: Niedrig</option>
+          </select>
+          <textarea class="input textarea-sm" id="task-body" placeholder="Beschreibung (optional)" rows="2"></textarea>
+          <button type="submit" class="btn btn--primary btn--full" id="btn-save-task">Speichern</button>
+        </form>
+      </div>
+    </div>
+    <div id="form-backdrop" class="backdrop backdrop--hidden" aria-hidden="true"></div>
 
-    </section>
-  </main>
+  </div><!-- /#app -->
 
   <audio id="audio-player" aria-hidden="true"></audio>
-
   <script type="module" src="app.js"></script>
 </body>
 </html>

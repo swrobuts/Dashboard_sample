@@ -1,16 +1,17 @@
 services:
-  triage:
+  kn-mail:
     build: .
+    image: kn-mail
     env_file: backend/.env
     ports:
       - "8000:8000"          # lokal testen; im Prod via Traefik
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.triage.rule=Host(`kn-triage.butscher.cloud`)"
-      - "traefik.http.routers.triage.entrypoints=websecure"
-      - "traefik.http.routers.triage.tls.certresolver=letsencrypt"
-      - "traefik.http.services.triage.loadbalancer.server.port=8000"
+      - "traefik.http.routers.kn-mail.rule=Host(`kn-mail.butscher.cloud`)"
+      - "traefik.http.routers.kn-mail.entrypoints=websecure"
+      - "traefik.http.routers.kn-mail.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kn-mail.loadbalancer.server.port=8000"
 
 networks:
   default:
