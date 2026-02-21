@@ -1,43 +1,43 @@
 :root {
-  /* Brand */
-  --amber: #F59E0B;
-  --amber-light: #FEF3C7;
-  --amber-dark: #D97706;
+  /* Primary accent — deep ink navy, refined and timeless */
+  --amber: #1B3A6B;
+  --amber-light: #EEF2FB;
+  --amber-dark: #122B52;
 
   /* Sidebar */
-  --sidebar-bg: #18181B;
-  --sidebar-text: #A1A1AA;
+  --sidebar-bg: #111111;
+  --sidebar-text: #8A8A8A;
   --sidebar-text-active: #FFFFFF;
-  --sidebar-hover: #27272A;
-  --sidebar-active: #3F3F46;
-  --sidebar-border: #27272A;
+  --sidebar-hover: #1E1E1E;
+  --sidebar-active: #2A2A2A;
+  --sidebar-border: #1E1E1E;
 
   /* Content */
-  --content-bg: #FAFAFA;
-  --content-border: #E4E4E7;
+  --content-bg: #F7F6F3;
+  --content-border: #E5E3DE;
 
   /* PHIL Panel */
   --phil-bg: #FFFFFF;
-  --phil-border: #E4E4E7;
+  --phil-border: #E8E7E4;
 
   /* Cards */
   --card-bg: #FFFFFF;
-  --card-border: #E4E4E7;
-  --card-shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --card-shadow-hover: 0 4px 12px rgba(0,0,0,.1);
+  --card-border: #ECEAE6;
+  --card-shadow: 0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.08);
 
-  /* Category colors */
-  --vip-bg: #FEF2F2;
-  --vip-text: #DC2626;
-  --vip-badge: #EF4444;
-  --aktion-bg: #FFFBEB;
-  --aktion-text: #D97706;
-  --aktion-badge: #F59E0B;
-  --info-bg: #EFF6FF;
-  --info-text: #2563EB;
-  --info-badge: #3B82F6;
+  /* Category colors — used only for small indicators (borders, badges, dots) */
+  --vip-bg: #FFF5F5;
+  --vip-text: #9B1C1C;
+  --vip-badge: #DC2626;
+  --aktion-bg: #FFFBF0;
+  --aktion-text: #92400E;
+  --aktion-badge: #D97706;
+  --info-bg: #F5F8FF;
+  --info-text: #1E3A8A;
+  --info-badge: #2563EB;
   --ignorieren-bg: #F9FAFB;
-  --ignorieren-text: #6B7280;
+  --ignorieren-text: #4B5563;
   --ignorieren-badge: #9CA3AF;
 
   /* Typography */

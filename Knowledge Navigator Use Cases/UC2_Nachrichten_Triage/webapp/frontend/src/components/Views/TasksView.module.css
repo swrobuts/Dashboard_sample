@@ -55,7 +55,7 @@
   box-shadow: var(--card-shadow);
 }
 .task:hover { box-shadow: var(--card-shadow-hover); }
-.task.selected { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(245,158,11,.2); }
+.task.selected { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(27,58,107,.12); }
 
 .checkbox {
   font-size: 1.25rem; color: #D1D5DB; flex-shrink: 0;

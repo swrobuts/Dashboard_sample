@@ -11,21 +11,28 @@ export function Login({ onLogin }: Props) {
   const [institution, setInstitution] = useState('THWS')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [exchangeEmail, setExchangeEmail] = useState('')
   const [error, setError] = useState('')
   const [lockoutSecs, setLockoutSecs] = useState(0)
   const [loading, setLoading] = useState(false)
+
+  const needsExchangeEmail = institution === 'THWS'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const data = await api.login(username, password, institution)
+      const data = await api.login(
+        username, password, institution,
+        needsExchangeEmail && exchangeEmail ? exchangeEmail : undefined
+      )
       onLogin({
         username: data.username,
         institution: data.institution,
         inbox_count: data.inbox_count,
         ews_connected: data.ews_connected,
+        ews_error: data.ews_error,
       })
     } catch (err: unknown) {
       const e = err as { status?: number; data?: { detail?: { retry_after?: number } } }
@@ -72,6 +79,16 @@ export function Login({ onLogin }: Props) {
             autoComplete="current-password"
             required
           />
+          {needsExchangeEmail && (
+            <input
+              className={styles.input}
+              type="email"
+              placeholder="Exchange-E-Mail (z.B. robert.butscher@fhws.de)"
+              value={exchangeEmail}
+              onChange={(e) => setExchangeEmail(e.target.value)}
+              autoComplete="email"
+            />
+          )}
           {error && <p className={styles.error}>{error}</p>}
           {lockoutSecs > 0 && (
             <p className={styles.lockout}>

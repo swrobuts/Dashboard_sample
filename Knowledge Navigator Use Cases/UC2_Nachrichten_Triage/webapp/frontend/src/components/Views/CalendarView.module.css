@@ -54,7 +54,7 @@
   transition: box-shadow var(--transition), border-color var(--transition);
 }
 .event:hover { box-shadow: var(--card-shadow-hover); }
-.event.selected { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(245,158,11,.2); }
+.event.selected { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(27,58,107,.12); }
 .timeBar { width: 4px; background: var(--amber); flex-shrink: 0; }
 .eventContent { padding: .75rem 1rem; }
 .eventTime { font-size: var(--text-xs); color: var(--amber); font-weight: 700; margin-bottom: .25rem; }

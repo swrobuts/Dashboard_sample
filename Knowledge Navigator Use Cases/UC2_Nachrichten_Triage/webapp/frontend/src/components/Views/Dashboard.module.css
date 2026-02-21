@@ -4,9 +4,7 @@
 .greeting {
   font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700;
   letter-spacing: -.03em; font-family: var(--font);
-  background: linear-gradient(135deg, #18181B 60%, var(--amber));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #111111;
 }
 .date { color: #9CA3AF; font-size: var(--text-sm); margin-top: .3rem; letter-spacing: .02em; }
 
@@ -44,10 +42,11 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 .tileLabel { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; opacity: .75; }
 
-.vip { background: var(--vip-bg); color: var(--vip-text); }
-.aktion { background: var(--aktion-bg); color: var(--aktion-text); }
-.info { background: var(--info-bg); color: var(--info-text); }
-.ignorieren { background: var(--ignorieren-bg); color: var(--ignorieren-text); }
+/* Tiles: uniform white card — category shown only via bottom bar and count color */
+.vip { background: var(--card-bg); color: var(--vip-text); }
+.aktion { background: var(--card-bg); color: var(--aktion-text); }
+.info { background: var(--card-bg); color: var(--info-text); }
+.ignorieren { background: var(--card-bg); color: var(--ignorieren-text); }
 
 .eventList { display: flex; flex-direction: column; gap: 8px; }
 .eventItem {
@@ -79,7 +78,9 @@
   padding: .625rem 1rem; border-radius: var(--radius);
   background: var(--aktion-bg); color: var(--aktion-text);
   font-size: var(--text-sm); border: 1px solid #FDE68A;
+  flex-wrap: wrap;
 }
+.ewsErrorDetail { font-size: var(--text-xs); opacity: .7; font-family: monospace; }
 .ewsRetry {
   margin-left: auto; padding: .25rem .75rem;
   background: var(--amber); color: white; border: none; border-radius: var(--radius-sm);

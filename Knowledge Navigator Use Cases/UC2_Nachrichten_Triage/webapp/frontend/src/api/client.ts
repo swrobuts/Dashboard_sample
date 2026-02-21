@@ -25,8 +25,8 @@ async function get<T>(path: string): Promise<T> {
 export const api = {
   // Auth
   me: () => get<User>('/api/auth/me'),
-  login: (username: string, password: string, institution: string) =>
-    post<User & { status: string }>('/api/auth/login', { username, password, institution }),
+  login: (username: string, password: string, institution: string, exchange_email?: string) =>
+    post<User & { status: string }>('/api/auth/login', { username, password, institution, exchange_email }),
   logout: () => post<{ status: string }>('/api/auth/logout', {}),
 
   // Mails

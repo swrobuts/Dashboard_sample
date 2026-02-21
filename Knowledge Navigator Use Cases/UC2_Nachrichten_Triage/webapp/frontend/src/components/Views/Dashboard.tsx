@@ -99,12 +99,15 @@ export function Dashboard() {
         {user?.ews_connected ? (
           <>
             <span className={styles.ewsDot} />
-            <span>Exchange verbunden — Kalender & Aufgaben aktiv</span>
+            <span>Exchange verbunden — Kalender &amp; Aufgaben aktiv</span>
           </>
         ) : (
           <>
             <span>⚠</span>
-            <span>Kalender &amp; Aufgaben: Exchange nicht verbunden.</span>
+            <span>
+              Kalender &amp; Aufgaben: Exchange nicht verbunden.
+              {user?.ews_error && <span className={styles.ewsErrorDetail}> ({user.ews_error})</span>}
+            </span>
             <button className={styles.ewsRetry} onClick={() => { loadCalendar(); loadTasks() }}>
               Neu verbinden
             </button>

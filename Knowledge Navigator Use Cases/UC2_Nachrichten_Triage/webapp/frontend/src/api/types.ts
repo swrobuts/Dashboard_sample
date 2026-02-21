@@ -3,6 +3,7 @@ export interface User {
   institution: string
   inbox_count: number
   ews_connected: boolean
+  ews_error?: string | null
 }
 
 export type Category = 'VIP' | 'Aktion nötig' | 'Nur Info' | 'Ignorieren'

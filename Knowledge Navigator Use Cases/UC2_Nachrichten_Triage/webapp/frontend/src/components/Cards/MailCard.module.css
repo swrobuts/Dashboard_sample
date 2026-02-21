@@ -10,7 +10,7 @@
   box-shadow: var(--card-shadow);
 }
 .card:hover { box-shadow: var(--card-shadow-hover); transform: translateY(-1px); }
-.card.selected { border-left-color: var(--amber); box-shadow: 0 0 0 2px rgba(245,158,11,.15); }
+.card.selected { border-left-color: var(--amber); box-shadow: 0 0 0 2px rgba(27,58,107,.12); }
 .card.vipBorder { border-left-color: var(--vip-badge); }
 .card.aktionBorder { border-left-color: var(--aktion-badge); }
 .card.infoBorder { border-left-color: var(--info-badge); }

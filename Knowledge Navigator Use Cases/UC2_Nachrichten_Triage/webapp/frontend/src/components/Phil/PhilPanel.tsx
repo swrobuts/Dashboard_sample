@@ -41,12 +41,15 @@ export function PhilPanel({ open, onClose }: Props) {
     setStreaming(true)
 
     // Build context from loaded store data (reliable — no extra IMAP fetch)
-    const doneMails = mails.filter((m) => m.triageStatus === 'done').slice(0, 8)
-    const mailSummary = doneMails.length > 0
-      ? `[Postfach — ${doneMails.length} triagierte Mails]\n` +
-        doneMails.map((m) =>
-          `• ${m.kategorie}: "${m.subject}" | Von: ${m.sender}${m.zusammenfassung ? ' | ' + m.zusammenfassung : ''}`
-        ).join('\n')
+    // Include all mails, not just triaged ones, so Phil has context immediately
+    const contextMails = mails.slice(0, 10)
+    const mailSummary = contextMails.length > 0
+      ? `[Postfach — ${contextMails.length} E-Mails]\n` +
+        contextMails.map((m) => {
+          const cat = m.triageStatus === 'done' ? ` [${m.kategorie}]` : ''
+          const summary = m.zusammenfassung ? ` — ${m.zusammenfassung}` : ''
+          return `• "${m.subject}" | Von: ${m.sender}${cat}${summary}`
+        }).join('\n')
       : ''
 
     let contextMsg = text

@@ -15,9 +15,12 @@ Sicherheitsprinzip:
 
 import email
 import imaplib
+import logging
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
+
+_logger = logging.getLogger(__name__)
 
 from exchangelib import (
     DELEGATE,
@@ -195,10 +198,16 @@ def fetch_emails_imap(
 
 # ── EWS Connect ───────────────────────────────────────────────────────────────
 
-def connect_to_exchange_thws(username: str, password: str) -> Account:
+def connect_to_exchange_thws(
+    username: str, password: str, exchange_email: str | None = None
+) -> Account:
     """
     Baut EWS-Verbindung zu THWS auf (webmail.thws.de/EWS/Exchange.asmx).
     Autodiscover ist deaktiviert — direkter Endpoint.
+
+    exchange_email: Falls angegeben, wird diese Adresse als primary_smtp_address
+                    verwendet (z.B. "robert.butscher@fhws.de"). Sonst automatische
+                    Ableitung aus dem Benutzernamen.
 
     Probiert 5 Username-Formate automatisch durch:
         1. THWS\\{base}
@@ -220,10 +229,13 @@ def connect_to_exchange_thws(username: str, password: str) -> Account:
     else:
         base = username
 
-    # primary_smtp für EWS — wir nehmen @fhws.de als primäre Adresse
-    primary_smtp = f"{base}@fhws.de"
+    # primary_smtp: nutze angegebene E-Mail oder leite aus Username ab
+    if exchange_email and "@" in exchange_email:
+        primary_smtp_candidates = [exchange_email.strip()]
+    else:
+        primary_smtp_candidates = [f"{base}@fhws.de", f"{base}@thws.de"]
 
-    candidates = [
+    auth_candidates = [
         f"THWS\\{base}",
         f"thws\\{base}",
         base,
@@ -232,25 +244,31 @@ def connect_to_exchange_thws(username: str, password: str) -> Account:
     ]
 
     last_error: Exception = Exception("EWS-Verbindung fehlgeschlagen")
-    for uname in candidates:
-        try:
-            credentials = Credentials(username=uname, password=password)
-            config = Configuration(
-                service_endpoint=ews_url,
-                credentials=credentials,
-                auth_type=NTLM,
-            )
-            account = Account(
-                primary_smtp_address=primary_smtp,
-                config=config,
-                autodiscover=False,
-                access_type=DELEGATE,
-            )
-            # Erster echter Netzwerk-Call — testet die Credentials
-            _ = account.inbox.total_count
-            return account
-        except Exception as e:
-            last_error = e
+    for primary_smtp in primary_smtp_candidates:
+        for uname in auth_candidates:
+            try:
+                credentials = Credentials(username=uname, password=password)
+                config = Configuration(
+                    service_endpoint=ews_url,
+                    credentials=credentials,
+                    auth_type=NTLM,
+                )
+                account = Account(
+                    primary_smtp_address=primary_smtp,
+                    config=config,
+                    autodiscover=False,
+                    access_type=DELEGATE,
+                )
+                # Erster echter Netzwerk-Call — testet die Credentials
+                _ = account.inbox.total_count
+                _logger.info(f"[EWS] Verbunden als {uname} / {primary_smtp}")
+                return account
+            except Exception as e:
+                _logger.warning(
+                    f"[EWS] {uname} / {primary_smtp} fehlgeschlagen: "
+                    f"{type(e).__name__}: {str(e)[:200]}"
+                )
+                last_error = e
 
     raise last_error
 

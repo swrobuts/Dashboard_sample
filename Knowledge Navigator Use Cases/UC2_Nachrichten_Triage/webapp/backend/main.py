@@ -208,6 +208,7 @@ class ConnectRequest(BaseModel):
     username: str
     password: str
     institution: str
+    exchange_email: str | None = None  # optionale E-Mail für EWS primary_smtp
 
 
 # ── Auth Endpoints ─────────────────────────────────────────────────────────
@@ -233,12 +234,17 @@ def auth_login(req: ConnectRequest, request: Request):
                 "institution": req.institution,
                 "account": None,  # wird unten befüllt wenn EWS klappt
             }
-            # EWS-Verbindung für Kalender/Aufgaben — optional, Fehler werden ignoriert
+            # EWS-Verbindung für Kalender/Aufgaben — optional, Fehler werden geloggt
             try:
-                ews_account = connect_to_exchange_thws(req.username, req.password)
+                ews_account = connect_to_exchange_thws(
+                    req.username, req.password, exchange_email=req.exchange_email
+                )
                 session_data["account"] = ews_account
-            except Exception:
-                pass  # Kalender/Aufgaben nicht verfügbar, aber Login trotzdem ok
+                session_data["ews_error"] = None
+            except Exception as ews_exc:
+                import logging
+                logging.warning(f"[EWS] THWS Verbindung fehlgeschlagen: {type(ews_exc).__name__}: {ews_exc}")
+                session_data["ews_error"] = f"{type(ews_exc).__name__}: {str(ews_exc)[:300]}"
         elif protocol == "imap":
             result = connect_to_imap(
                 req.username, req.password,
@@ -275,6 +281,7 @@ def auth_login(req: ConnectRequest, request: Request):
         "institution": session_data["institution"],
         "inbox_count": inbox_count,
         "ews_connected": session_data.get("account") is not None,
+        "ews_error": session_data.get("ews_error"),
     })
     resp.set_cookie(
         key="session_id",
@@ -305,6 +312,7 @@ def auth_me(session_id: str | None = Cookie(default=None)):
         "username": s["username"],
         "institution": s["institution"],
         "ews_connected": s.get("account") is not None,
+        "ews_error": s.get("ews_error"),
         "inbox_count": imap_cfg.get("inbox_count", 0),
     }
 
