@@ -96,42 +96,59 @@ html {
 }
 
 /* Phil Avatar */
-.phil-avatar { width: 120px; height: 140px; flex-shrink: 0; }
-.phil-avatar svg { width: 100%; height: 100%; overflow: visible; }
-
-/* Blink */
-@keyframes blink {
-  0%, 88%, 100% { transform: scaleY(1); }
-  92%            { transform: scaleY(0.06); }
-}
-.iris {
-  transform-origin: center;
-  animation: blink 4.5s ease-in-out infinite;
-}
-.iris--right { animation-delay: 0.08s; }
-
-/* Speaking mouth */
-@keyframes speak {
-  from { height: 6px; transform: translateY(0); }
-  to   { height: 13px; transform: translateY(-3px); }
-}
-[data-state="speaking"] .mouth {
-  animation: speak 0.13s ease-in-out infinite alternate;
+.phil-avatar { width: 140px; height: 140px; flex-shrink: 0; }
+.phil-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  box-shadow: var(--shadow-md);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Thinking eyes */
-[data-state="thinking"] .iris--left,
-[data-state="thinking"] .iris--right {
-  transform: translate(-2px, -2px);
+/* idle — sanftes Floating */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+[data-state="idle"] .phil-img {
+  animation: float 4s ease-in-out infinite;
 }
 
-/* Done nod */
+/* thinking — leichtes Kippen */
+@keyframes think {
+  0%, 100% { transform: rotate(0deg); }
+  30%       { transform: rotate(-4deg); }
+  70%       { transform: rotate(3deg); }
+}
+[data-state="thinking"] .phil-img {
+  animation: think 1.5s ease-in-out infinite;
+  border-color: var(--aktion);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--aktion) 20%, transparent), var(--shadow-md);
+}
+
+/* speaking — Pulse */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0px color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow-md); }
+  50%       { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent), var(--shadow-md); }
+}
+[data-state="speaking"] .phil-img {
+  animation: pulse 0.8s ease-out infinite;
+  border-color: var(--accent);
+}
+
+/* done — kurzes Nicken */
 @keyframes nod {
-  0%  { transform: translateY(0); }
-  40% { transform: translateY(4px); }
-  100%{ transform: translateY(0); }
+  0%   { transform: translateY(0) rotate(0deg); }
+  25%  { transform: translateY(4px) rotate(2deg); }
+  60%  { transform: translateY(-2px) rotate(-1deg); }
+  100% { transform: translateY(0) rotate(0deg); }
 }
-[data-state="done"] svg { animation: nod 0.35s ease-in-out; }
+[data-state="done"] .phil-img {
+  animation: nod 0.5s ease-in-out;
+  border-color: var(--info);
+}
 
 /* Speech bubble */
 .speech-bubble {
@@ -481,7 +498,7 @@ html {
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
-  .phil-avatar { width: 80px; height: 93px; }
+  .phil-avatar { width: 80px; height: 80px; }
   .speech-bubble { flex: 1; min-width: 180px; }
   .content-column { padding: var(--space-4) var(--space-3); }
 }
