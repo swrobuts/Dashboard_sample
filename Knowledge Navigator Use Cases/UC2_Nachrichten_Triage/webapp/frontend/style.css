@@ -265,7 +265,7 @@ html {
 .email-textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(232,93,4,0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .email-textarea::placeholder { color: var(--text-muted); }
 .input {
@@ -282,7 +282,7 @@ html {
 .input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(232,93,4,0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .input--narrow { width: 80px; }
 .select {
@@ -322,7 +322,7 @@ html {
   color: white;
   border-color: var(--text-primary);
 }
-.btn--primary:hover { background: #2d2d30; }
+.btn--primary:hover { background: color-mix(in srgb, var(--text-primary) 85%, white); }
 .btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--ghost {
   background: transparent;
@@ -345,6 +345,15 @@ html {
   border-radius: var(--radius-sm);
 }
 .live-controls { display: flex; flex-direction: column; gap: var(--space-1); }
+.field-label--inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.9375rem;
+  font-weight: 400;
+}
 
 /* ── Result Cards ────────────────────────────────────────────────────────── */
 .results { display: flex; flex-direction: column; gap: var(--space-2); }

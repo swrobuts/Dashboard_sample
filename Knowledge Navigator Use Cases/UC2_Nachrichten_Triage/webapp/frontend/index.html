@@ -110,14 +110,14 @@
         <div class="connected-state" id="connected-state" hidden>
           <div class="connected-info" id="connected-info"></div>
           <div class="live-controls">
-            <label class="field-label" style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:.9375rem;font-weight:400;">
+            <label class="field-label field-label--inline">
               <input type="checkbox" id="unread-only" checked/>
               Nur ungelesene E-Mails
             </label>
-            <label class="field-label" style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:.9375rem;font-weight:400;">
+            <label class="field-label field-label--inline">
               Max. Mails:
               <input type="number" id="max-count" value="10" min="1" max="50"
-                     class="input input--narrow"/>
+                     class="input input--narrow" aria-label="Maximale Anzahl E-Mails"/>
             </label>
           </div>
           <div class="form-actions">
