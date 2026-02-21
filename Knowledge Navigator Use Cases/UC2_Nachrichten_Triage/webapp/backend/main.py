@@ -1,10 +1,12 @@
 # webapp/backend/main.py
+import io
 import json
 import os
 import re
 from pathlib import Path
 
 import anthropic
+import openai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -88,6 +90,34 @@ def analyze(req: AnalyzeRequest):
         return json.loads(raw)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=502, detail=f"Claude-Antwort kein gültiges JSON: {e}")
+
+
+openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("text darf nicht leer sein")
+        return v
+
+
+@app.post("/api/tts")
+def tts(req: TTSRequest):
+    audio = openai_client.audio.speech.create(
+        model="tts-1",
+        voice="onyx",
+        input=req.text,
+        response_format="mp3",
+    )
+    return StreamingResponse(
+        io.BytesIO(audio.content),
+        media_type="audio/mpeg",
+    )
 
 
 # Frontend statisch servieren

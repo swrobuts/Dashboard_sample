@@ -62,3 +62,24 @@ def test_analyze_valid_kategorie(mocker):
     client = get_client()
     response = client.post("/api/analyze", json={"email_text": "Test"})
     assert response.json()["kategorie"] in VALID
+
+
+def test_tts_returns_audio(mocker):
+    """POST /api/tts gibt audio/mpeg zurück."""
+    mock_audio = mocker.MagicMock()
+    mock_audio.content = b"FAKE_MP3_BYTES"
+    mocker.patch("backend.main.openai_client.audio.speech.create",
+                 return_value=mock_audio)
+
+    client = get_client()
+    response = client.post("/api/tts", json={"text": "Hallo Phil."})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mpeg")
+    assert len(response.content) > 0
+
+
+def test_tts_rejects_empty_text(mocker):
+    """Leerer text → 422."""
+    client = get_client()
+    response = client.post("/api/tts", json={"text": ""})
+    assert response.status_code == 422
