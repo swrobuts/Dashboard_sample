@@ -82,6 +82,47 @@ pytest tests/test_analyze_email.py -v
 # Erwartet: 4 passed — kein API-Key nötig (Mock-Client)
 ```
 
+## Stufe 2: Live Exchange-Anbindung
+
+### Voraussetzungen
+
+```bash
+pip install "exchangelib>=5.1.0"
+```
+
+### Nutzung
+
+1. Notebook öffnen und alle Zellen bis einschließlich **Stufe 1** ausführen (Setup, Funktionen)
+2. Stufe-2-Zellen ausführen (Import → Credential-Dialog → Live-Triage)
+3. **Credential-Dialog:** Institution wählen, Benutzername und Passwort eingeben
+4. **Verbinden** klicken — bei Erfolg: Postfach-Info erscheint, Passwort wird automatisch gelöscht
+5. **Live-Triage starten** klicken
+
+### Benutzername-Format
+
+| Institution | Format | Beispiel |
+|-------------|--------|---------|
+| THWS | `vorname.nachname` | `robert.butscher` |
+| DHBW | Vollständige E-Mail | `name@dhbw-mannheim.de` |
+
+> **Hinweis DHBW:** Da DHBW-Campusse eigene Domains nutzen (dhbw-stuttgart.de, dhbw-mannheim.de usw.),
+> bitte immer die vollständige E-Mail-Adresse eingeben.
+
+### Sicherheitshinweise
+
+- Credentials werden **niemals** in Dateien, Datenbanken oder Git gespeichert
+- Passwort nur im RAM der laufenden Jupyter-Session
+- Passwort wird nach erfolgreichem Login automatisch aus dem Widget gelöscht
+- Kernel-Neustart → alle Credentials automatisch gelöscht
+
+### Tests ausführen
+
+```bash
+cd UC2_Nachrichten_Triage
+pytest tests/ -v
+# Erwartet: 4 Tests (analyze_email) + 16 Tests (exchange_helpers) = 20 grün
+```
+
 ## Nächste Schritte (Stufe 2)
 
 - **exchangelib-Anbindung**: Live-Mails aus THWS/DHBW-Exchange-Postfach abrufen
