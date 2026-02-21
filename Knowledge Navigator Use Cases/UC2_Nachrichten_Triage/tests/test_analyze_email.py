@@ -7,10 +7,63 @@ Das zeigt, wie man LLM-Funktionen sauber testbar macht.
 import json
 import pytest
 
+# ── CO-STAR Prompt Template ──────────────────────────────────────────────────
+# C=Context, O=Objective, S=Style, T=Tone, A=Audience, R=Response
+COSTAR_PROMPT = """\
+C (Context): Du bist ein intelligenter E-Mail-Assistent für einen Hochschuldozenten.
+Du hilfst dabei, eingehende E-Mails schnell zu priorisieren.
+
+O (Objective): Analysiere die folgende E-Mail. Bestimme Kategorie, Priorität,
+erstelle eine Kurzzusammenfassung und empfehle eine konkrete Aktion.
+
+S (Style): Strukturiert, präzise, ohne Füllwörter.
+
+T (Tone): Professionell und sachlich.
+
+A (Audience): Der Dozent möchte in 5 Sekunden entscheiden,
+welche Mails sofortige Aufmerksamkeit brauchen.
+
+R (Response): Antworte AUSSCHLIESSLICH mit validem JSON — kein Text davor oder danach:
+{{
+    "kategorie": "VIP" | "Aktion nötig" | "Nur Info" | "Ignorieren",
+    "priorität": 1 | 2 | 3 | 4,
+    "zusammenfassung": "Max. 2 prägnante Sätze.",
+    "empfohlene_aktion": "Konkrete, sofort umsetzbare Empfehlung."
+}}
+
+Kategorien:
+- VIP: Vorgesetzte, Dekanat, wichtige Partner → sofortige Reaktion
+- Aktion nötig: Studierende, Kollegen mit Anfragen → Antwort diese Woche
+- Nur Info: Newsletter, FYI-Mails → lesen wenn Zeit da
+- Ignorieren: Spam, Werbung, irrelevant → löschen
+
+E-Mail:
+{email_text}
+"""
+# ── Ende CO-STAR Template ────────────────────────────────────────────────────
+
 
 def analyze_email(email_text: str, client) -> dict:
-    """Zu implementierende Funktion — wird in Task 4 gebaut."""
-    pass  # noch nicht implementiert
+    """
+    Analysiert eine E-Mail und gibt eine strukturierte Triage zurück.
+
+    Args:
+        email_text: Der vollständige E-Mail-Text (Betreff + Body)
+        client: Anthropic-Client (echter Client oder Mock für Tests)
+
+    Returns:
+        dict mit: kategorie, priorität, zusammenfassung, empfohlene_aktion
+    """
+    prompt = COSTAR_PROMPT.format(email_text=email_text)
+
+    response = client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    raw = response.content[0].text.strip()
+    return json.loads(raw)
 
 
 def test_analyze_email_returns_dict(mocker):
