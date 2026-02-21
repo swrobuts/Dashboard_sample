@@ -3,17 +3,11 @@
 Tests für exchange_helpers.py — Exchange-Aufrufe werden komplett gemockt.
 Kein echter Exchange-Server nötig!
 """
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import schlägt noch fehl — Modul existiert noch nicht
 from exchange_helpers import (
     INSTITUTIONS,
     build_email_text,

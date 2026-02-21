@@ -99,20 +99,24 @@ def fetch_emails(
 
     emails = []
     for item in items:
-        sender_str = str(item.sender) if item.sender else "Unbekannt"
-        body = item.text_body or item.body or ""
+        try:
+            sender_str = str(item.sender) if item.sender else "Unbekannt"
+            body = item.text_body or item.body or ""
 
-        # Sehr lange E-Mails kürzen — Claude hat ein Token-Limit
-        if len(body) > 3_000:
-            body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
+            # Sehr lange E-Mails kürzen — Claude hat ein Token-Limit
+            if len(body) > 3_000:
+                body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
 
-        emails.append({
-            "subject": item.subject or "(kein Betreff)",
-            "sender": sender_str,
-            "body": body,
-            "datetime_received": item.datetime_received,
-            "is_read": item.is_read,
-        })
+            emails.append({
+                "subject": item.subject or "(kein Betreff)",
+                "sender": sender_str,
+                "body": body,
+                "datetime_received": item.datetime_received,
+                "is_read": item.is_read,
+            })
+        except Exception:
+            # Einzelne fehlerhafte Items (z.B. Kalendereinladungen) überspringen
+            continue
 
     return emails
 
@@ -131,8 +135,8 @@ def build_email_text(email_dict: dict) -> str:
     dt_str = dt.strftime("%d.%m.%Y %H:%M") if dt else "unbekannt"
 
     return (
-        f"Von: {email_dict['sender']}\n"
-        f"Betreff: {email_dict['subject']}\n"
+        f"Von: {email_dict.get('sender', 'Unbekannt')}\n"
+        f"Betreff: {email_dict.get('subject', '(kein Betreff)')}\n"
         f"Datum: {dt_str}\n\n"
-        f"{email_dict['body']}"
+        f"{email_dict.get('body', '')}"
     )
