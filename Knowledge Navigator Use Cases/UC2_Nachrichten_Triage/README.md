@@ -128,3 +128,45 @@ pytest tests/ -v
 - **exchangelib-Anbindung**: Live-Mails aus THWS/DHBW-Exchange-Postfach abrufen
 - **Batch-Export**: Ergebnisse als CSV oder HTML-Report speichern
 - **Feedback-Loop**: Korrekturen für Few-Shot-Prompts nutzen
+
+## Stufe 3: Web-App (kn-triage.butscher.cloud)
+
+### Lokaler Start
+
+```bash
+cd webapp
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env   # Keys eintragen
+uvicorn backend.main:app --reload --port 8001
+# Browser: http://localhost:8001
+```
+
+### Docker
+
+```bash
+cd webapp
+cp backend/.env.example backend/.env   # Keys eintragen
+docker compose up --build
+# Browser: http://localhost:8000
+```
+
+### Deployment (butscher.cloud VPS)
+
+```bash
+# Auf dem Server:
+git pull
+cd UC2_Nachrichten_Triage/webapp
+docker compose up -d --build
+```
+
+Traefik routet automatisch `kn-triage.butscher.cloud` → Container Port 8000.
+
+### Features
+
+| Feature | Beschreibung |
+|---------|-------------|
+| Phil-Avatar | Animierter CSS/SVG Assistent |
+| TTS | OpenAI `tts-1`, Stimme `onyx` (Deutsch) |
+| Paste-Modus | E-Mail einfügen → sofortige Analyse |
+| Live Exchange | THWS/DHBW Exchange-Anbindung via EWS |
+| Bauhaus-Design | DM Sans, Warmweiß, viel Weißraum |
