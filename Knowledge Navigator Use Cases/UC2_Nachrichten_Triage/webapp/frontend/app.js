@@ -260,3 +260,160 @@ btnAnalyze.addEventListener('click', async () => {
     btnAnalyze.innerHTML = 'Analysieren';
   }
 });
+
+// ── Exchange API ──────────────────────────────────────────────────────────
+async function apiConnect(username, password, institution) {
+  const res = await fetch('/api/exchange/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, institution }),
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Verbindung fehlgeschlagen' }));
+    throw new Error(err.detail ?? 'Verbindung fehlgeschlagen');
+  }
+  return res.json();
+}
+
+async function apiDisconnect() {
+  await fetch('/api/exchange/disconnect', {
+    method: 'POST',
+    credentials: 'same-origin',
+  });
+}
+
+async function apiFetch(maxCount, unreadOnly) {
+  const res = await fetch('/api/exchange/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_count: maxCount, unread_only: unreadOnly }),
+    credentials: 'same-origin',
+  });
+  if (!res.ok) throw new Error('Fetch fehlgeschlagen — bitte erneut verbinden.');
+  return res.json();
+}
+
+// ── Institution Placeholder ───────────────────────────────────────────────
+const usernameInput   = document.getElementById('username');
+const institutionSel  = document.getElementById('institution');
+const INSTITUTION_HINTS = {
+  THWS: 'vorname.nachname',
+  DHBW: 'vollstaendige@email.de',
+};
+institutionSel.addEventListener('change', () => {
+  usernameInput.placeholder = INSTITUTION_HINTS[institutionSel.value] ?? '';
+  usernameInput.value = '';
+});
+
+// ── Connect ───────────────────────────────────────────────────────────────
+credentialForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username    = usernameInput.value.trim();
+  const password    = document.getElementById('password').value;
+  const institution = institutionSel.value;
+
+  if (!username || !password) {
+    philSay('Bitte Benutzername und Passwort eingeben.');
+    return;
+  }
+
+  btnConnect.disabled = true;
+  btnConnect.innerHTML = '<span class="spinner"></span> Verbinde…';
+  setPhilState('thinking');
+  philSay('Verbinde mit Exchange…');
+
+  try {
+    const data = await apiConnect(username, password, institution);
+    state.exchangeConnected = true;
+
+    // Passwort sofort löschen
+    document.getElementById('password').value = '';
+
+    credentialForm.hidden  = true;
+    connectedState.hidden  = false;
+    connectedInfo.textContent =
+      `✓ Verbunden mit ${institution} · ${data.inbox_count} Mails im Posteingang`;
+
+    const msg = `Verbindung hergestellt. Sie haben ${data.inbox_count} Mails.`;
+    philSay(msg);
+    await playTTS(msg);
+  } catch (err) {
+    philSay(`Verbindung fehlgeschlagen: ${err.message}`);
+    setPhilState('idle');
+  } finally {
+    btnConnect.disabled = false;
+    btnConnect.innerHTML = 'Verbinden';
+  }
+});
+
+// ── Disconnect ────────────────────────────────────────────────────────────
+btnDisconnect.addEventListener('click', async () => {
+  await apiDisconnect();
+  state.exchangeConnected = false;
+  credentialForm.hidden = false;
+  connectedState.hidden = true;
+  resultsEl.innerHTML   = '';
+  philSay('Verbindung getrennt.');
+});
+
+// ── Live-Triage ───────────────────────────────────────────────────────────
+btnLiveTriage.addEventListener('click', async () => {
+  const maxCount  = parseInt(document.getElementById('max-count').value, 10) || 10;
+  const unreadOnly = document.getElementById('unread-only').checked;
+
+  btnLiveTriage.disabled = true;
+  btnLiveTriage.innerHTML = '<span class="spinner"></span> Lade Mails…';
+  setPhilState('thinking');
+  philSay('Lade E-Mails aus dem Postfach…');
+  resultsEl.innerHTML = '';
+
+  try {
+    const { emails, skipped } = await apiFetch(maxCount, unreadOnly);
+
+    if (emails.length === 0) {
+      philSay('Keine E-Mails gefunden.');
+      setPhilState('idle');
+      return;
+    }
+
+    philSay(`Analysiere ${emails.length} E-Mail${emails.length !== 1 ? 's' : ''}…`);
+
+    const results = [];
+    for (const email of emails) {
+      const emailText =
+        `Von: ${email.sender}\nBetreff: ${email.subject}\n\n${email.body ?? ''}`;
+      const result = await apiAnalyze(emailText);
+      results.push({ result, email });
+    }
+
+    results.forEach(({ result, email }, i) => {
+      resultsEl.appendChild(renderCard(result, i, email.subject));
+    });
+
+    const vipCount    = results.filter(r => r.result.kategorie === 'VIP').length;
+    const aktionCount = results.filter(r => r.result.kategorie === 'Aktion nötig').length;
+    const parts = [];
+    if (vipCount)    parts.push(`${vipCount} VIP-Mail${vipCount !== 1 ? 's' : ''}`);
+    if (aktionCount) parts.push(`${aktionCount} Aktion nötig`);
+    const summary = parts.length
+      ? `Analyse abgeschlossen. ${parts.join(', ')} — sofortige Aufmerksamkeit erforderlich.`
+      : `Analyse abgeschlossen. Keine dringenden Mails.`;
+
+    if (skipped > 0) {
+      const notice = document.createElement('p');
+      notice.style.cssText = 'font-size:.8125rem;color:var(--text-muted);margin-top:8px';
+      notice.textContent = `⚠ ${skipped} Mail${skipped !== 1 ? 's' : ''} konnten nicht geladen werden.`;
+      resultsEl.appendChild(notice);
+    }
+
+    philSay(summary);
+    await playTTS(summary);
+  } catch (err) {
+    philSay(`Fehler: ${err.message}`);
+    setPhilState('idle');
+  } finally {
+    btnLiveTriage.disabled = false;
+    btnLiveTriage.innerHTML = 'Live-Triage starten';
+  }
+});
