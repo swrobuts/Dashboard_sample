@@ -83,3 +83,62 @@ def test_tts_rejects_empty_text(mocker):
     client = get_client()
     response = client.post("/api/tts", json={"text": ""})
     assert response.status_code == 422
+
+
+def test_exchange_connect_success(mocker):
+    """POST /api/exchange/connect gibt inbox_count zurück und setzt Cookie."""
+    mock_account = mocker.MagicMock()
+    mock_account.inbox.total_count = 42
+    mocker.patch("backend.main.connect_to_exchange", return_value=mock_account)
+
+    client = get_client()
+    response = client.post("/api/exchange/connect", json={
+        "username": "robert.butscher",
+        "password": "geheim",
+        "institution": "THWS",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "connected"
+    assert data["inbox_count"] == 42
+    assert "session_id" in response.cookies
+
+
+def test_exchange_connect_unknown_institution(mocker):
+    """Unbekannte Institution → 400."""
+    mocker.patch("backend.main.connect_to_exchange",
+                 side_effect=ValueError("Unbekannte Institution"))
+    client = get_client()
+    response = client.post("/api/exchange/connect", json={
+        "username": "x", "password": "y", "institution": "INVALID",
+    })
+    assert response.status_code == 400
+
+
+def test_exchange_disconnect(mocker):
+    """POST /api/exchange/disconnect löscht Session."""
+    mock_account = mocker.MagicMock()
+    mock_account.inbox.total_count = 1
+    mocker.patch("backend.main.connect_to_exchange", return_value=mock_account)
+
+    client = get_client()
+    # Zuerst verbinden
+    r = client.post("/api/exchange/connect", json={
+        "username": "u", "password": "p", "institution": "THWS",
+    })
+    session_id = r.cookies["session_id"]
+
+    # Trennen
+    r2 = client.post("/api/exchange/disconnect",
+                     cookies={"session_id": session_id})
+    assert r2.status_code == 200
+    assert r2.json()["status"] == "disconnected"
+
+
+def test_exchange_fetch_requires_session(mocker):
+    """POST /api/exchange/fetch ohne gültige Session → 401."""
+    client = get_client()
+    response = client.post("/api/exchange/fetch",
+                           json={"max_count": 10, "unread_only": True},
+                           cookies={"session_id": "ungueltig"})
+    assert response.status_code == 401

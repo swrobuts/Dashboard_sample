@@ -3,12 +3,13 @@ import io
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 
 import anthropic
 import openai
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Cookie, FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
@@ -118,6 +119,75 @@ def tts(req: TTSRequest):
         io.BytesIO(audio.content),
         media_type="audio/mpeg",
     )
+
+
+from backend.exchange_helpers import connect_to_exchange, fetch_emails
+
+# ── Session-Management (In-Memory) ────────────────────────────────────────
+_sessions: dict[str, object] = {}  # session_id → exchangelib Account
+
+
+class ConnectRequest(BaseModel):
+    username: str
+    password: str
+    institution: str
+
+
+class FetchRequest(BaseModel):
+    max_count: int = 10
+    unread_only: bool = True
+
+
+@app.post("/api/exchange/connect")
+def exchange_connect(req: ConnectRequest):
+    try:
+        account = connect_to_exchange(req.username, req.password, req.institution)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Exchange-Verbindung fehlgeschlagen: {e}")
+
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = account
+
+    resp = JSONResponse(content={
+        "status": "connected",
+        "inbox_count": account.inbox.total_count,
+    })
+    resp.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        samesite="strict",
+        secure=False,  # True im Produktion via Traefik HTTPS
+    )
+    return resp
+
+
+@app.post("/api/exchange/fetch")
+def exchange_fetch(
+    req: FetchRequest,
+    session_id: str | None = Cookie(default=None),
+):
+    if not session_id or session_id not in _sessions:
+        raise HTTPException(status_code=401, detail="Keine gültige Session. Bitte zuerst verbinden.")
+    account = _sessions[session_id]
+    emails = fetch_emails(account, max_count=req.max_count, unread_only=req.unread_only)
+    # _skipped-Sentinel entfernen
+    skipped = 0
+    if emails and "_skipped" in emails[-1]:
+        skipped = emails[-1]["_skipped"]
+        emails = emails[:-1]
+    return {"emails": emails, "skipped": skipped}
+
+
+@app.post("/api/exchange/disconnect")
+def exchange_disconnect(session_id: str | None = Cookie(default=None)):
+    if session_id and session_id in _sessions:
+        del _sessions[session_id]
+    resp = JSONResponse(content={"status": "disconnected"})
+    resp.delete_cookie("session_id")
+    return resp
 
 
 # Frontend statisch servieren
