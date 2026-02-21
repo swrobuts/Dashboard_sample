@@ -531,6 +531,11 @@ if _static.exists():
     @app.get("/", include_in_schema=False)
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_spa(full_path: str = ""):
+        # Serve real static files (png, svg, ico, txt, …) directly
+        if full_path:
+            candidate = _static / full_path
+            if candidate.is_file():
+                return FileResponse(str(candidate))
         index = _static / "index.html"
         if index.is_file():
             return FileResponse(str(index))

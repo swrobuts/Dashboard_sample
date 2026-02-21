@@ -8,6 +8,12 @@ const CAT_COLORS: Record<string, string> = {
   'Nur Info': 'info',
   'Ignorieren': 'ignorieren',
 }
+const CAT_BORDER: Record<string, string> = {
+  'VIP': 'vipBorder',
+  'Aktion nötig': 'aktionBorder',
+  'Nur Info': 'infoBorder',
+  'Ignorieren': 'ignorierenBorder',
+}
 
 interface Props { mail: TriagedMail }
 
@@ -15,10 +21,11 @@ export function MailCard({ mail }: Props) {
   const { selection, setSelection } = useStore()
   const isSelected = selection?.type === 'mail' && selection.item.id === mail.id
   const colorClass = CAT_COLORS[mail.kategorie] ?? 'info'
+  const borderClass = mail.triageStatus === 'done' ? (styles[CAT_BORDER[mail.kategorie] ?? ''] ?? '') : ''
 
   return (
     <div
-      className={`${styles.card} ${isSelected ? styles.selected : ''}`}
+      className={`${styles.card} ${borderClass} ${isSelected ? styles.selected : ''}`}
       onClick={() => setSelection({ type: 'mail', item: mail })}
     >
       <div className={styles.header}>

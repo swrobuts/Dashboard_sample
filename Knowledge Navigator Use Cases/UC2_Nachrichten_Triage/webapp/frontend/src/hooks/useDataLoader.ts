@@ -12,6 +12,7 @@ export function useDataLoader() {
   } = useStore()
 
   async function loadMails() {
+    triageRunning = false  // reset any stale lock from previous session
     setLoadingMails(true)
     try {
       const { emails } = await api.fetchMails(30, false)
@@ -25,35 +26,38 @@ export function useDataLoader() {
         triageStatus: 'pending' as const,
       }))
       setMails(initial)
-      // Triage top 20 in batches of 5 concurrently
+      setLoadingMails(false)  // show mails immediately; triage updates counts live
+      // Triage top 15 in batches of 3 concurrently (avoids Anthropic rate limits)
       if (!triageRunning) {
         triageRunning = true
-        const toTriage = initial.slice(0, 20)
-        const BATCH = 5
-        for (let i = 0; i < toTriage.length; i += BATCH) {
-          await Promise.all(
-            toTriage.slice(i, i + BATCH).map(async (mail) => {
-              try {
-                const text = `Von: ${mail.sender}\nBetreff: ${mail.subject}\nDatum: ${mail.datetime_received ?? ''}\n\n${mail.body}`
-                const result = await api.analyze(text)
-                updateMail(mail.id, {
-                  kategorie: result.kategorie as TriagedMail['kategorie'],
-                  priorität: result.priorität,
-                  zusammenfassung: result.zusammenfassung,
-                  empfohlene_aktion: result.empfohlene_aktion,
-                  triageStatus: 'done' as const,
-                })
-              } catch {
-                updateMail(mail.id, { triageStatus: 'error' as const })
-              }
-            })
-          )
+        try {
+          const toTriage = initial.slice(0, 15)
+          const BATCH = 3
+          for (let i = 0; i < toTriage.length; i += BATCH) {
+            await Promise.all(
+              toTriage.slice(i, i + BATCH).map(async (mail) => {
+                try {
+                  const text = `Von: ${mail.sender}\nBetreff: ${mail.subject}\nDatum: ${mail.datetime_received ?? ''}\n\n${mail.body}`
+                  const result = await api.analyze(text)
+                  updateMail(mail.id, {
+                    kategorie: result.kategorie as TriagedMail['kategorie'],
+                    priorität: result.priorität,
+                    zusammenfassung: result.zusammenfassung,
+                    empfohlene_aktion: result.empfohlene_aktion,
+                    triageStatus: 'done' as const,
+                  })
+                } catch {
+                  updateMail(mail.id, { triageStatus: 'error' as const })
+                }
+              })
+            )
+          }
+        } finally {
+          triageRunning = false
         }
-        triageRunning = false
       }
     } catch (e) {
       console.error('loadMails', e)
-    } finally {
       setLoadingMails(false)
     }
   }

@@ -12,6 +12,7 @@ interface AppState {
   // Auth
   user: User | null
   setUser: (u: User | null) => void
+  logout: () => void
 
   // Data
   mails: TriagedMail[]
@@ -43,6 +44,11 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   user: null,
   setUser: (user) => set({ user }),
+  logout: () => set({
+    user: null, mails: [], calendar: [], tasks: [],
+    selection: null, view: 'dashboard', mailFilter: 'all',
+    loadingMails: false, loadingCalendar: false, loadingTasks: false,
+  }),
 
   mails: [],
   calendar: [],

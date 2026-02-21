@@ -8,7 +8,7 @@ interface ChatMessage { role: 'user' | 'phil'; text: string }
 interface Props { open: boolean; onClose: () => void }
 
 export function PhilPanel({ open, onClose }: Props) {
-  const { selection } = useStore()
+  const { selection, mails } = useStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -40,23 +40,37 @@ export function PhilPanel({ open, onClose }: Props) {
     setMessages((prev) => [...prev, { role: 'user', text }])
     setStreaming(true)
 
+    // Build context from loaded store data (reliable — no extra IMAP fetch)
+    const doneMails = mails.filter((m) => m.triageStatus === 'done').slice(0, 8)
+    const mailSummary = doneMails.length > 0
+      ? `[Postfach — ${doneMails.length} triagierte Mails]\n` +
+        doneMails.map((m) =>
+          `• ${m.kategorie}: "${m.subject}" | Von: ${m.sender}${m.zusammenfassung ? ' | ' + m.zusammenfassung : ''}`
+        ).join('\n')
+      : ''
+
     let contextMsg = text
     if (selection?.type === 'mail') {
       const m = selection.item
-      contextMsg = `[Kontext: Mail von ${m.sender}, Betreff: "${m.subject}"]\n${m.zusammenfassung ? 'Zusammenfassung: ' + m.zusammenfassung + '\n' : ''}\n${text}`
+      contextMsg = `[Ausgewählte Mail]\nVon: ${m.sender}\nBetreff: ${m.subject}\nKategorie: ${m.kategorie}\n${m.zusammenfassung ? 'Zusammenfassung: ' + m.zusammenfassung + '\n' : ''}\n${text}`
     } else if (selection?.type === 'calendar') {
       const c = selection.item
-      contextMsg = `[Kontext: Termin "${c.subject}" am ${c.start?.slice(0, 10) ?? '?'}${c.location ? ', Ort: ' + c.location : ''}]\n\n${text}`
+      contextMsg = `[Ausgewählter Termin]\n"${c.subject}" am ${c.start?.slice(0, 10) ?? '?'}${c.location ? ', Ort: ' + c.location : ''}\n\n${text}`
     } else if (selection?.type === 'task') {
       const t = selection.item
-      contextMsg = `[Kontext: Aufgabe "${t.subject}", Priorität: ${t.priority}, Fällig: ${t.due_date ?? 'unbekannt'}]\n\n${text}`
+      contextMsg = `[Ausgewählte Aufgabe]\n"${t.subject}", Priorität: ${t.priority}, Fällig: ${t.due_date ?? 'unbekannt'}\n\n${text}`
+    }
+    // Without specific selection: prepend mail overview as context
+    if (!selection && mailSummary) {
+      contextMsg = mailSummary + '\n\n' + contextMsg
     }
 
     let philText = ''
     setMessages((prev) => [...prev, { role: 'phil', text: '' }])
 
     try {
-      const stream = api.chatStream(contextMsg, true)
+      // include_context=false: frontend already sends mail context from store
+      const stream = api.chatStream(contextMsg, false)
       const reader = stream.getReader()
       while (true) {
         const { done, value } = await reader.read()

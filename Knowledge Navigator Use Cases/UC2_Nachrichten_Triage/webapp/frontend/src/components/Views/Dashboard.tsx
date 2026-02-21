@@ -1,4 +1,5 @@
 import { useStore } from '../../store/useStore'
+import { useDataLoader } from '../../hooks/useDataLoader'
 import type { Category } from '../../api/types'
 import styles from './Dashboard.module.css'
 
@@ -11,6 +12,7 @@ const CATS: Array<{ cat: Category; label: string; colorClass: string }> = [
 
 export function Dashboard() {
   const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter } = useStore()
+  const { loadCalendar, loadTasks } = useDataLoader()
 
   const counts = CATS.reduce((acc, { cat }) => {
     acc[cat] = mails.filter((m) => m.kategorie === cat && m.triageStatus === 'done').length
@@ -50,7 +52,8 @@ export function Dashboard() {
               onClick={() => goToMails(cat)}
             >
               <span className={styles.tileCount}>
-                {loadingMails ? '…' : counts[cat]}
+                {counts[cat]}
+                {loadingMails && <span className={styles.tileSpinner}>⟳</span>}
               </span>
               <span className={styles.tileLabel}>{label}</span>
             </button>
@@ -92,12 +95,22 @@ export function Dashboard() {
         </section>
       )}
 
-      {!user?.ews_connected && (
-        <div className={styles.ewsNotice}>
-          <span>⚠</span>
-          <span>EWS nicht verbunden — Kalender und Aufgaben nicht verfügbar.</span>
-        </div>
-      )}
+      <div className={user?.ews_connected ? styles.ewsOk : styles.ewsNotice}>
+        {user?.ews_connected ? (
+          <>
+            <span className={styles.ewsDot} />
+            <span>Exchange verbunden — Kalender & Aufgaben aktiv</span>
+          </>
+        ) : (
+          <>
+            <span>⚠</span>
+            <span>Kalender &amp; Aufgaben: Exchange nicht verbunden.</span>
+            <button className={styles.ewsRetry} onClick={() => { loadCalendar(); loadTasks() }}>
+              Neu verbinden
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }

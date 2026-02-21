@@ -13,12 +13,12 @@ const NAV_ITEMS: Array<{ view: View; label: string; icon: string }> = [
 interface Props { onOpenPhil: () => void }
 
 export function Sidebar({ onOpenPhil }: Props) {
-  const { view, setView, user, setUser, mails } = useStore()
+  const { view, setView, user, logout, mails } = useStore()
   const unread = mails.filter((m) => !m.is_read).length
 
   async function handleLogout() {
     await api.logout().catch(() => {})
-    setUser(null)
+    logout()
   }
 
   return (
