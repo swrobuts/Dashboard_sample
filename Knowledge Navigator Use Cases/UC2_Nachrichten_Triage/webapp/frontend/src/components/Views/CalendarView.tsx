@@ -144,14 +144,39 @@ export function CalendarView() {
       const combinedLocation = form.zoom_link
         ? (form.location ? `${form.location} | ${form.zoom_link}` : form.zoom_link)
         : form.location
-      const daysAhead = view === 'year' ? 400 : 30
+      // Convert local datetime string to ISO (browser interprets "YYYY-MM-DDTHH:mm" as local time)
+      const isoStart = new Date(form.start).toISOString()
+      const isoEnd   = new Date(form.end).toISOString()
+
       if (editEventId) {
         await api.updateCalendar(editEventId, form.subject, form.start, form.end, combinedLocation, form.body)
+        // Optimistic update: replace the existing event in the store immediately
+        const updated: CalendarItem = {
+          id: editEventId,
+          changekey: activeEvent?.resource.changekey ?? '',
+          subject: form.subject,
+          start: isoStart,
+          end: isoEnd,
+          location: combinedLocation,
+          body: form.body,
+          is_recurring: false,
+        }
+        setCalendar(calendar.map((item) => item.id === editEventId ? updated : item))
       } else {
-        await api.createCalendar(form.subject, form.start, form.end, combinedLocation, form.body)
+        const created = await api.createCalendar(form.subject, form.start, form.end, combinedLocation, form.body)
+        // Optimistic insert: add the new event to the store immediately
+        const newItem: CalendarItem = {
+          id: created.id,
+          changekey: '',
+          subject: form.subject,
+          start: isoStart,
+          end: isoEnd,
+          location: combinedLocation,
+          body: form.body,
+          is_recurring: false,
+        }
+        setCalendar([...calendar, newItem])
       }
-      const { items } = await api.calendar(daysAhead)
-      setCalendar(items)
       closeForm()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Speichern fehlgeschlagen.'
