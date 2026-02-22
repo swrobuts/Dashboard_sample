@@ -146,3 +146,90 @@ def test_confidence_clamped_at_maximum(store):
     store.apply_feedback("f1", "up")
     store.apply_feedback("f1", "up")
     assert store.list_facts()[0]["confidence"] == pytest.approx(1.0)
+
+
+# ── WebSearch tests ──────────────────────────────────────────────────────────
+
+import httpx
+import respx
+from backend.web_search import search_web, build_web_context, WEB_SEARCH_TRIGGER_RE
+
+
+def test_web_search_trigger_regex_matches():
+    assert WEB_SEARCH_TRIGGER_RE.search("Recherchiere mal Flaschenpost")
+    assert WEB_SEARCH_TRIGGER_RE.search("was ist Flaschenpost?")
+    assert WEB_SEARCH_TRIGGER_RE.search("Wer ist Max Müller")
+    assert WEB_SEARCH_TRIGGER_RE.search("was bedeutet ECTS")
+    assert WEB_SEARCH_TRIGGER_RE.search("suche mal nach dem Anbieter")
+
+
+def test_web_search_trigger_regex_no_match():
+    assert not WEB_SEARCH_TRIGGER_RE.search("Zeige mir den Kalender")
+    assert not WEB_SEARCH_TRIGGER_RE.search("Erstelle eine Aufgabe")
+    assert not WEB_SEARCH_TRIGGER_RE.search("Zusammenfassen")
+
+
+@respx.mock
+def test_search_web_returns_snippets():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={
+            "Abstract": "Flaschenpost ist ein Getränkelieferdienst.",
+            "AbstractURL": "https://example.com",
+            "RelatedTopics": [
+                {"Text": "Gegründet 2016 in Deutschland", "FirstURL": "https://example.com/2"},
+                {"Text": "Liefert Getränkekisten direkt nach Hause", "FirstURL": "https://example.com/3"},
+            ],
+        })
+    )
+    results = search_web("Flaschenpost")
+    assert len(results) == 3
+    assert results[0]["snippet"] == "Flaschenpost ist ein Getränkelieferdienst."
+    assert results[0]["url"] == "https://example.com"
+    assert results[1]["snippet"] == "Gegründet 2016 in Deutschland"
+
+
+@respx.mock
+def test_search_web_returns_empty_on_no_abstract():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={
+            "Abstract": "",
+            "AbstractURL": "",
+            "RelatedTopics": [],
+        })
+    )
+    results = search_web("xyzzy123notaword")
+    assert results == []
+
+
+@respx.mock
+def test_search_web_returns_empty_on_http_error():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(500)
+    )
+    results = search_web("anything")
+    assert results == []
+
+
+@respx.mock
+def test_build_web_context_returns_block_and_results():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={
+            "Abstract": "Flaschenpost ist ein Getränkelieferdienst.",
+            "AbstractURL": "https://example.com",
+            "RelatedTopics": [],
+        })
+    )
+    block, results = build_web_context("Flaschenpost")
+    assert "WEBSUCHE" in block
+    assert "Flaschenpost" in block
+    assert len(results) == 1
+
+
+@respx.mock
+def test_build_web_context_empty_on_no_results():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={"Abstract": "", "RelatedTopics": []})
+    )
+    block, results = build_web_context("nothing")
+    assert block == ""
+    assert results == []
