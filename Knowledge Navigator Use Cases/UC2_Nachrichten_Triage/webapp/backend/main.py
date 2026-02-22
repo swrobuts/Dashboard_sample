@@ -21,6 +21,7 @@ load_dotenv()
 load_dotenv(Path(__file__).parent / ".env", override=False)
 
 from backend.knowledge_store import KnowledgeStore
+from backend.attachment_extractor import extract_text as extract_attachment_text
 
 try:
     knowledge_store = KnowledgeStore()
@@ -83,12 +84,37 @@ def _strip_fences(text: str) -> str:
     return text.strip()
 
 
+def _summarize_attachment(filename: str, text: str) -> str:
+    """Call Claude for a concise 3-sentence attachment summary."""
+    prompt = (
+        f"Fasse den folgenden Anhang '{filename}' in maximal 3 Sätzen zusammen:\n\n"
+        f"{text[:3000]}"
+    )
+    try:
+        resp = anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resp.content[0].text.strip()
+    except Exception as exc:
+        logging.warning(f"[Attachment] Zusammenfassung fehlgeschlagen: {exc}")
+        return ""
+
+
+class AttachmentIn(BaseModel):
+    filename: str
+    mime_type: str
+    data_b64: str   # base64-encoded bytes
+
+
 class AnalyzeRequest(BaseModel):
     email_text: str
     mail_id: str | None = None
     subject: str = ""
     sender: str = ""
     date: str = ""
+    attachments: list[AttachmentIn] = []
 
     @field_validator("email_text")
     @classmethod
@@ -100,7 +126,30 @@ class AnalyzeRequest(BaseModel):
 
 @app.post("/api/analyze")
 def analyze(req: AnalyzeRequest):
-    prompt = COSTAR_PROMPT.format(email_text=req.email_text)
+    import base64
+
+    # ── Attachment extraction ──────────────────────────────────────────
+    attachment_snippets: list[str] = []
+    attachments_to_index: list[tuple[AttachmentIn, str]] = []  # (att, full_text)
+
+    for att in req.attachments:
+        try:
+            data = base64.b64decode(att.data_b64)
+            text = extract_attachment_text(data, att.mime_type)
+        except Exception as exc:
+            logging.warning(f"[Attachment] Extraktion fehlgeschlagen {att.filename}: {exc}")
+            continue
+        if not text.strip():
+            continue
+        attachment_snippets.append(f"\n[Anhang: {att.filename}]\n{text[:2000]}")
+        attachments_to_index.append((att, text))
+
+    # ── Triage (with attachment context) ──────────────────────────────
+    email_with_attachments = req.email_text
+    if attachment_snippets:
+        email_with_attachments += "\n\n" + "\n".join(attachment_snippets)
+
+    prompt = COSTAR_PROMPT.format(email_text=email_with_attachments)
     try:
         response = anthropic_client.messages.create(
             model="claude-opus-4-6",
@@ -118,7 +167,7 @@ def analyze(req: AnalyzeRequest):
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=502, detail=f"Claude-Antwort kein gültiges JSON: {e}")
 
-    # Index in knowledge base if mail_id provided (non-fatal)
+    # ── Index mail in ChromaDB (non-fatal) ─────────────────────────────
     if req.mail_id and knowledge_store is not None:
         try:
             knowledge_store.index_mail(
@@ -132,6 +181,20 @@ def analyze(req: AnalyzeRequest):
             )
         except Exception as exc:
             logging.warning(f"[RAG] Indexierung fehlgeschlagen: {exc}")
+
+    # ── Summarise + index attachments (non-fatal) ──────────────────────
+    for att, att_text in attachments_to_index:
+        try:
+            att_summary = _summarize_attachment(att.filename, att_text)
+            if knowledge_store is not None:
+                knowledge_store.index_attachment(
+                    mail_id=req.mail_id or "unknown",
+                    filename=att.filename,
+                    summary=att_summary,
+                    body_snippet=att_text,
+                )
+        except Exception as exc:
+            logging.warning(f"[Attachment] Indexierung fehlgeschlagen {att.filename}: {exc}")
 
     return result
 

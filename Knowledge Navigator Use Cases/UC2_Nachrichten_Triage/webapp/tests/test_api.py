@@ -473,3 +473,61 @@ def test_chat_includes_rag_context(mocker):
     user_content = captured["messages"][0]["content"]
     assert "MAILHISTORIE" in user_content
     assert "Förderantrag 2025" in user_content
+
+
+import base64
+
+# ── Attachment Tests ───────────────────────────────────────────────────────
+
+def test_analyze_with_attachment_calls_extract_and_index(mocker):
+    """analyze() extracts text from PDF attachment and indexes it."""
+    mock_triage_resp = mocker.MagicMock()
+    mock_triage_resp.content[0].text = json.dumps({
+        "kategorie": "Aktion nötig", "priorität": 2,
+        "zusammenfassung": "Mit Anhang.", "empfohlene_aktion": "Lesen.",
+    })
+    mock_summary_resp = mocker.MagicMock()
+    mock_summary_resp.content[0].text = "Kurze Zusammenfassung des Anhangs."
+
+    # Claude is called twice: triage + attachment summary
+    mocker.patch(
+        "backend.main.anthropic_client.messages.create",
+        side_effect=[mock_triage_resp, mock_summary_resp],
+    )
+    mocker.patch("backend.attachment_extractor._extract_pdf", return_value="PDF content here")
+    mock_index = mocker.patch("backend.main.knowledge_store")
+    mock_index.index_mail = mocker.MagicMock()
+    mock_index.index_attachment = mocker.MagicMock()
+
+    fake_pdf = base64.b64encode(b"%PDF-1.4 fake").decode()
+    client = get_client()
+    r = client.post("/api/analyze", json={
+        "email_text": "Bitte Anhang beachten.",
+        "mail_id": "m-1",
+        "subject": "Mit Anhang",
+        "sender": "test@test.de",
+        "date": "2026-02-22",
+        "attachments": [{"filename": "report.pdf", "mime_type": "application/pdf", "data_b64": fake_pdf}],
+    })
+    assert r.status_code == 200
+    mock_index.index_attachment.assert_called_once()
+    call_kwargs = mock_index.index_attachment.call_args.kwargs
+    assert call_kwargs["filename"] == "report.pdf"
+    assert call_kwargs["mail_id"] == "m-1"
+
+
+def test_analyze_without_attachments_unchanged(mocker):
+    """analyze() with empty attachments list behaves as before."""
+    mock_resp = mocker.MagicMock()
+    mock_resp.content[0].text = json.dumps({
+        "kategorie": "Nur Info", "priorität": 3,
+        "zusammenfassung": "Ohne Anhang.", "empfohlene_aktion": "Zur Kenntnis.",
+    })
+    mocker.patch("backend.main.anthropic_client.messages.create", return_value=mock_resp)
+    mock_index = mocker.patch("backend.main.knowledge_store")
+    mock_index.index_attachment = mocker.MagicMock()
+
+    client = get_client()
+    r = client.post("/api/analyze", json={"email_text": "Keine Anhänge hier.", "attachments": []})
+    assert r.status_code == 200
+    mock_index.index_attachment.assert_not_called()
