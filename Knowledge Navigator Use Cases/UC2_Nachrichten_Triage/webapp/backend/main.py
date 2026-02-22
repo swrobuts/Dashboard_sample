@@ -282,7 +282,6 @@ def auth_login(req: ConnectRequest, request: Request):
                 session_data["account"] = ews_account
                 session_data["ews_error"] = None
             except Exception as ews_exc:
-                import logging
                 logging.warning(f"[EWS] THWS Verbindung fehlgeschlagen: {type(ews_exc).__name__}: {ews_exc}")
                 session_data["ews_error"] = f"{type(ews_exc).__name__}: {str(ews_exc)[:300]}"
         elif protocol == "imap":
@@ -464,7 +463,7 @@ def get_calendar(
     try:
         return {"items": fetch_google_calendar(days_ahead)}
     except Exception as e:
-        import logging; logging.warning(f"[GCal] {e}")
+        logging.warning(f"[GCal] {e}")
         raise HTTPException(status_code=502, detail=f"Google Calendar: {e}")
 
 
@@ -570,7 +569,8 @@ def _build_rag_context(query: str) -> str:
         return ""
     try:
         results = knowledge_store.search(query, n_results=3)
-    except Exception:
+    except Exception as exc:
+        logging.warning(f"[RAG] Suche fehlgeschlagen: {exc}")
         return ""
     if not results:
         return ""
@@ -629,21 +629,21 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                 raw = fetch_emails(account_for_mail, max_count=10, unread_only=True) if account_for_mail else []
                 mails = [m for m in raw if "_skipped" not in m]
         except Exception as exc:
-            import logging; logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
+            logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
             mails = []
         try:
             cal: list = fetch_google_calendar(days_ahead=7)
         except Exception as exc:
-            import logging; logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
+            logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
             cal = []
         try:
             account = session.get("account")
             tasks: list = fetch_tasks(account, max_count=50) if account else []
         except Exception as exc:
-            import logging; logging.warning(f"[Chat-Ctx] Aufgaben fehlgeschlagen: {exc}")
+            logging.warning(f"[Chat-Ctx] Aufgaben fehlgeschlagen: {exc}")
             tasks = []
         context_str = _build_context(mails, cal, tasks)
-        import logging; logging.warning(f"[Chat-Ctx] Kontext: {len(mails)} Mails, {len(cal)} Kalender, {len(tasks)} Aufgaben")
+        logging.warning(f"[Chat-Ctx] Kontext: {len(mails)} Mails, {len(cal)} Kalender, {len(tasks)} Aufgaben")
 
         # RAG: enrich with semantically similar past mails
         rag_str = _build_rag_context(req.message)
