@@ -1,4 +1,4 @@
-import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult, OntologyEntities, LLMMode } from './types'
+import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult, OntologyEntities, LLMMode, MemoryFact, MemoryStats } from './types'
 
 /** Feuert ein CustomEvent wenn der Server 401 zurückgibt — App.tsx hört darauf und zeigt Login. */
 function _handle401(status: number) {
@@ -135,7 +135,7 @@ export const api = {
     get<{ context: string }>(`/api/ontology/search?q=${encodeURIComponent(q)}`),
 
   // Chat (SSE streaming)
-  chatStream: (message: string, include_context = true): ReadableStream<string> => {
+  chatStream: (message: string, includeContext: boolean = true, messageId: string = ''): ReadableStream<string> => {
     const ctrl = new AbortController()
     return new ReadableStream({
       async start(controller) {
@@ -143,7 +143,7 @@ export const api = {
           const r = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, include_context }),
+            body: JSON.stringify({ message, include_context: includeContext, message_id: messageId }),
             signal: ctrl.signal,
           })
           if (!r.ok || !r.body) {
@@ -225,5 +225,52 @@ export const api = {
       },
       cancel() { ctrl.abort() },
     })
+  },
+
+  // Memory API
+  memoryFacts: async (params?: {
+    category?: string
+    min_confidence?: number
+    source_ref?: string
+  }): Promise<{ facts: MemoryFact[] }> => {
+    const q = new URLSearchParams()
+    if (params?.category) q.set('category', params.category)
+    if (params?.min_confidence != null) q.set('min_confidence', String(params.min_confidence))
+    if (params?.source_ref) q.set('source_ref', params.source_ref)
+    const qs = q.size ? '?' + q.toString() : ''
+    const res = await fetch(`/api/memory/facts${qs}`, { credentials: 'include' })
+    if (!res.ok) throw new Error('memory/facts fehlgeschlagen')
+    return res.json()
+  },
+
+  memoryFeedback: async (factId: string, rating: 'up' | 'down'): Promise<void> => {
+    await fetch('/api/memory/feedback', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fact_id: factId, rating }),
+    })
+  },
+
+  memoryDeleteFact: async (factId: string): Promise<void> => {
+    await fetch(`/api/memory/facts/${factId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+  },
+
+  memoryUpdateFact: async (factId: string, text: string, note?: string): Promise<void> => {
+    await fetch(`/api/memory/facts/${factId}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, correction_note: note ?? null }),
+    })
+  },
+
+  memoryStats: async (): Promise<MemoryStats> => {
+    const res = await fetch('/api/memory/stats', { credentials: 'include' })
+    if (!res.ok) throw new Error('memory/stats fehlgeschlagen')
+    return res.json()
   },
 }

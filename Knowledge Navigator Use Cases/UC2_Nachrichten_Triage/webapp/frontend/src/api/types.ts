@@ -92,3 +92,22 @@ export interface OntologyEntities {
   tasks: Array<{ description: string }>
   deadlines: Array<{ date: string }>
 }
+
+export interface MemoryFact {
+  id: string
+  text: string
+  category: 'Person' | 'Projekt' | 'Konzept' | 'Prozedur' | 'Ort' | string
+  source: 'chat' | 'mail' | 'calendar' | 'task' | 'web'
+  source_ref: string | null
+  confidence: number
+  positive_votes: number
+  negative_votes: number
+  created_at: string
+  corrected_at: string | null
+  correction_note: string | null
+}
+
+export interface MemoryStats {
+  total: number
+  by_category: Array<{ category: string; count: number; avg_confidence: number }>
+}
