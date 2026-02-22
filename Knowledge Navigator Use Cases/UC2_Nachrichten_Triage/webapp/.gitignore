@@ -1,0 +1,16 @@
+# Runtime data (ChromaDB + RDF ontology)
+data/
+
+# Frontend build artifacts
+static/assets/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/

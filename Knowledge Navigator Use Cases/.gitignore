@@ -1,0 +1,8 @@
+# Playwright MCP session screenshots
+.playwright-mcp/
+
+# Temporary debug screenshots
+*.png
+
+# IDE
+.idea/
