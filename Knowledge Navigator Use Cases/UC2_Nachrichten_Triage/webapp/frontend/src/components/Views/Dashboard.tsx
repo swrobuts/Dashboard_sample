@@ -15,6 +15,14 @@ type TaskGroup = 'none' | 'priority' | 'due_date'
 const PRIO_ORDER: Record<string, number> = { High: 0, Normal: 1, Low: 2 }
 const PRIO_LABEL: Record<string, string> = { High: 'Hoch', Normal: 'Normal', Low: 'Niedrig' }
 
+// ── Task date formatter ────────────────────────────────────────────────────────
+function formatTaskDate(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -326,7 +334,6 @@ export function Dashboard() {
     acc[cat] = mails.filter((m) => m.kategorie === cat && m.triageStatus === 'done').length
     return acc
   }, {} as Record<Category, number>)
-  const totalDone = Object.values(counts).reduce((s, v) => s + v, 0)
 
   const actualToday = toLocalDateStr(new Date())
   const actualTomorrow = toLocalDateStr(addDays(new Date(), 1))
@@ -388,18 +395,10 @@ export function Dashboard() {
               className={`${styles.tile} ${styles[colorClass]}`}
               onClick={() => goToMails(cat)}
             >
-              <div className={styles.tileMain}>
-                <span className={styles.tileLabel}>{label}</span>
-                <span className={styles.tileCount}>
-                  {loadingMails ? <span className={styles.tileSpinner}>⟳</span> : counts[cat]}
-                </span>
+              <div className={styles.tileCount}>
+                {loadingMails ? <span className={styles.tileSpinner}>⟳</span> : counts[cat]}
               </div>
-              <div className={styles.tileBar}>
-                <div
-                  className={styles.tileBarFill}
-                  style={{ width: totalDone > 0 ? `${Math.round((counts[cat] / totalDone) * 100)}%` : '0%' }}
-                />
-              </div>
+              <div className={styles.tileLabel}>{label}</div>
             </button>
           ))}
         </div>
@@ -463,7 +462,7 @@ export function Dashboard() {
                           <span className={`${styles.taskDot} ${styles[(t.priority ?? 'Normal').toLowerCase()]}`} />
                           <div className={styles.taskBody}>
                             <span className={styles.taskTitle}>{t.subject}</span>
-                            {t.due_date && <span className={styles.taskDue}>{t.due_date.slice(0, 10)}</span>}
+                            {t.due_date && <span className={styles.taskDate}>{formatTaskDate(t.due_date)}</span>}
                           </div>
                           {user?.ews_connected && (
                             <div className={styles.taskActions}>
