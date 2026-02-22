@@ -109,6 +109,7 @@ export function PhilPanel({ open, onClose }: Props) {
 
   const [ttsIdx, setTtsIdx] = useState<number | null>(null)
   const [ttsLoadingIdx, setTtsLoadingIdx] = useState<number | null>(null)
+  const [briefingDone, setBriefingDone] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -119,6 +120,11 @@ export function PhilPanel({ open, onClose }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Reset briefing banner when a new calendar item is selected
+  useEffect(() => {
+    setBriefingDone(false)
+  }, [selection])
 
   useEffect(() => {
     return () => {
@@ -176,6 +182,15 @@ export function PhilPanel({ open, onClose }: Props) {
     : selection?.type === 'task'
     ? ['Aufgabe beschreiben', 'Aufwand schätzen', 'Unteraufgaben vorschlagen', 'Dringlichkeit prüfen', 'E-Mail entwerfen']
     : ['Was steht heute an?', 'Wichtigste Aufgaben', 'Freie Slots finden', 'Wochenvorschau', 'Überfällige Aufgaben']
+
+  const showBriefingBanner = (() => {
+    if (briefingDone) return false
+    if (selection?.type !== 'calendar') return false
+    const start = selection.item.start ? new Date(selection.item.start) : null
+    if (!start) return false
+    const diffDays = (start.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    return diffDays >= -0.5 && diffDays <= 7
+  })()
 
   const linkedinName: string | null =
     selection?.type === 'mail' ? parseSenderName(selection.item.sender) :
@@ -315,6 +330,20 @@ export function PhilPanel({ open, onClose }: Props) {
 
       {/* ── Quick Actions ──────────────────────────────────────────────────── */}
       <div className={styles.quickActions}>
+        {showBriefingBanner && (
+          <div className={styles.briefingBanner}>
+            <span className={styles.briefingBannerLabel}>
+              📋 Meeting-Briefing für „{selection!.item.subject.slice(0, 40)}{selection!.item.subject.length > 40 ? '…' : ''}"
+            </span>
+            <button
+              className={styles.briefingBannerBtn}
+              onClick={() => {}}
+              disabled={streaming}
+            >
+              Vorbereitung erstellen →
+            </button>
+          </div>
+        )}
         {quickActions.map((action) => (
           <button key={action} className={styles.quickBtn} onClick={() => send(action)} disabled={streaming}>
             {action}

@@ -93,6 +93,48 @@
   border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
 }
+/* ── Briefing Banner (UC3) ─────────────────────────────────────────────── */
+.briefingBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #ECFDF5;
+  border: 1px solid #059669;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.briefingBannerLabel {
+  flex: 1;
+  font-size: var(--text-xs);
+  color: #065F46;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.briefingBannerBtn {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid #059669;
+  border-radius: 6px;
+  background: #059669;
+  color: white;
+  cursor: pointer;
+  transition: background var(--transition);
+  font-family: var(--font);
+}
+.briefingBannerBtn:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+}
+.briefingBannerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .quickBtn {
   font-size: var(--text-xs);
   font-weight: 500;
