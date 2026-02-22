@@ -1,18 +1,19 @@
 /* ── Shell grid ──────────────────────────────────────────────────────────── */
 .shell {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr 0px;
-  grid-template-rows: 1fr;
-  height: 100%;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: var(--header-h) 1fr;
+  height: 100dvh;
   overflow: hidden;
+  background: var(--content-bg);
   transition: grid-template-columns var(--transition);
 }
 .shell[data-sidebar-collapsed="true"] {
-  grid-template-columns: var(--sidebar-mini) 1fr 0px;
+  grid-template-columns: var(--sidebar-mini) 1fr auto;
 }
 @media (min-width: 900px) {
   .shell[data-phil-open="true"] {
-    grid-template-columns: var(--sidebar-w) 1fr var(--phil-w);
+    grid-template-columns: auto 1fr var(--phil-w);
   }
   .shell[data-sidebar-collapsed="true"][data-phil-open="true"] {
     grid-template-columns: var(--sidebar-mini) 1fr var(--phil-w);
@@ -28,12 +29,16 @@
 
 /* ── Top header bar ──────────────────────────────────────────────────────── */
 .topbar {
-  height: auto; min-height: var(--header-h);
-  display: flex; align-items: center;
-  padding: 0 1rem 0 1.5rem;
+  grid-column: 1 / -1;
+  height: var(--header-h);
   background: var(--card-bg);
-  border-bottom: 1px solid var(--card-border);
-  flex-shrink: 0; gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 16px;
+  z-index: 10;
+  flex-shrink: 0;
 }
 .titleWithStats {
   display: flex; align-items: baseline; gap: .75rem; flex: 1; min-width: 0;
@@ -53,33 +58,49 @@
   border: 1px solid #E5E7EB; white-space: nowrap;
   font-family: var(--font);
 }
+
+/* ── Date / time in header ───────────────────────────────────────────────── */
 .pageTitleDate {
   display: flex; align-items: baseline; gap: .625rem; flex: 1;
 }
 .pageTitleDay {
-  font-size: var(--text-base); font-weight: 700;
-  font-family: var(--font); color: #0F0F0F; letter-spacing: -.01em;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  font-family: var(--font);
+  letter-spacing: -.01em;
 }
 .pageTitleTime {
-  font-size: var(--text-sm); font-weight: 600;
-  color: var(--amber); font-family: var(--font);
-  background: var(--amber-light); padding: 1px 8px;
-  border-radius: 999px; letter-spacing: .02em;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-left: 6px;
+  font-family: var(--font);
 }
+
 /* ── Next appointment pill ───────────────────────────────────────────────── */
 .nextEventPill {
-  display: flex; align-items: center; gap: .375rem;
-  padding: .25rem .75rem .25rem .5rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
   border-radius: 999px;
-  border: 1px solid var(--content-border);
-  background: var(--card-bg);
-  font-size: var(--text-xs); color: #374151;
+  background: var(--amber-light);
+  border: 1px solid rgba(27,58,107,.15);
+  font-size: var(--text-xs);
+  color: var(--amber);
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  cursor: default;
   font-family: var(--font);
-  max-width: 400px; overflow: hidden;
   flex-shrink: 1; min-width: 0;
 }
 .nextEventIcon { flex-shrink: 0; font-size: .8rem; }
-.nextEventTime { font-weight: 700; color: var(--amber); flex-shrink: 0; }
+.nextEventTime { font-weight: 700; flex-shrink: 0; }
 .nextEventTitle {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex: 1; min-width: 0;
@@ -98,41 +119,61 @@
 }
 .nextEventLink:hover { background: var(--amber-dark); }
 
-.topbarRight { display: flex; align-items: center; gap: .625rem; }
+/* ── Spacer ──────────────────────────────────────────────────────────────── */
+.topbarSpacer { flex: 1; min-width: 0; }
 
-/* ── LLM Mode Badge ─────────────────────────────────────────────────────── */
-.llmBadge {
-  display: flex; align-items: center; gap: .3rem;
-  padding: .2rem .6rem;
-  border-radius: 999px;
-  border: 1px solid #E0D4F5;
-  background: #F5F0FF;
-  font-size: var(--text-xs); color: #7C3AED;
-  font-family: var(--font); font-weight: 500;
-  white-space: nowrap;
+/* ── Status badges group ─────────────────────────────────────────────────── */
+.topbarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
-.llmBadgeLabel { line-height: 1; }
 
-/* ── EWS status pill ─────────────────────────────────────────────────────── */
+/* ── EWS / Exchange status pill (statusBadge) ────────────────────────────── */
 .ewsPill {
-  display: flex; align-items: center; gap: .375rem;
-  padding: .25rem .7rem .25rem .5rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid #BBF7D0;
-  background: #F0FDF4;
-  font-size: var(--text-xs); color: #16A34A;
-  font-family: var(--font); font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 500;
   white-space: nowrap;
+  font-family: var(--font);
 }
 .ewsPillDot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #22C55E; flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
 }
 .ewsPillErr {
   border-color: #FDE68A; background: var(--aktion-bg);
   color: var(--aktion-text);
 }
 .ewsPillErrDot { background: var(--aktion-badge); }
+
+/* ── LLM Mode Badge ─────────────────────────────────────────────────────── */
+.llmBadge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(27,58,107,.2);
+  background: var(--amber-light);
+  font-size: var(--text-xs);
+  color: var(--amber);
+  font-weight: 600;
+  white-space: nowrap;
+  font-family: var(--font);
+}
+.llmBadgeLabel { line-height: 1; }
 
 /* ── Phil trigger button (topbar right) ──────────────────────────────────── */
 .philBtn {
@@ -159,8 +200,14 @@
 }
 .philBtnLabel { line-height: 1; }
 
-/* ── Scroll area ─────────────────────────────────────────────────────────── */
-.content { flex: 1; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
+/* ── Main content area ───────────────────────────────────────────────────── */
+.content {
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  flex: 1;
+}
 
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 .backdrop { position: fixed; inset: 0; z-index: 199; background: rgba(0,0,0,.45); }
