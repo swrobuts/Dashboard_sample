@@ -154,7 +154,7 @@
   background: rgba(245,158,11,.18); border: 1px solid var(--amber);
 }
 
-/* ── Create Modal ────────────────────────────────────────────────────────── */
+/* ── Create / Edit Modal ─────────────────────────────────────────────────── */
 .modalOverlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.35);
   display: flex; align-items: center; justify-content: center;
@@ -162,14 +162,36 @@
 }
 .modal {
   background: var(--card-bg); border-radius: var(--radius-lg);
-  padding: 1.5rem; width: min(480px, 100%);
+  padding: 1.5rem; width: min(500px, 100%);
   display: flex; flex-direction: column; gap: .75rem;
   box-shadow: 0 16px 48px rgba(0,0,0,.18);
   border: 1px solid var(--card-border);
 }
+.modalHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: .1rem;
+}
 .modalTitle {
   font-size: var(--text-lg); font-weight: 700; font-family: var(--font);
-  margin: 0 0 .25rem;
+  margin: 0;
+}
+.modalCloseBtn {
+  color: #9CA3AF; font-size: .875rem; padding: .3rem;
+  background: none; border: none; cursor: pointer;
+  transition: color var(--transition); line-height: 1;
+}
+.modalCloseBtn:hover { color: #374151; }
+.modalDeleteBtn {
+  padding: .42rem .9rem; border-radius: var(--radius-sm); font-size: var(--text-sm);
+  font-family: var(--font); border: 1.5px solid #EF4444; color: #EF4444;
+  background: none; cursor: pointer; transition: all .1s;
+}
+.modalDeleteBtn:hover { background: #FEF2F2; }
+.modalDeleteBtn:disabled { opacity: .5; cursor: not-allowed; }
+.saveError {
+  font-size: var(--text-xs); color: #EF4444;
+  background: #FEF2F2; border: 1px solid #FECACA;
+  border-radius: var(--radius-sm); padding: .4rem .65rem; margin: 0;
 }
 .label { font-size: var(--text-xs); font-weight: 600; color: #6B7280; display: block; margin-bottom: .3rem; }
 .input {
@@ -185,7 +207,7 @@
 }
 .textarea:focus { border-color: var(--amber); outline: none; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-.formActions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .25rem; }
+.formActions { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; }
 .cancelBtn {
   padding: .42rem .9rem; border-radius: var(--radius-sm); font-size: var(--text-sm);
   font-family: var(--font); color: #6B7280; border: none; cursor: pointer; background: none;

@@ -319,6 +319,7 @@ from backend.exchange_helpers import (
     create_google_calendar_event,
     create_task,
     delete_google_calendar_event,
+    update_google_calendar_event,
     delete_mail_imap,
     delete_mail_ews,
     delete_task,
@@ -711,6 +712,30 @@ def delete_mail_endpoint(
 
 
 # ── Calendar Delete Endpoint ───────────────────────────────────────────────
+
+class UpdateCalendarRequest(BaseModel):
+    subject: str
+    start: str
+    end: str
+    location: str = ""
+    body: str = ""
+
+
+@app.patch("/api/calendar/{event_id}")
+def patch_calendar_endpoint(
+    event_id: str,
+    req: UpdateCalendarRequest,
+    session_id: str | None = Cookie(default=None),
+):
+    """Aktualisiert einen Kalender-Eintrag (Google Calendar via gog CLI)."""
+    _get_session(session_id)
+    try:
+        return update_google_calendar_event(
+            event_id, req.subject, req.start, req.end, req.location, req.body
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Kalender-Update fehlgeschlagen: {e}")
+
 
 class DeleteCalendarRequest(BaseModel):
     changekey: str = ""

@@ -617,6 +617,42 @@ def delete_google_calendar_event(event_id: str) -> bool:
     return True
 
 
+def update_google_calendar_event(
+    event_id: str,
+    subject: str,
+    start: str,
+    end: str,
+    location: str = "",
+    body: str = "",
+) -> dict:
+    """Aktualisiert einen Google Kalender-Termin via gog CLI."""
+    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    gog = _gog_binary()
+
+    cmd = [
+        gog, "calendar", "update", account, event_id,
+        "--summary", subject,
+        "--from", start,
+        "--to", end,
+        "--location", location,   # leer = löscht Location
+        "--json",
+        "--no-input",
+    ]
+    if body:
+        cmd += ["--description", body]
+    else:
+        cmd += ["--description", ""]  # löscht bestehende Description
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        env=_gog_env(), timeout=20,
+    )
+    if result.returncode != 0:
+        raise Exception(f"gog calendar update: {result.stderr.strip()[:200]}")
+
+    return {"id": event_id, "subject": subject}
+
+
 def create_google_calendar_event(
     subject: str,
     start: str,

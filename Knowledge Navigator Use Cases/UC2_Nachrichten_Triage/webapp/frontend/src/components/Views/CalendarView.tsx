@@ -61,6 +61,15 @@ function toLocalDatetime(d: Date): string {
   return format(d, "yyyy-MM-dd'T'HH:mm")
 }
 
+/** "Büro | https://zoom.us/j/..." → { location: "Büro", zoom_link: "https://..." } */
+function splitLocation(combined: string): { location: string; zoom_link: string } {
+  if (!combined) return { location: '', zoom_link: '' }
+  const match = combined.match(/^(.*?)\s*\|\s*(https?:\/\/.+)$/i)
+  if (match) return { location: match[1].trim(), zoom_link: match[2].trim() }
+  if (combined.match(/^https?:\/\//i)) return { location: '', zoom_link: combined }
+  return { location: combined, zoom_link: '' }
+}
+
 // ── Custom RBC Toolbar (navigation only, no duplicate view buttons) ──────────
 function RbcNavToolbar({ label, onNavigate }: ToolbarProps<RbcEvent>) {
   return (
@@ -82,10 +91,12 @@ export function CalendarView() {
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormState>({ subject: '', start: '', end: '', location: '', zoom_link: DEFAULT_ZOOM, body: '' })
+  const [editEventId, setEditEventId] = useState<string | null>(null)  // null = create, string = edit
+  const [activeEvent, setActiveEvent] = useState<RbcEvent | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState('')
-  const [activeEvent, setActiveEvent] = useState<RbcEvent | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Fetch more data when switching to year view
   useEffect(() => {
@@ -106,55 +117,88 @@ export function CalendarView() {
     )
   }, [rbcEvents, search])
 
-  // ── Create form ────────────────────────────────────────────────────────────
+  // ── Open form helpers ───────────────────────────────────────────────────────
   function openForm(start?: Date, end?: Date) {
     const s = start ?? new Date()
     const e = end ?? new Date(s.getTime() + 60 * 60 * 1000)
     setForm({ subject: '', start: toLocalDatetime(s), end: toLocalDatetime(e), location: '', zoom_link: DEFAULT_ZOOM, body: '' })
+    setEditEventId(null)
+    setActiveEvent(null)
+    setSaveError(null)
     setShowForm(true)
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  function closeForm() {
+    setShowForm(false)
+    setEditEventId(null)
+    setSaveError(null)
+    // Keep activeEvent so Phil panel retains context
+  }
+
+  // ── Create / Update ─────────────────────────────────────────────────────────
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setSaveError(null)
     try {
-      // Zoom-Link in Location einbetten (Google Calendar zeigt es als Ort)
       const combinedLocation = form.zoom_link
         ? (form.location ? `${form.location} | ${form.zoom_link}` : form.zoom_link)
         : form.location
-      await api.createCalendar(form.subject, form.start, form.end, combinedLocation, form.body)
       const daysAhead = view === 'year' ? 400 : 30
+      if (editEventId) {
+        await api.updateCalendar(editEventId, form.subject, form.start, form.end, combinedLocation, form.body)
+      } else {
+        await api.createCalendar(form.subject, form.start, form.end, combinedLocation, form.body)
+      }
       const { items } = await api.calendar(daysAhead)
       setCalendar(items)
-      setShowForm(false)
-    } catch (err) { console.error(err) }
-    finally { setSaving(false) }
+      closeForm()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Speichern fehlgeschlagen.'
+      setSaveError(msg)
+    } finally {
+      setSaving(false)
+    }
   }
 
+  // ── Delete (called from modal or directly) ──────────────────────────────────
   async function handleDeleteEvent(ev: RbcEvent) {
     setDeleting(true)
     try {
       await api.deleteCalendar(ev.resource.id, ev.resource.changekey)
-      removeCalendarItem(ev.resource.id)
-      setActiveEvent(null)
     } catch (err) {
       console.error('[deleteCalendar]', err)
-      // Still remove from UI — server might have deleted it even if response errored
+    } finally {
       removeCalendarItem(ev.resource.id)
       setActiveEvent(null)
-    } finally {
+      setShowForm(false)
+      setEditEventId(null)
       setDeleting(false)
     }
   }
 
-  // ── react-big-calendar callbacks ───────────────────────────────────────────
+  // ── react-big-calendar callbacks ─────────────────────────────────────────────
   const handleSelectSlot = useCallback((slot: SlotInfo) => {
     openForm(slot.start, slot.end)
   }, [])
 
   const handleSelectEvent = useCallback((ev: RbcEvent) => {
+    // Set Phil panel context
     setSelection({ type: 'calendar', item: ev.resource })
+    // Open edit form with prefilled data
+    const { location, zoom_link } = splitLocation(ev.resource.location ?? '')
+    setForm({
+      subject: ev.resource.subject,
+      start: ev.resource.start ? toLocalDatetime(new Date(ev.resource.start)) : toLocalDatetime(new Date()),
+      end: ev.resource.end ? toLocalDatetime(new Date(ev.resource.end)) : toLocalDatetime(new Date()),
+      location,
+      zoom_link,
+      body: ev.resource.body ?? '',
+    })
+    setEditEventId(ev.resource.id)
     setActiveEvent(ev)
+    setSaveError(null)
+    setShowForm(true)
   }, [setSelection])
 
   const handleNavigate = useCallback((newDate: Date) => setDate(newDate), [])
@@ -190,26 +234,7 @@ export function CalendarView() {
         </button>
         <button className={styles.addBtn} onClick={() => openForm()}>+ Neu</button>
       </div>
-      {/* Event action bar (visible when event is selected) */}
-      {activeEvent && (
-        <div className={styles.eventActionBar}>
-          <span className={styles.eventActionTitle}>{activeEvent.title}</span>
-          <span className={styles.eventActionTime}>
-            {format(activeEvent.start, 'HH:mm')} – {format(activeEvent.end, 'HH:mm')}
-          </span>
-          <div className={styles.eventActionBtns}>
-            <button
-              className={styles.eventDeleteBtn}
-              onClick={() => handleDeleteEvent(activeEvent)}
-              disabled={deleting}
-              title="Termin löschen"
-            >
-              {deleting ? '…' : '🗑 Löschen'}
-            </button>
-            <button className={styles.eventCloseBtnSmall} onClick={() => setActiveEvent(null)}>✕</button>
-          </div>
-        </div>
-      )}
+
       {/* Row 2: view tabs */}
       <div className={styles.filterBar}>
         <div className={styles.viewTabs}>
@@ -225,34 +250,91 @@ export function CalendarView() {
         </div>
       </div>
 
-      {/* Create form modal */}
+      {/* Create / Edit Modal */}
       {showForm && (
-        <div className={styles.modalOverlay} onClick={(e) => e.target === e.currentTarget && setShowForm(false)}>
-          <form onSubmit={handleCreate} className={styles.modal}>
-            <h2 className={styles.modalTitle}>Neuer Termin</h2>
-            <input className={styles.input} placeholder="Titel *" value={form.subject}
-              onChange={(e) => setForm({ ...form, subject: e.target.value })} required autoFocus />
+        <div className={styles.modalOverlay} onClick={(e) => e.target === e.currentTarget && closeForm()}>
+          <form onSubmit={handleSave} className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>
+                {editEventId ? 'Termin bearbeiten' : 'Neuer Termin'}
+              </h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={closeForm} aria-label="Schließen">✕</button>
+            </div>
+
+            <input
+              className={styles.input}
+              placeholder="Titel *"
+              value={form.subject}
+              onChange={(e) => setForm({ ...form, subject: e.target.value })}
+              required
+              autoFocus
+            />
             <div className={styles.row}>
               <div>
                 <label className={styles.label}>Start</label>
-                <input className={styles.input} type="datetime-local" value={form.start}
-                  onChange={(e) => setForm({ ...form, start: e.target.value })} required />
+                <input
+                  className={styles.input}
+                  type="datetime-local"
+                  value={form.start}
+                  onChange={(e) => setForm({ ...form, start: e.target.value })}
+                  required
+                />
               </div>
               <div>
                 <label className={styles.label}>Ende</label>
-                <input className={styles.input} type="datetime-local" value={form.end}
-                  onChange={(e) => setForm({ ...form, end: e.target.value })} required />
+                <input
+                  className={styles.input}
+                  type="datetime-local"
+                  value={form.end}
+                  onChange={(e) => setForm({ ...form, end: e.target.value })}
+                  required
+                />
               </div>
             </div>
-            <input className={styles.input} placeholder="Ort (optional)" value={form.location}
-              onChange={(e) => setForm({ ...form, location: e.target.value })} />
-            <input className={styles.input} placeholder="Zoom-Link (optional)" value={form.zoom_link}
-              onChange={(e) => setForm({ ...form, zoom_link: e.target.value })} />
-            <textarea className={styles.textarea} placeholder="Notizen (optional)" rows={2}
-              value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
+            <input
+              className={styles.input}
+              placeholder="Ort (optional)"
+              value={form.location}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
+            />
+            <input
+              className={styles.input}
+              placeholder="Zoom-Link (optional)"
+              value={form.zoom_link}
+              onChange={(e) => setForm({ ...form, zoom_link: e.target.value })}
+            />
+            <textarea
+              className={styles.textarea}
+              placeholder="Notizen (optional)"
+              rows={2}
+              value={form.body}
+              onChange={(e) => setForm({ ...form, body: e.target.value })}
+            />
+
+            {saveError && (
+              <p className={styles.saveError}>{saveError}</p>
+            )}
+
             <div className={styles.formActions}>
-              <button type="button" className={styles.cancelBtn} onClick={() => setShowForm(false)}>Abbrechen</button>
-              <button type="submit" className={styles.saveBtn} disabled={saving}>{saving ? '…' : 'Speichern'}</button>
+              {/* Delete button — left side, only in edit mode */}
+              {editEventId && activeEvent && (
+                <button
+                  type="button"
+                  className={styles.modalDeleteBtn}
+                  onClick={() => handleDeleteEvent(activeEvent)}
+                  disabled={deleting || saving}
+                  title="Termin löschen"
+                >
+                  {deleting ? '…' : '🗑 Löschen'}
+                </button>
+              )}
+              <div style={{ flex: 1 }} />
+              <button type="button" className={styles.cancelBtn} onClick={closeForm}>
+                Abbrechen
+              </button>
+              <button type="submit" className={styles.saveBtn} disabled={saving || deleting}>
+                {saving ? '…' : editEventId ? 'Speichern' : 'Erstellen'}
+              </button>
             </div>
           </form>
         </div>
@@ -267,7 +349,22 @@ export function CalendarView() {
             loading={loadingMore}
             onNavigate={navYear}
             onDayClick={(d) => openForm(startOfDay(d), endOfDay(d))}
-            onEventClick={(ev) => setSelection({ type: 'calendar', item: ev.resource })}
+            onEventClick={(ev) => {
+              setSelection({ type: 'calendar', item: ev.resource })
+              const { location, zoom_link } = splitLocation(ev.resource.location ?? '')
+              setForm({
+                subject: ev.resource.subject,
+                start: ev.resource.start ? toLocalDatetime(new Date(ev.resource.start)) : toLocalDatetime(new Date()),
+                end: ev.resource.end ? toLocalDatetime(new Date(ev.resource.end)) : toLocalDatetime(new Date()),
+                location,
+                zoom_link,
+                body: ev.resource.body ?? '',
+              })
+              setEditEventId(ev.resource.id)
+              setActiveEvent(ev)
+              setSaveError(null)
+              setShowForm(true)
+            }}
           />
         ) : (
           <Calendar

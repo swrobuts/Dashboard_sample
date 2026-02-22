@@ -13,6 +13,19 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return r.json()
 }
 
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }))
+    throw Object.assign(new Error(err.detail ?? r.statusText), { status: r.status, data: err })
+  }
+  return r.json()
+}
+
 async function del<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(path, {
     method: 'DELETE',
@@ -56,6 +69,8 @@ export const api = {
   calendar: (days_ahead = 14) => get<{ items: CalendarItem[] }>(`/api/calendar?days_ahead=${days_ahead}`),
   createCalendar: (subject: string, start: string, end: string, location?: string, body?: string) =>
     post<{ id: string; subject: string }>('/api/calendar/create', { subject, start, end, location, body }),
+  updateCalendar: (event_id: string, subject: string, start: string, end: string, location?: string, body?: string) =>
+    patch<{ id: string; subject: string }>(`/api/calendar/${encodeURIComponent(event_id)}`, { subject, start, end, location: location ?? '', body: body ?? '' }),
   deleteCalendar: (event_id: string, changekey = '') =>
     del<{ status: string }>(`/api/calendar/${encodeURIComponent(event_id)}`, { changekey }),
 
