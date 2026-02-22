@@ -76,7 +76,7 @@ export const useStore = create<AppState>((set) => ({
   setMailFilter: (mailFilter) => set({ mailFilter }),
   selection: null,
   setSelection: (selection) => set({ selection }),
-  philOpen: false,
+  philOpen: true,
   setPhilOpen: (philOpen) => set({ philOpen }),
   sentimentMode: false,
   setSentimentMode: (sentimentMode) => set({ sentimentMode }),

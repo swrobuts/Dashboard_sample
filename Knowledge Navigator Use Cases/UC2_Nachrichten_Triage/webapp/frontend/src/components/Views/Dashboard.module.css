@@ -1,20 +1,20 @@
 /* ── Dashboard shell ──────────────────────────────────────────────────────── */
 .dashboard {
-  padding: .875rem 1.5rem 0;
+  padding: 1.375rem 1.75rem 0;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0; overflow: hidden;
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
-.header { margin-bottom: .75rem; flex-shrink: 0; }
+.header { margin-bottom: 1.5rem; flex-shrink: 0; }
 .greeting {
-  font-size: clamp(.95rem, 1.5vw, 1.2rem); font-weight: 700;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem); font-weight: 700;
   letter-spacing: -.025em; font-family: var(--font);
   color: #1a1a1a; line-height: 1.1;
 }
 
 /* ── Section label ────────────────────────────────────────────────────────── */
-.section { margin-bottom: .75rem; flex-shrink: 0; }
+.section { margin-bottom: 1rem; flex-shrink: 0; }
 .empty { color: #9CA3AF; font-size: var(--text-sm); }
 
 /* ── Section headers ────────────────────────────────────────────────────── */
@@ -23,7 +23,7 @@
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-  margin: 0;
+  margin: 0 0 .75rem;
   text-transform: none;
 }
 .sectionHeader {
@@ -38,8 +38,8 @@
 .tileGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: 28px;
 }
 @media (max-width: 700px) {
   .tileGrid { grid-template-columns: repeat(2, 1fr); }
@@ -98,9 +98,9 @@
 /* ── Two-column layout — fills all remaining space ─────────────────────── */
 .twoCol {
   display: flex; flex-direction: row;
-  gap: 1rem;
+  gap: 1.5rem;
   flex: 1; min-height: 0;
-  padding-bottom: 1rem;
+  padding-bottom: 1.25rem;
 }
 @media (max-width: 900px) {
   .twoCol { flex-direction: column; flex: none; overflow-y: auto; max-height: none; }
@@ -114,7 +114,7 @@
 .leftCol {
   flex: 1; min-width: 0; min-height: 0;
   display: flex; flex-direction: column;
-  gap: .75rem; overflow: hidden;
+  gap: 1.25rem; overflow: hidden;
 }
 .leftSched {
   flex: 3; min-height: 0;
@@ -293,15 +293,15 @@
   color: #9CA3AF; font-size: var(--text-sm);
   background: var(--card-bg); border: 1px solid var(--card-border);
   border-radius: var(--radius-lg); box-shadow: var(--card-shadow);
-  padding: 1.25rem; text-align: center;
+  padding: 2rem 1.5rem; text-align: center;
 }
 
 .sched {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 5px;
   background: var(--card-bg); border: 1px solid var(--card-border);
   border-radius: var(--radius-lg); box-shadow: var(--card-shadow);
-  padding: .4rem;
+  padding: .625rem;
 }
 
 /* Free block */
@@ -368,7 +368,7 @@
 /* ── Schedule header with date nav ────────────────────────────────────────── */
 .schedHeader {
   display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0; margin-bottom: .25rem;
+  flex-shrink: 0; margin-bottom: .75rem;
 }
 .schedHeader > .sectionTitle { margin-bottom: 0; }
 
@@ -399,11 +399,11 @@
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
-.subSection + .subSection { margin-top: .625rem; }
+.subSection + .subSection { margin-top: 1rem; }
 
 .subSectionHeader {
   display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0; margin-bottom: .5rem;
+  flex-shrink: 0; margin-bottom: .75rem;
 }
 .subSectionHeader > .sectionTitle { margin-bottom: 0; }
 
@@ -467,7 +467,7 @@
 .taskDot.normal { background: var(--info-badge); }
 .taskDot.low    { background: var(--ignorieren-badge); }
 
-.taskBody { flex: 1; min-width: 0; }
+.taskBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 
 .taskTitle {
   font-size: var(--text-base);

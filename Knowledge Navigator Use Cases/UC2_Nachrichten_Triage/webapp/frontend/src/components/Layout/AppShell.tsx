@@ -150,14 +150,6 @@ export function AppShell({ children }: Props) {
                 {user.ews_connected ? 'Exchange verbunden' : 'Exchange getrennt'}
               </div>
             )}
-            <button
-              className={`${styles.philBtn} ${philOpen ? styles.philBtnActive : ''}`}
-              onClick={() => setPhilOpen(!philOpen)}
-              title={philOpen ? 'PHIL schließen' : 'PHIL öffnen'}
-            >
-              <img src="/phil.png" alt="PHIL" className={styles.philBtnAvatar} />
-              <span className={styles.philBtnLabel}>PHIL</span>
-            </button>
           </div>
         </header>
 
