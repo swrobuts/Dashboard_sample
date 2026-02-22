@@ -208,9 +208,13 @@ export function CalendarView() {
   }, [])
 
   const handleSelectEvent = useCallback((ev: RbcEvent) => {
-    // Set Phil panel context
+    // Single click: set Phil panel context only
     setSelection({ type: 'calendar', item: ev.resource })
-    // Open edit form with prefilled data
+  }, [setSelection])
+
+  const handleDoubleClickEvent = useCallback((ev: RbcEvent) => {
+    // Double click: open edit form
+    setSelection({ type: 'calendar', item: ev.resource })
     const { location, zoom_link } = splitLocation(ev.resource.location ?? '')
     setForm({
       subject: ev.resource.subject,
@@ -375,6 +379,11 @@ export function CalendarView() {
             onNavigate={navYear}
             onDayClick={(d) => openForm(startOfDay(d), endOfDay(d))}
             onEventClick={(ev) => {
+              // Single click: Phil context only
+              setSelection({ type: 'calendar', item: ev.resource })
+            }}
+            onEventDoubleClick={(ev) => {
+              // Double click: open edit form
               setSelection({ type: 'calendar', item: ev.resource })
               const { location, zoom_link } = splitLocation(ev.resource.location ?? '')
               setForm({
@@ -402,6 +411,7 @@ export function CalendarView() {
             onView={handleViewChange}
             onSelectSlot={handleSelectSlot}
             onSelectEvent={handleSelectEvent}
+            onDoubleClickEvent={handleDoubleClickEvent}
             selectable
             messages={RBC_MESSAGES}
             popup
@@ -431,9 +441,10 @@ interface YearViewProps {
   onNavigate: (dir: -1 | 1) => void
   onDayClick: (d: Date) => void
   onEventClick: (ev: RbcEvent) => void
+  onEventDoubleClick: (ev: RbcEvent) => void
 }
 
-function YearView({ date, events, loading, onNavigate, onDayClick, onEventClick }: YearViewProps) {
+function YearView({ date, events, loading, onNavigate, onDayClick, onEventClick, onEventDoubleClick }: YearViewProps) {
   const year = date.getFullYear()
   const months = eachMonthOfInterval({ start: startOfYear(date), end: endOfYear(date) })
   const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -479,6 +490,10 @@ function YearView({ date, events, loading, onNavigate, onDayClick, onEventClick 
                       onMouseLeave={() => setHoveredDay(null)}
                       onClick={() => {
                         if (dayEvents.length > 0) onEventClick(dayEvents[0])
+                        else onDayClick(d)
+                      }}
+                      onDoubleClick={() => {
+                        if (dayEvents.length > 0) onEventDoubleClick(dayEvents[0])
                         else onDayClick(d)
                       }}
                     >
