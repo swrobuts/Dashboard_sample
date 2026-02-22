@@ -306,9 +306,9 @@ export function PhilPanel({ open, onClose }: Props) {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className={styles.header}>
-        <img src="/phil.png" className={styles.avatar} alt="PHIL" />
-        <div className={styles.headerText}>
-          <span className={styles.headerTitle}>PHIL</span>
+        <div className={styles.avatarRow}>
+          <img src="/phil.png" alt="PHIL" className={styles.avatar} />
+          <div className={styles.avatarName}>PHIL</div>
           {contextLabel && <span className={styles.contextLabel} title={contextLabel}>{contextLabel}</span>}
         </div>
         <button className={styles.closeBtn} onClick={onClose} aria-label="Schließen">✕</button>
