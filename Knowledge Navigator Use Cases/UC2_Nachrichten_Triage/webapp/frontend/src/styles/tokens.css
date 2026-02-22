@@ -1,67 +1,110 @@
+/* ── PHIL PIM Dashboard — Design Tokens v2 ─────────────────────────────── */
+/* 8-point grid. All spacing is a multiple of 4px or 8px.                   */
+
 :root {
-  /* ── Accent — Prussian Blue ─────────────────────────────────────────────── */
-  --amber:        #1B3A6B;
-  --amber-dark:   #112B52;
-  --amber-light:  #E8EEF7;
+  /* ── Fonts ─────────────────────────────────────────────────────────────── */
+  --font:      'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'DM Mono', 'Fira Mono', monospace;
 
-  /* ── Category Palette ───────────────────────────────────────────────────── */
-  --vip-bg:            #FEF2F2;
-  --vip-text:          #991B1B;
-  --vip-badge:         #DC2626;
-  --aktion-bg:         #FFFBEB;
-  --aktion-text:       #92400E;
-  --aktion-badge:      #D97706;
-  --info-bg:           #EFF6FF;
-  --info-text:         #1E40AF;
-  --info-badge:        #2563EB;
-  --ignorieren-bg:     #F9FAFB;
-  --ignorieren-text:   #4B5563;
-  --ignorieren-badge:  #9CA3AF;
+  /* ── Type Scale ─────────────────────────────────────────────────────────── */
+  --text-xs:   0.6875rem;   /* 11px — badges, captions, tile labels */
+  --text-sm:   0.8125rem;   /* 13px — secondary text, sidebar nav */
+  --text-base: 0.9375rem;   /* 15px — body copy */
+  --text-lg:   1.0625rem;   /* 17px — card titles */
+  --text-xl:   1.25rem;     /* 20px — section headings */
+  --text-2xl:  1.5rem;      /* 24px — page headings */
+  --text-3xl:  2rem;        /* 32px — tile numbers */
+  --text-4xl:  2.75rem;     /* 44px — hero tile numbers */
 
-  /* ── Surfaces ───────────────────────────────────────────────────────────── */
-  --content-bg:     #F0EEE9;   /* warm parchment */
-  --content-border: #D8D5CE;
+  /* ── Brand (Prussian Blue) ──────────────────────────────────────────────── */
+  --amber:       #1B3A6B;
+  --amber-dark:  #112B52;
+  --amber-light: #EBF1FC;
 
-  --card-bg:          #FFFFFF;
-  --card-border:      #E2DFDA;
-  --card-shadow:      0 1px 2px rgba(0,0,0,.05);
-  --card-shadow-hover:0 6px 20px rgba(0,0,0,.09);
+  /* ── Backgrounds ────────────────────────────────────────────────────────── */
+  --content-bg:     #F7F8FA;   /* Cool light gray — main content area */
+  --content-border: #E4E7EB;
+
+  /* ── Cards & Surfaces ───────────────────────────────────────────────────── */
+  --card-bg:           #FFFFFF;
+  --card-border:       #E4E7EB;
+  --card-shadow:       0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);
 
   /* ── Sidebar ────────────────────────────────────────────────────────────── */
   --sidebar-bg:          #FFFFFF;
-  --sidebar-border:      #E8E5DF;
+  --sidebar-border:      #E4E7EB;
   --sidebar-text:        #4B5563;
   --sidebar-text-active: #1B3A6B;
-  --sidebar-hover:       #F5F3EF;
-  --sidebar-active:      #EBE8E0;
+  --sidebar-hover:       #F7F8FA;
+  --sidebar-active:      #EBF1FC;
   --sidebar-accent:      #1B3A6B;
 
   /* ── Phil Panel ─────────────────────────────────────────────────────────── */
   --phil-bg:     #FFFFFF;
-  --phil-border: #E2DFDA;
+  --phil-border: #E4E7EB;
 
-  /* ── Typography — DM Sans: geometric, Bauhaus-inspired ─────────────────── */
-  --font:      'DM Sans', system-ui, sans-serif;
-  --font-mono: 'DM Mono', monospace;
+  /* ── Category — VIP ─────────────────────────────────────────────────────── */
+  --vip-bg:     #FFF0F0;
+  --vip-text:   #991B1B;
+  --vip-badge:  #C41A1A;
 
-  --text-xs:   0.6875rem;  /* 11px */
-  --text-sm:   0.8125rem;  /* 13px */
-  --text-base: 0.9375rem;  /* 15px */
-  --text-lg:   1.0625rem;  /* 17px */
-  --text-xl:   1.25rem;    /* 20px */
-  --text-2xl:  1.5rem;     /* 24px */
+  /* ── Category — Aktion ──────────────────────────────────────────────────── */
+  --aktion-bg:     #FFFBF0;
+  --aktion-text:   #92400E;
+  --aktion-badge:  #C47A00;
 
-  /* ── Geometry — Bauhaus: minimal, precise ───────────────────────────────── */
-  --radius-sm: 3px;
-  --radius:    5px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  /* ── Category — Info ────────────────────────────────────────────────────── */
+  --info-bg:     #F0F5FF;
+  --info-text:   #1D4ED8;
+  --info-badge:  #1D4ED8;
+
+  /* ── Category — Ignorieren ──────────────────────────────────────────────── */
+  --ignorieren-bg:     #F8F9FA;
+  --ignorieren-text:   #64748B;
+  --ignorieren-badge:  #94A3B8;
+
+  /* ── Text Colors ────────────────────────────────────────────────────────── */
+  --text-primary:   #111827;
+  --text-secondary: #6B7280;
+  --text-tertiary:  #9CA3AF;
+
+  /* ── Semantic ───────────────────────────────────────────────────────────── */
+  --success:  #059669;
+  --error:    #DC2626;
+  --warning:  #D97706;
+
+  /* ── Borders ────────────────────────────────────────────────────────────── */
+  --border:       #E4E7EB;
+  --border-light: #F0F2F5;
+
+  /* ── Shadows ────────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.12);
+
+  /* ── Radii ──────────────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius:    6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
 
   /* ── Layout ─────────────────────────────────────────────────────────────── */
-  --sidebar-w:      240px;
-  --sidebar-mini:   52px;
-  --header-h:       48px;
-  --phil-w:         340px;
-  --bottom-nav-h:   58px;
-  --transition:     170ms cubic-bezier(.4,0,.2,1);
+  --sidebar-w:    240px;
+  --sidebar-mini: 52px;
+  --header-h:     52px;
+  --phil-w:       400px;
+  --bottom-nav-h: 58px;
+
+  /* ── Spacing (8pt grid) ─────────────────────────────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* ── Motion ─────────────────────────────────────────────────────────────── */
+  --transition: 150ms cubic-bezier(.4, 0, .2, 1);
 }
