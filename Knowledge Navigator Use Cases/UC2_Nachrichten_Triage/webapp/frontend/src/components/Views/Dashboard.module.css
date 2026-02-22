@@ -445,8 +445,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  min-height: 52px;
+  padding: 16px 20px;
+  min-height: 64px;
   background: var(--card-bg);
   border-bottom: 1px solid var(--border-light);
   transition: background var(--transition);
@@ -467,7 +467,7 @@
 .taskDot.normal { background: var(--info-badge); }
 .taskDot.low    { background: var(--ignorieren-badge); }
 
-.taskBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.taskBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 
 .taskTitle {
   font-size: var(--text-base);
