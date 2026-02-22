@@ -531,3 +531,58 @@ def test_analyze_without_attachments_unchanged(mocker):
     r = client.post("/api/analyze", json={"email_text": "Keine Anhänge hier.", "attachments": []})
     assert r.status_code == 200
     mock_index.index_attachment.assert_not_called()
+
+
+# ── Ontology Tests ──────────────────────────────────────────────────────────
+
+def test_ontology_entity_extraction_after_analyze(mocker):
+    """analyze() calls entity extraction and adds ontology triples when mail_id given."""
+    mock_triage = mocker.MagicMock()
+    mock_triage.content[0].text = json.dumps({
+        "kategorie": "VIP", "priorität": 1,
+        "zusammenfassung": "Wichtige Mail.", "empfohlene_aktion": "Antworten.",
+    })
+    mock_entities = mocker.MagicMock()
+    mock_entities.content[0].text = json.dumps({
+        "persons": ["Prof. Test"],
+        "projects": ["Testprojekt"],
+        "deadlines": ["2026-03-01"],
+        "action_items": ["Antwort senden"],
+    })
+    mocker.patch(
+        "backend.main.anthropic_client.messages.create",
+        side_effect=[mock_triage, mock_entities],
+    )
+    mock_store = mocker.patch("backend.main.ontology_store")
+    mock_store.add_mail_triples = mocker.MagicMock()
+
+    client = get_client()
+    r = client.post("/api/analyze", json={
+        "email_text": "Mail von Prof. Test über Testprojekt.",
+        "mail_id": "m-ont-1",
+        "subject": "Testprojekt",
+        "sender": "Prof. Test <test@hdm.de>",
+        "date": "2026-02-22",
+    })
+    assert r.status_code == 200
+    mock_store.add_mail_triples.assert_called_once()
+    call_kw = mock_store.add_mail_triples.call_args.kwargs
+    assert call_kw["mail_id"] == "m-ont-1"
+    assert "Prof. Test" in call_kw["entities"]["persons"]
+
+
+def test_ontology_skipped_when_no_mail_id(mocker):
+    """analyze() does NOT call ontology when mail_id is missing."""
+    mock_resp = mocker.MagicMock()
+    mock_resp.content[0].text = json.dumps({
+        "kategorie": "Nur Info", "priorität": 3,
+        "zusammenfassung": "FYI.", "empfohlene_aktion": "Ignorieren.",
+    })
+    mocker.patch("backend.main.anthropic_client.messages.create", return_value=mock_resp)
+    mock_store = mocker.patch("backend.main.ontology_store")
+    mock_store.add_mail_triples = mocker.MagicMock()
+
+    client = get_client()
+    r = client.post("/api/analyze", json={"email_text": "Kein mail_id hier."})
+    assert r.status_code == 200
+    mock_store.add_mail_triples.assert_not_called()

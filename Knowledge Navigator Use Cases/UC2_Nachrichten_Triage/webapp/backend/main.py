@@ -21,6 +21,7 @@ load_dotenv()
 load_dotenv(Path(__file__).parent / ".env", override=False)
 
 from backend.knowledge_store import KnowledgeStore
+from backend.ontology_store import OntologyStore
 from backend.attachment_extractor import extract_text as extract_attachment_text
 
 try:
@@ -31,6 +32,12 @@ except ValueError as e:
 except Exception as e:
     logging.warning(f"[RAG] KnowledgeStore deaktiviert (unerwarteter Fehler): {type(e).__name__}: {e}")
     knowledge_store = None
+
+try:
+    ontology_store = OntologyStore()
+except Exception as e:
+    logging.warning(f"[Ontology] OntologyStore deaktiviert: {type(e).__name__}: {e}")
+    ontology_store = None
 
 app = FastAPI(title="PHIL PIM Dashboard", version="2.0.0")
 
@@ -84,6 +91,16 @@ def _strip_fences(text: str) -> str:
     return text.strip()
 
 
+def _parse_sender(sender: str) -> tuple[str, str]:
+    """Extract (name, email) from 'Name <email>' or plain email string."""
+    m = re.match(r'^["\']?([^<"\']+?)["\']?\s*<([^>]+)>', sender.strip())
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    if "@" in sender:
+        return sender.strip(), sender.strip()
+    return sender.strip(), ""
+
+
 def _summarize_attachment(filename: str, text: str) -> str:
     """Call Claude for a concise 3-sentence attachment summary."""
     prompt = (
@@ -100,6 +117,38 @@ def _summarize_attachment(filename: str, text: str) -> str:
     except Exception as exc:
         logging.warning(f"[Attachment] Zusammenfassung fehlgeschlagen: {exc}")
         return ""
+
+
+def _extract_entities(mail_text: str) -> dict:
+    """Call Claude to extract structured entities from mail text.
+
+    Returns dict with keys: persons, projects, deadlines, action_items.
+    Returns empty lists on any error — never raises.
+    """
+    _EMPTY = {"persons": [], "projects": [], "deadlines": [], "action_items": []}
+    prompt = (
+        "Extrahiere aus der folgenden E-Mail strukturierte Entitäten als JSON.\n"
+        "Antworte NUR mit validem JSON — kein Text davor oder danach:\n"
+        "{\n"
+        '  "persons": ["vollständige Namen erwähnter Personen (keine E-Mail-Adressen)"],\n'
+        '  "projects": ["erwähnte Projekte, Anträge, Vorhaben (leer wenn keine)"],\n'
+        '  "deadlines": ["Daten im Format YYYY-MM-DD oder kurze Beschreibung (leer wenn keine)"],\n'
+        '  "action_items": ["konkrete Aufgaben oder Anforderungen (leer wenn keine)"]\n'
+        "}\n\n"
+        f"E-Mail:\n{mail_text[:2000]}"
+    )
+    try:
+        resp = anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = _strip_fences(resp.content[0].text)
+        data = json.loads(raw)
+        return {k: data.get(k, []) for k in _EMPTY}
+    except Exception as exc:
+        logging.warning(f"[Ontology] Entity-Extraktion fehlgeschlagen: {exc}")
+        return _EMPTY
 
 
 class AttachmentIn(BaseModel):
@@ -195,6 +244,21 @@ def analyze(req: AnalyzeRequest):
                 )
         except Exception as exc:
             logging.warning(f"[Attachment] Indexierung fehlgeschlagen {att.filename}: {exc}")
+
+    # ── Entity extraction + ontology triples (non-fatal) ──────────────
+    if req.mail_id and ontology_store is not None:
+        try:
+            entities = _extract_entities(req.email_text)
+            sender_name, sender_email = _parse_sender(req.sender)
+            ontology_store.add_mail_triples(
+                mail_id=req.mail_id,
+                sender_name=sender_name,
+                sender_email=sender_email,
+                subject=req.subject,
+                entities=entities,
+            )
+        except Exception as exc:
+            logging.warning(f"[Ontology] Tripel-Erstellung fehlgeschlagen: {exc}")
 
     return result
 
