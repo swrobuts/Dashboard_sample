@@ -989,6 +989,7 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
     person_match = re.search(
         r'\bmit\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)+)',
         req.subject,
+        re.IGNORECASE,
     )
     person_name = person_match.group(1) if person_match else None
 
