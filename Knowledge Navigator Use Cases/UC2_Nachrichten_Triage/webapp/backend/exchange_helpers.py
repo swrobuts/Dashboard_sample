@@ -619,6 +619,7 @@ def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
             "--account", account,
             "--from", from_dt,
             "--to",   to_dt,
+            "--all",          # alle Kalender, nicht nur Primary
             "--json",
             "--max", "2000",
             "--no-input",
