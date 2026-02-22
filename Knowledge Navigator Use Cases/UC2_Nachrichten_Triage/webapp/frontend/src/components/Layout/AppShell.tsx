@@ -136,6 +136,14 @@ export function AppShell({ children }: Props) {
           })()}
 
           <div className={styles.topbarRight}>
+            {user?.llm_mode && (
+              <div className={styles.llmBadge} title={`KI-Modus: ${user.llm_mode}`}>
+                {user.llm_mode === 'cloud' ? '☁' : user.llm_mode === 'hybrid' ? '⚡' : '💻'}
+                <span className={styles.llmBadgeLabel}>
+                  {user.llm_mode === 'cloud' ? 'Cloud' : user.llm_mode === 'hybrid' ? 'Hybrid' : 'Lokal'}
+                </span>
+              </div>
+            )}
             {user && (
               <div className={`${styles.ewsPill} ${!user.ews_connected ? styles.ewsPillErr : ''}`}>
                 <span className={`${styles.ewsPillDot} ${!user.ews_connected ? styles.ewsPillErrDot : ''}`} />

@@ -100,6 +100,19 @@
 
 .topbarRight { display: flex; align-items: center; gap: .625rem; }
 
+/* ── LLM Mode Badge ─────────────────────────────────────────────────────── */
+.llmBadge {
+  display: flex; align-items: center; gap: .3rem;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  border: 1px solid #E0D4F5;
+  background: #F5F0FF;
+  font-size: var(--text-xs); color: #7C3AED;
+  font-family: var(--font); font-weight: 500;
+  white-space: nowrap;
+}
+.llmBadgeLabel { line-height: 1; }
+
 /* ── EWS status pill ─────────────────────────────────────────────────────── */
 .ewsPill {
   display: flex; align-items: center; gap: .375rem;

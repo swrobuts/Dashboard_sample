@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from '../../store/useStore'
 import { api } from '../../api/client'
 import type { TriagedMail } from '../../api/types'
@@ -21,6 +22,7 @@ interface Props { mail: TriagedMail }
 
 export function MailCard({ mail }: Props) {
   const { selection, setSelection, removeMail, setPhilOpen, sentimentMode } = useStore()
+  const [showDetail, setShowDetail] = useState(false)
   const isSelected = selection?.type === 'mail' && selection.item.id === mail.id
   const colorClass = CAT_COLORS[mail.kategorie] ?? 'info'
   const borderClass = mail.triageStatus === 'done' ? (styles[CAT_BORDER[mail.kategorie] ?? ''] ?? '') : ''
@@ -99,10 +101,13 @@ export function MailCard({ mail }: Props) {
   }
 
   return (
+    <>
     <div
       className={`${styles.card} ${activeBorderClass} ${isSelected ? styles.selected : ''}`}
       style={sentimentStyle}
       onClick={() => setSelection({ type: 'mail', item: mail })}
+      onDoubleClick={() => setShowDetail(true)}
+      title="Doppelklick zum Öffnen"
     >
       <div className={styles.header}>
         <span className={`${styles.badge} ${styles[colorClass]}`}>{mail.kategorie}</span>
@@ -131,5 +136,33 @@ export function MailCard({ mail }: Props) {
         <p className={styles.summary}>{mail.zusammenfassung}</p>
       )}
     </div>
+
+    {/* ── Mail-Detail-Modal (via Portal → renders at document.body) ── */}
+    {showDetail && createPortal(
+      <div className={styles.detailOverlay} onClick={() => setShowDetail(false)}>
+        <div className={styles.detailModal} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.detailHeader}>
+            <div className={styles.detailMeta}>
+              <span className={`${styles.badge} ${styles[colorClass]}`}>{mail.kategorie}</span>
+              <span className={styles.detailDate}>
+                {mail.datetime_received
+                  ? new Date(mail.datetime_received).toLocaleString('de-DE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  : ''}
+              </span>
+            </div>
+            <button className={styles.detailClose} onClick={() => setShowDetail(false)} aria-label="Schließen">✕</button>
+          </div>
+          <p className={styles.detailSubject}>{mail.subject}</p>
+          <p className={styles.detailSender}>{mail.sender}</p>
+          {mail.zusammenfassung && (
+            <p className={styles.detailSummary}>{mail.zusammenfassung}</p>
+          )}
+          <hr className={styles.detailDivider} />
+          <pre className={styles.detailBody}>{mail.body || '(kein Inhalt)'}</pre>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   )
 }

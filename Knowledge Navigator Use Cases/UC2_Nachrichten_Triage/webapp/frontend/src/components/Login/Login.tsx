@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import { api } from '../../api/client'
-import type { User } from '../../api/types'
+import type { User, LLMMode } from '../../api/types'
 import styles from './Login.module.css'
 
 const INSTITUTIONS = ['THWS', 'DHBW']
+
+const LLM_MODES: { value: LLMMode; icon: string; label: string; hint: string }[] = [
+  { value: 'cloud',  icon: '☁',  label: 'Cloud',  hint: 'Claude API (Anthropic)' },
+  { value: 'hybrid', icon: '⚡', label: 'Hybrid', hint: 'Triage lokal, Chat Cloud' },
+  { value: 'local',  icon: '💻', label: 'Lokal',  hint: 'LM Studio (localhost)' },
+]
 
 interface Props { onLogin: (user: User) => void }
 
@@ -12,6 +18,7 @@ export function Login({ onLogin }: Props) {
   const [username, setUsername] = useState(() => localStorage.getItem('phil_username') ?? '')
   const [password, setPassword] = useState('')
   const [exchangeEmail, setExchangeEmail] = useState(() => localStorage.getItem('phil_exchange_email') ?? '')
+  const [llmMode, setLlmMode] = useState<LLMMode>(() => (localStorage.getItem('phil_llm_mode') as LLMMode) ?? 'cloud')
   const [error, setError] = useState('')
   const [lockoutSecs, setLockoutSecs] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -25,10 +32,12 @@ export function Login({ onLogin }: Props) {
     try {
       const data = await api.login(
         username, password, institution,
-        needsExchangeEmail && exchangeEmail ? exchangeEmail : undefined
+        needsExchangeEmail && exchangeEmail ? exchangeEmail : undefined,
+        llmMode
       )
       localStorage.setItem('phil_institution', institution)
       localStorage.setItem('phil_username', username)
+      localStorage.setItem('phil_llm_mode', llmMode)
       if (needsExchangeEmail && exchangeEmail) {
         localStorage.setItem('phil_exchange_email', exchangeEmail)
       }
@@ -39,6 +48,7 @@ export function Login({ onLogin }: Props) {
         inbox_count: data.inbox_count,
         ews_connected: data.ews_connected,
         ews_error: data.ews_error,
+        llm_mode: data.llm_mode ?? llmMode,
       })
     } catch (err: unknown) {
       const e = err as { status?: number; data?: { detail?: { retry_after?: number } } }
@@ -95,6 +105,26 @@ export function Login({ onLogin }: Props) {
               autoComplete="email"
             />
           )}
+
+          {/* ── LLM-Modus Toggle ─────────────────────────────────── */}
+          <div className={styles.llmToggle}>
+            <span className={styles.llmLabel}>KI-Verarbeitung</span>
+            <div className={styles.llmChips}>
+              {LLM_MODES.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  className={`${styles.llmChip} ${llmMode === m.value ? styles.llmChipActive : ''}`}
+                  onClick={() => setLlmMode(m.value)}
+                  title={m.hint}
+                >
+                  <span className={styles.llmChipIcon}>{m.icon}</span>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {error && <p className={styles.error}>{error}</p>}
           {lockoutSecs > 0 && (
             <p className={styles.lockout}>

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import { useStore } from '../../store/useStore'
 import { api } from '../../api/client'
 import { PhilGraph } from './PhilGraph'
 import type { GraphData } from './PhilGraph'
-import type { KnowledgeResult, OntologyEntities } from '../../api/types'
+import type { KnowledgeResult } from '../../api/types'
 import styles from './PhilPanel.module.css'
 
 interface ChatMessage { role: 'user' | 'phil'; text: string }
@@ -18,7 +19,6 @@ function parseSenderName(sender: string): string | null {
   const m = sender.match(/^["']?([^<"'\n]+?)["']?\s*</)
   if (!m) return null
   const raw = m[1].trim()
-  // "Last, First" → "First Last"
   const comma = raw.match(/^([^,]+),\s*(.+)$/)
   return comma ? `${comma[2].trim()} ${comma[1].trim()}` : raw
 }
@@ -29,6 +29,73 @@ function extractPersonFromSubject(subject: string): string | null {
   return m ? m[1] : null
 }
 
+// ── Sub-components ──────────────────────────────────────────────────────────
+
+function RagBlock({ results }: { results: KnowledgeResult[] }) {
+  if (!results.length) return null
+  return (
+    <details className={styles.sourceDetails}>
+      <summary className={styles.sourcesSummary}>
+        📚 {results.length} ähnliche Mail{results.length > 1 ? 's' : ''} gefunden
+      </summary>
+      <div className={styles.ragList}>
+        {results.map((r) => (
+          <div key={r.id} className={styles.ragItem}>
+            <span className={`${styles.ragScore} ${r.score >= 0.85 ? styles.ragScoreHigh : ''}`}>
+              {Math.round(r.score * 100)}%
+            </span>
+            <div className={styles.ragMeta}>
+              <span className={styles.ragSubject}>{r.subject}</span>
+              <span className={styles.ragSender}>{r.sender} · {r.date}</span>
+              {r.summary && <span className={styles.ragSummaryText}>{r.summary}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function InlineGraphBlock({ data, loading }: { data: GraphData | null; loading: boolean }) {
+  const [open, setOpen] = useState(false)
+
+  if (loading) return (
+    <div className={styles.sourceDetails}>
+      <div className={styles.sourcesSummary} style={{ cursor: 'default' }}>
+        <span className={styles.typingDot}>⏳</span> Wissensgraph wird berechnet…
+      </div>
+    </div>
+  )
+  if (!data || data.nodes.length <= 1) return null
+
+  const entityCount = data.nodes.filter((n) => n.id !== 'center').length
+
+  return (
+    <>
+      <button className={styles.graphTriggerBtn} onClick={() => setOpen(true)}>
+        🕸 Wissensgraph · {entityCount} Entität{entityCount !== 1 ? 'en' : ''} — anzeigen
+      </button>
+
+      {open && createPortal(
+        <div className={styles.graphPopoverOverlay} onClick={() => setOpen(false)}>
+          <div className={styles.graphPopoverDialog} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.graphPopoverHeader}>
+              <span className={styles.graphPopoverTitle}>🕸 Wissensgraph</span>
+              <button className={styles.graphPopoverClose} onClick={() => setOpen(false)} aria-label="Schließen">✕</button>
+            </div>
+            <div className={styles.graphPopoverBody}>
+              <PhilGraph data={data} />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// ── Main Component ──────────────────────────────────────────────────────────
+
 export function PhilPanel({ open, onClose }: Props) {
   const { selection, setView, setTrainPreset } = useStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -37,21 +104,22 @@ export function PhilPanel({ open, onClose }: Props) {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [ragResults, setRagResults] = useState<KnowledgeResult[]>([])
-  const [ontologyData, setOntologyData] = useState<OntologyEntities | null>(null)
+  const [mailGraphData, setMailGraphData] = useState<GraphData | null>(null)
+  const [mailGraphLoading, setMailGraphLoading] = useState(false)
 
-  // Per-message TTS state
-  const [ttsIdx, setTtsIdx] = useState<number | null>(null)       // which message is playing
-  const [ttsLoadingIdx, setTtsLoadingIdx] = useState<number | null>(null) // which is loading
+  const [ttsIdx, setTtsIdx] = useState<number | null>(null)
+  const [ttsLoadingIdx, setTtsLoadingIdx] = useState<number | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Only show RAG results above relevance threshold
+  const filteredRag = ragResults.filter((r) => r.score >= 0.70)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Clean up audio on unmount
   useEffect(() => {
     return () => {
       audioRef.current?.pause()
@@ -67,16 +135,12 @@ export function PhilPanel({ open, onClose }: Props) {
   }
 
   async function toggleTts(text: string, idx: number) {
-    // Pause if this message is already playing
     if (ttsIdx === idx && audioRef.current) {
       audioRef.current.pause()
       setTtsIdx(null)
       return
     }
-
-    // Stop any current audio
     stopAudio()
-
     setTtsLoadingIdx(idx)
     try {
       const url = await api.tts(text.slice(0, 500))
@@ -113,7 +177,6 @@ export function PhilPanel({ open, onClose }: Props) {
     ? ['Aufgabe beschreiben', 'Aufwand schätzen', 'Unteraufgaben vorschlagen', 'Dringlichkeit prüfen', 'E-Mail entwerfen']
     : ['Was steht heute an?', 'Wichtigste Aufgaben', 'Freie Slots finden', 'Wochenvorschau', 'Überfällige Aufgaben']
 
-  // LinkedIn pill — derived from sender (mail) or subject person (calendar)
   const linkedinName: string | null =
     selection?.type === 'mail' ? parseSenderName(selection.item.sender) :
     selection?.type === 'calendar' ? extractPersonFromSubject(selection.item.subject) :
@@ -122,13 +185,11 @@ export function PhilPanel({ open, onClose }: Props) {
     ? `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(linkedinName)}`
     : null
 
-  // Train quick action — calendar events with a physical location (no URLs)
   const trainLocation: string | null =
     selection?.type === 'calendar' && selection.item.location &&
     !selection.item.location.match(/^https?:\/\//i)
       ? selection.item.location : null
 
-  // Calendar thread action
   const calendarPerson: string | null =
     selection?.type === 'calendar' ? extractPersonFromSubject(selection.item.subject) : null
   const calendarThreadAction = calendarPerson
@@ -160,22 +221,35 @@ export function PhilPanel({ open, onClose }: Props) {
   async function send(text: string) {
     if (!text.trim() || streaming) return
     setInput('')
-    // Fetch RAG sources in parallel (non-blocking — don't await)
     setRagResults([])
-    api.knowledgeSearch(text, 3)
+    setMailGraphData(null)
+
+    // RAG: query by the selected item's content so results are actually related,
+    // not by the user's typed message (which is often a generic action like "Zusammenfassen")
+    const ragQuery = selection?.type === 'mail'
+      ? `${selection.item.subject} ${selection.item.zusammenfassung ?? ''}`.trim()
+      : selection?.type === 'calendar'
+      ? selection.item.subject
+      : selection?.type === 'task'
+      ? selection.item.subject
+      : text
+    api.knowledgeSearch(ragQuery, 5)
       .then(({ results }) => setRagResults(results))
       .catch(() => {})
-    api.ontologyEntities()
-      .then(data => {
-        const hasData = data.persons.length > 0 || data.projects.length > 0 || data.tasks.length > 0
-        setOntologyData(hasData ? data : null)
-      })
-      .catch(() => {})
+
+    // Graph: auto-fetch from selected mail's content so it shows relevant entities
+    if (selection?.type === 'mail') {
+      const m = selection.item
+      setMailGraphLoading(true)
+      api.graph(m.subject, `Von: ${m.sender}\nBetreff: ${m.subject}\n${m.body ?? m.zusammenfassung ?? ''}`)
+        .then((data) => setMailGraphData(data))
+        .catch(() => {})
+        .finally(() => setMailGraphLoading(false))
+    }
     setMessages((prev) => [...prev, { role: 'user', text }])
     setStreaming(true)
     stopAudio()
 
-    // Prepend selection-specific context if an item is selected
     let contextMsg = text
     if (selection?.type === 'mail') {
       const m = selection.item
@@ -192,7 +266,6 @@ export function PhilPanel({ open, onClose }: Props) {
     setMessages((prev) => [...prev, { role: 'phil', text: '' }])
 
     try {
-      // include_context=true → backend fetches mails + Google Calendar + EWS tasks
       const stream = api.chatStream(contextMsg, true)
       const reader = stream.getReader()
       while (true) {
@@ -214,7 +287,6 @@ export function PhilPanel({ open, onClose }: Props) {
       })
     } finally {
       setStreaming(false)
-      // Guard: if stream ended with no data and no exception caught (shouldn't happen but safety net)
       setMessages((prev) => {
         if (prev.length > 0 && prev[prev.length - 1].role === 'phil' && prev[prev.length - 1].text === '') {
           const updated = [...prev]
@@ -226,19 +298,23 @@ export function PhilPanel({ open, onClose }: Props) {
     }
   }
 
+  // Last index of a Phil message (for inline sources)
+  const lastPhilIdx = messages.reduce((acc, m, i) => m.role === 'phil' ? i : acc, -1)
+
   return (
     <div className={`${styles.panel} ${open ? styles.open : ''}`}>
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className={styles.header}>
         <img src="/phil.png" className={styles.avatar} alt="PHIL" />
         <div className={styles.headerText}>
-          <div className={styles.headerTitleRow}>
-            <span className={styles.headerTitle}>PHIL</span>
-          </div>
+          <span className={styles.headerTitle}>PHIL</span>
           {contextLabel && <span className={styles.contextLabel} title={contextLabel}>{contextLabel}</span>}
         </div>
         <button className={styles.closeBtn} onClick={onClose} aria-label="Schließen">✕</button>
       </div>
 
+      {/* ── Quick Actions ──────────────────────────────────────────────────── */}
       <div className={styles.quickActions}>
         {quickActions.map((action) => (
           <button key={action} className={styles.quickBtn} onClick={() => send(action)} disabled={streaming}>
@@ -287,7 +363,7 @@ export function PhilPanel({ open, onClose }: Props) {
         )}
       </div>
 
-      {/* Graph popover — rendered as fixed overlay outside the panel flow */}
+      {/* ── Graph overlay ──────────────────────────────────────────────────── */}
       {graphData && (
         <div className={styles.graphOverlay} onClick={() => setGraphData(null)}>
           <div className={styles.graphDialog} onClick={(e) => e.stopPropagation()}>
@@ -302,6 +378,7 @@ export function PhilPanel({ open, onClose }: Props) {
         </div>
       )}
 
+      {/* ── Messages ───────────────────────────────────────────────────────── */}
       <div className={styles.messages}>
         {messages.length === 0 && (
           <p className={styles.emptyMsg}>
@@ -310,81 +387,47 @@ export function PhilPanel({ open, onClose }: Props) {
               : 'Wähle ein Element aus oder stelle eine Frage.'}
           </p>
         )}
+
         {messages.map((msg, i) => (
-          <div key={i} className={`${styles.msg} ${styles[msg.role]}`}>
-            {msg.role === 'phil' && (
-              <img src="/phil.png" className={styles.msgAvatar} alt="PHIL" />
-            )}
-            <div className={`${styles.msgBubble} ${msg.role === 'phil' ? styles.msgBubbleMd : ''}`}>
-              {msg.role === 'phil'
-                ? msg.text
-                  ? <ReactMarkdown>{msg.text}</ReactMarkdown>
-                  : (streaming && i === messages.length - 1 ? <span className={styles.typingDot}>…</span> : null)
-                : msg.text}
-              {/* TTS button on completed Phil messages */}
-              {msg.role === 'phil' && msg.text && !(streaming && i === messages.length - 1) && (
-                <button
-                  className={`${styles.msgTtsBtn} ${ttsIdx === i ? styles.msgTtsBtnPlaying : ''}`}
-                  onClick={() => toggleTts(msg.text, i)}
-                  disabled={ttsLoadingIdx === i}
-                  title={ttsIdx === i ? 'Pause' : 'Vorlesen'}
-                  aria-label={ttsIdx === i ? 'Pause' : 'Vorlesen'}
-                >
-                  {ttsLoadingIdx === i ? '…' : ttsIdx === i ? '⏸' : '▶'}
-                </button>
+          <div key={i}>
+            <div className={`${styles.msg} ${styles[msg.role]}`}>
+              {msg.role === 'phil' && (
+                <img src="/phil.png" className={styles.msgAvatar} alt="PHIL" />
               )}
+              <div className={`${styles.msgBubble} ${msg.role === 'phil' ? styles.msgBubbleMd : ''}`}>
+                {msg.role === 'phil'
+                  ? msg.text
+                    ? <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    : (streaming && i === messages.length - 1 ? <span className={styles.typingDot}>…</span> : null)
+                  : msg.text}
+                {msg.role === 'phil' && msg.text && !(streaming && i === messages.length - 1) && (
+                  <button
+                    className={`${styles.msgTtsBtn} ${ttsIdx === i ? styles.msgTtsBtnPlaying : ''}`}
+                    onClick={() => toggleTts(msg.text, i)}
+                    disabled={ttsLoadingIdx === i}
+                    title={ttsIdx === i ? 'Pause' : 'Vorlesen'}
+                    aria-label={ttsIdx === i ? 'Pause' : 'Vorlesen'}
+                  >
+                    {ttsLoadingIdx === i ? '…' : ttsIdx === i ? '⏸' : '▶'}
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Inline sources — shown below the last Phil response only */}
+            {msg.role === 'phil' && i === lastPhilIdx && !streaming && (
+              <div className={styles.sourcesBlock}>
+                <RagBlock results={filteredRag} />
+                <InlineGraphBlock data={mailGraphData} loading={mailGraphLoading} />
+              </div>
+            )}
           </div>
         ))}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {ragResults.length > 0 && (
-        <details className={styles.ragSources}>
-          <summary className={styles.ragSummary}>
-            📚 {ragResults.length} ähnliche frühere Mail{ragResults.length > 1 ? 's' : ''} gefunden
-          </summary>
-          {ragResults.map((r) => (
-            <div key={r.id} className={styles.ragItem}>
-              <span className={styles.ragScore}>{Math.round(r.score * 100)}%</span>
-              <div className={styles.ragMeta}>
-                <span className={styles.ragSubject}>{r.subject}</span>
-                <span className={styles.ragSender}>{r.sender} · {r.date}</span>
-                <span className={styles.ragSummaryText}>{r.summary}</span>
-              </div>
-            </div>
-          ))}
-        </details>
-      )}
-      {ontologyData && (
-        <details className={styles.graphSources}>
-          <summary className={styles.ragSummary}>
-            🧠 Wissensgraph
-          </summary>
-          {ontologyData.persons.length > 0 && (
-            <div className={styles.ragItem}>
-              <span className={styles.ragSender}>
-                Personen: {ontologyData.persons.map(p => p.name).join(', ')}
-              </span>
-            </div>
-          )}
-          {ontologyData.projects.length > 0 && (
-            <div className={styles.ragItem}>
-              <span className={styles.ragSender}>
-                Projekte: {ontologyData.projects.map(p => p.description).join(', ')}
-              </span>
-            </div>
-          )}
-          {ontologyData.tasks.length > 0 && (
-            <div className={styles.ragItem}>
-              <span className={styles.ragSummaryText}>
-                Aufgaben: {ontologyData.tasks.map(t => t.description).join('; ')}
-              </span>
-            </div>
-          )}
-        </details>
-      )}
-
+      {/* ── Input ──────────────────────────────────────────────────────────── */}
       <div className={styles.inputRow}>
         <input
           className={styles.input}

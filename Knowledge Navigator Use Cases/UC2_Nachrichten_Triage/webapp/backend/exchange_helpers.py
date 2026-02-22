@@ -14,10 +14,12 @@ Sicherheitsprinzip:
 """
 
 import email
+import html
 import imaplib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime, timedelta
@@ -25,6 +27,25 @@ from email.header import decode_header
 from email.utils import parsedate_to_datetime
 
 _logger = logging.getLogger(__name__)
+
+
+def strip_html(text: str) -> str:
+    """Entfernt HTML-Tags aus einem String und gibt lesbaren Klartext zurück."""
+    if not text:
+        return ""
+    # Script- und Style-Blöcke komplett entfernen (inkl. Inhalt)
+    text = re.sub(r'<(script|style)[^>]*>.*?</(script|style)>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+    # Zeilenumbruch-Tags in Newlines umwandeln
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?(p|div|tr|li|h[1-6])[^>]*>', '\n', text, flags=re.IGNORECASE)
+    # Alle übrigen Tags entfernen
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # HTML-Entities dekodieren (&amp; → &, &nbsp; → Leerzeichen, usw.)
+    text = html.unescape(text)
+    # Mehrfache Leerzeichen / Leerzeilen bereinigen
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def _to_rfc3339(dt_str: str) -> str:
@@ -189,6 +210,7 @@ def fetch_emails_imap(
                             enc = msg.get_content_charset() or "utf-8"
                             body = payload.decode(enc, errors="replace")
 
+                    body = strip_html(body)
                     if len(body) > 3_000:
                         body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
 
@@ -384,7 +406,8 @@ def fetch_emails(
     for item in items:
         try:
             sender_str = str(item.sender) if item.sender else "Unbekannt"
-            body = item.text_body or item.body or ""
+            raw = item.text_body or item.body or ""
+            body = strip_html(raw) if raw else ""
             if len(body) > 3_000:
                 body = body[:3_000] + "\n[... E-Mail-Inhalt abgeschnitten ...]"
             emails.append({

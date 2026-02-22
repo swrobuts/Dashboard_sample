@@ -23,6 +23,7 @@ load_dotenv(Path(__file__).parent / ".env", override=False)
 from backend.knowledge_store import KnowledgeStore
 from backend.ontology_store import OntologyStore
 from backend.attachment_extractor import extract_text as extract_attachment_text
+from backend.llm_client import get_llm_client
 
 try:
     knowledge_store = KnowledgeStore()
@@ -47,7 +48,38 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/health/llm")
+def health_llm(mode: str = "local"):
+    """Prüft ob der gewählte LLM-Provider erreichbar ist."""
+    llm = get_llm_client(mode)
+    return llm.check_health()
+
+
 anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+
+# ── LLM-Client für Session ────────────────────────────────────────────────
+# Der globale anthropic_client bleibt für Abwärtskompatibilität bestehen.
+# Neue Aufrufe nutzen _get_llm(session) → wählt Cloud/Local/Hybrid je nach Session.
+
+def _get_llm(session: dict | None = None):
+    """Gibt den LLM-Client für die aktuelle Session zurück.
+
+    Falls keine Session (z.B. Legacy-Endpoints), wird der Cloud-Client verwendet.
+    """
+    if session is None:
+        return get_llm_client("cloud")
+    return get_llm_client(session.get("llm_mode", "cloud"))
+
+
+def _llm_create(llm, *, task: str, prompt: str, max_tokens: int = 512, system: str | None = None) -> str:
+    """Ruft llm.create() auf — fällt bei lokalem Ausfall automatisch auf Cloud zurück."""
+    try:
+        return llm.create(task=task, prompt=prompt, max_tokens=max_tokens, system=system)
+    except Exception as exc:
+        if getattr(llm, 'mode', 'cloud') != 'cloud':
+            logging.warning(f"[LLM] '{llm.mode}' nicht erreichbar ({type(exc).__name__}), Fallback auf Cloud.")
+            return get_llm_client("cloud").create(task=task, prompt=prompt, max_tokens=max_tokens, system=system)
+        raise
 
 COSTAR_PROMPT = """\
 C (Context): Du bist ein intelligenter E-Mail-Assistent für einen Hochschuldozenten.
@@ -101,30 +133,29 @@ def _parse_sender(sender: str) -> tuple[str, str]:
     return sender.strip(), ""
 
 
-def _summarize_attachment(filename: str, text: str) -> str:
-    """Call Claude for a concise 3-sentence attachment summary."""
+def _summarize_attachment(filename: str, text: str, llm=None) -> str:
+    """Summarize attachment in 3 sentences using the configured LLM."""
+    if llm is None:
+        llm = get_llm_client("cloud")
     prompt = (
         f"Fasse den folgenden Anhang '{filename}' in maximal 3 Sätzen zusammen:\n\n"
         f"{text[:3000]}"
     )
     try:
-        resp = anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=256,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return resp.content[0].text.strip()
+        return llm.create(task="attachment_summary", prompt=prompt, max_tokens=256).strip()
     except Exception as exc:
         logging.warning(f"[Attachment] Zusammenfassung fehlgeschlagen: {exc}")
         return ""
 
 
-def _extract_entities(mail_text: str) -> dict:
-    """Call Claude to extract structured entities from mail text.
+def _extract_entities(mail_text: str, llm=None) -> dict:
+    """Extract structured entities from mail text using the configured LLM.
 
     Returns dict with keys: persons, projects, deadlines, action_items.
     Returns empty lists on any error — never raises.
     """
+    if llm is None:
+        llm = get_llm_client("cloud")
     _EMPTY = {"persons": [], "projects": [], "deadlines": [], "action_items": []}
     prompt = (
         "Extrahiere aus der folgenden E-Mail strukturierte Entitäten als JSON.\n"
@@ -138,12 +169,7 @@ def _extract_entities(mail_text: str) -> dict:
         f"E-Mail:\n{mail_text[:2000]}"
     )
     try:
-        resp = anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = _strip_fences(resp.content[0].text)
+        raw = _strip_fences(_llm_create(llm, task="entities", prompt=prompt, max_tokens=512))
         data = json.loads(raw)
         return {k: data.get(k, []) for k in _EMPTY}
     except Exception as exc:
@@ -192,8 +218,12 @@ class AnalyzeRequest(BaseModel):
 
 
 @app.post("/api/analyze")
-def analyze(req: AnalyzeRequest):
+def analyze(req: AnalyzeRequest, session_id: str | None = Cookie(default=None)):
     import base64
+
+    # ── LLM-Client für diese Session ──────────────────────────────────
+    session = _sessions.get(session_id) if session_id else None
+    llm = _get_llm(session)
 
     # ── Attachment extraction ──────────────────────────────────────────
     attachment_snippets: list[str] = []
@@ -218,21 +248,19 @@ def analyze(req: AnalyzeRequest):
 
     prompt = COSTAR_PROMPT.format(email_text=email_with_attachments)
     try:
-        response = anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        raw_text = _llm_create(llm, task="triage", prompt=prompt, max_tokens=512)
     except anthropic.APIStatusError as e:
         status = e.status_code if hasattr(e, "status_code") else 500
         if status == 529 or status == 429:
             raise HTTPException(status_code=503, detail="KI-Dienst vorübergehend ausgelastet. Bitte kurz warten.")
-        raise HTTPException(status_code=502, detail=f"Claude API Fehler: {e}")
-    raw = _strip_fences(response.content[0].text)
+        raise HTTPException(status_code=502, detail=f"LLM API Fehler: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM Fehler: {type(e).__name__}: {e}")
+    raw = _strip_fences(raw_text)
     try:
         result = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"Claude-Antwort kein gültiges JSON: {e}")
+        raise HTTPException(status_code=502, detail=f"LLM-Antwort kein gültiges JSON: {e}")
 
     # ── Index mail in ChromaDB (non-fatal) ─────────────────────────────
     if req.mail_id and knowledge_store is not None:
@@ -252,7 +280,7 @@ def analyze(req: AnalyzeRequest):
     # ── Summarise + index attachments (non-fatal) ──────────────────────
     for att, att_text in attachments_to_index:
         try:
-            att_summary = _summarize_attachment(att.filename, att_text)
+            att_summary = _summarize_attachment(att.filename, att_text, llm=llm)
             if knowledge_store is not None:
                 knowledge_store.index_attachment(
                     mail_id=req.mail_id or "unknown",
@@ -266,7 +294,7 @@ def analyze(req: AnalyzeRequest):
     # ── Entity extraction + ontology triples (non-fatal) ──────────────
     if req.mail_id and ontology_store is not None:
         try:
-            entities = _extract_entities(req.email_text)
+            entities = _extract_entities(req.email_text, llm=llm)
             sender_name, sender_email = _parse_sender(req.sender)
             ontology_store.add_mail_triples(
                 mail_id=req.mail_id,
@@ -395,6 +423,14 @@ class ConnectRequest(BaseModel):
     password: str
     institution: str
     exchange_email: str | None = None  # optionale E-Mail für EWS primary_smtp
+    llm_mode: str = "cloud"  # "cloud" | "hybrid" | "local"
+
+    @field_validator("llm_mode")
+    @classmethod
+    def valid_llm_mode(cls, v: str) -> str:
+        if v not in ("cloud", "hybrid", "local"):
+            return "cloud"
+        return v
 
 
 # ── Auth Endpoints ─────────────────────────────────────────────────────────
@@ -422,6 +458,7 @@ def auth_login(req: ConnectRequest, request: Request):
                 "first_name": _fn,
                 "institution": req.institution,
                 "account": None,  # wird unten befüllt wenn EWS klappt
+                "llm_mode": req.llm_mode,
             }
             # EWS-Verbindung für Kalender/Aufgaben — optional, Fehler werden geloggt
             try:
@@ -446,6 +483,7 @@ def auth_login(req: ConnectRequest, request: Request):
                 "first_name": req.username.capitalize(),
                 "institution": req.institution,
                 "account": None,
+                "llm_mode": req.llm_mode,
             }
         else:
             account = connect_to_exchange(req.username, req.password, req.institution)
@@ -478,6 +516,7 @@ def auth_login(req: ConnectRequest, request: Request):
                 "unread_count": unread_count,
                 "drafts_count": drafts_count,
                 "sent_today": sent_today,
+                "llm_mode": req.llm_mode,
             }
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -497,6 +536,7 @@ def auth_login(req: ConnectRequest, request: Request):
         "sent_today": session_data.get("sent_today", 0),
         "ews_connected": session_data.get("account") is not None,
         "ews_error": session_data.get("ews_error"),
+        "llm_mode": session_data.get("llm_mode", "cloud"),
     })
     resp.set_cookie(
         key="session_id",
@@ -533,6 +573,7 @@ def auth_me(session_id: str | None = Cookie(default=None)):
         "unread_count": s.get("unread_count", 0),
         "drafts_count": s.get("drafts_count", 0),
         "sent_today": s.get("sent_today", 0),
+        "llm_mode": s.get("llm_mode", "cloud"),
     }
 
 
@@ -880,15 +921,27 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
 
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 
+    # ── LLM-Client für diese Session ──────────────────────────────────
+    llm = _get_llm(session)
+
     def generate():
-        with anthropic_client.messages.stream(
-            model="claude-opus-4-6",
-            max_tokens=1024,
-            system=PHIL_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
-        ) as stream:
-            for text in stream.text_stream:
+        stream_kwargs = dict(task="chat", prompt=user_msg, max_tokens=1024, system=PHIL_SYSTEM)
+        try:
+            for text in llm.stream(**stream_kwargs):
                 yield f"data: {text}\n\n"
+        except Exception as exc:
+            logging.warning(f"[Chat] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
+            # Cloud-Fallback wenn primärer LLM nicht erreichbar ist
+            if getattr(llm, 'mode', 'cloud') != 'cloud':
+                logging.warning("[Chat] Fallback auf Cloud-LLM")
+                try:
+                    for text in get_llm_client("cloud").stream(**stream_kwargs):
+                        yield f"data: {text}\n\n"
+                except Exception as exc2:
+                    logging.warning(f"[Chat] Cloud-Fallback fehlgeschlagen: {exc2}")
+                    yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
+            else:
+                yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -902,8 +955,9 @@ class GraphRequest(BaseModel):
 
 @app.post("/api/graph")
 def get_graph(req: GraphRequest, session_id: str | None = Cookie(default=None)):
-    """Extracts a knowledge graph (nodes + edges) from text using Claude."""
-    _get_session(session_id)
+    """Extracts a knowledge graph (nodes + edges) from text using the configured LLM."""
+    session = _get_session(session_id)
+    llm = _get_llm(session)
     import re, json as _json
 
     prompt = f"""Analysiere den folgenden Text und erstelle einen strukturierten Wissensgraphen.
@@ -926,12 +980,14 @@ Thema: {req.subject}
 Text:
 {req.text[:3000]}"""
 
-    response = anthropic_client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text.strip()
+    try:
+        raw = _llm_create(llm, task="graph", prompt=prompt, max_tokens=800).strip()
+    except Exception as exc:
+        logging.warning(f"[Graph] LLM-Aufruf fehlgeschlagen: {exc}")
+        return {
+            "nodes": [{"id": "center", "label": req.subject[:30], "type": "center"}],
+            "edges": [],
+        }
     # Extract JSON — handle potential markdown code fences
     match = re.search(r'\{.*\}', raw, re.DOTALL)
     if match:

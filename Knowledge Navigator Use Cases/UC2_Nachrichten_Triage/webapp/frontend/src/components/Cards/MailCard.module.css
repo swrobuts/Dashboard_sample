@@ -53,3 +53,53 @@
 .actionBtn:hover { border-color: var(--amber); color: var(--amber-dark); background: var(--amber-light); }
 .actionBtnPlaying { border-color: var(--amber) !important; color: var(--amber-dark) !important; background: var(--amber-light) !important; }
 .deleteBtn:hover { border-color: #EF4444 !important; color: #EF4444 !important; background: #FEF2F2 !important; }
+
+/* ── Mail-Detail-Modal ─────────────────────────────────────────────────── */
+.detailOverlay {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem;
+}
+.detailModal {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0,0,0,.2);
+  width: min(760px, 96vw);
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+.detailHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: .6rem;
+}
+.detailMeta { display: flex; align-items: center; gap: .6rem; }
+.detailDate { font-size: var(--text-xs); color: #9CA3AF; }
+.detailClose {
+  background: none; border: none; cursor: pointer;
+  color: #9CA3AF; font-size: .9rem; padding: .25rem;
+  transition: color var(--transition);
+}
+.detailClose:hover { color: #374151; }
+.detailSubject {
+  font-size: var(--text-base); font-weight: 700;
+  color: #111; line-height: 1.35; margin-bottom: .25rem;
+}
+.detailSender { font-size: var(--text-xs); color: #6B7280; margin-bottom: .5rem; }
+.detailSummary {
+  font-size: var(--text-sm); color: #374151;
+  background: var(--amber-light); border-left: 3px solid var(--amber);
+  padding: .5rem .75rem; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: .75rem; line-height: 1.5;
+}
+.detailDivider { border: none; border-top: 1px solid var(--content-border); margin: .5rem 0 .75rem; }
+.detailBody {
+  flex: 1; overflow-y: auto;
+  font-family: var(--font); font-size: var(--text-sm);
+  line-height: 1.65; color: #374151;
+  white-space: pre-wrap; word-break: break-word;
+  margin: 0;
+}

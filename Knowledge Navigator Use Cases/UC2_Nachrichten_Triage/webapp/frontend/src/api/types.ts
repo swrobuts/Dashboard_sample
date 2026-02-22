@@ -1,3 +1,5 @@
+export type LLMMode = 'cloud' | 'hybrid' | 'local'
+
 export interface User {
   username: string
   first_name?: string
@@ -8,6 +10,7 @@ export interface User {
   sent_today?: number
   ews_connected: boolean
   ews_error?: string | null
+  llm_mode?: LLMMode
 }
 
 export type Category = 'VIP' | 'Aktion nötig' | 'Nur Info' | 'Ignorieren'
