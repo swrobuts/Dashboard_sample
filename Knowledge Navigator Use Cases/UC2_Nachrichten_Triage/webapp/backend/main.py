@@ -151,10 +151,21 @@ def _extract_entities(mail_text: str) -> dict:
         return _EMPTY
 
 
+_MAX_ATTACHMENT_B64 = 13_631_488  # ~10 MB decoded (base64 overhead ≈ 4/3)
+_MAX_ATTACHMENTS = 10
+
+
 class AttachmentIn(BaseModel):
     filename: str
     mime_type: str
     data_b64: str   # base64-encoded bytes
+
+    @field_validator("data_b64")
+    @classmethod
+    def size_limit(cls, v: str) -> str:
+        if len(v) > _MAX_ATTACHMENT_B64:
+            raise ValueError(f"Anhang zu groß (max 10 MB).")
+        return v
 
 
 class AnalyzeRequest(BaseModel):
@@ -164,6 +175,13 @@ class AnalyzeRequest(BaseModel):
     sender: str = ""
     date: str = ""
     attachments: list[AttachmentIn] = []
+
+    @field_validator("attachments")
+    @classmethod
+    def max_attachments(cls, v: list) -> list:
+        if len(v) > _MAX_ATTACHMENTS:
+            raise ValueError(f"Maximal {_MAX_ATTACHMENTS} Anhänge erlaubt.")
+        return v
 
     @field_validator("email_text")
     @classmethod
