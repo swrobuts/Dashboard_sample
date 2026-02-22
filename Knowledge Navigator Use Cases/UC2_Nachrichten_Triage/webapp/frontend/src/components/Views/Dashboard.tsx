@@ -54,7 +54,17 @@ type ScheduleBlock =
   | { type: 'event'; start: number; end: number; item: CalendarItem }
   | { type: 'free';  start: number; end: number }
 
-function DaySchedule({ events, isToday }: { events: CalendarItem[]; isToday: boolean }) {
+function DaySchedule({
+  events,
+  isToday,
+  selectedEventId,
+  onSelectEvent,
+}: {
+  events: CalendarItem[]
+  isToday: boolean
+  selectedEventId?: string | null
+  onSelectEvent?: (item: CalendarItem) => void
+}) {
   const now = new Date()
   const nowMins = now.getHours() * 60 + now.getMinutes()
 
@@ -102,8 +112,13 @@ function DaySchedule({ events, isToday }: { events: CalendarItem[]; isToday: boo
         const dur = end - start
         const isPast = isToday && end < nowMins
         const isNow  = isToday && start <= nowMins && nowMins < end
+        const isSelected = item.id === selectedEventId
         return (
-          <div key={i} className={`${styles.schedEvent} ${isPast ? styles.schedEventPast : ''} ${isNow ? styles.schedEventNow : ''}`}>
+          <div
+            key={i}
+            className={`${styles.schedEvent} ${isPast ? styles.schedEventPast : ''} ${isNow ? styles.schedEventNow : ''} ${isSelected ? styles.schedEventSelected : ''}`}
+            onClick={() => onSelectEvent?.(item)}
+          >
             <div className={styles.schedEventBar} />
             <div className={styles.schedEventTime}>
               <span className={styles.schedEventStart}>{fmtTime(start)}</span>
@@ -155,6 +170,109 @@ function groupTasks(tasks: Task[], groupBy: TaskGroup): Array<{ label: string; i
     .map(([label, items]) => ({ label, items }))
 }
 
+// ── Event Context Panel ────────────────────────────────────────────────────────
+function EventContextPanel({
+  event,
+  context,
+  loading,
+  onClose,
+}: {
+  event: CalendarItem
+  context: KnowledgeResult[]
+  loading: boolean
+  onClose: () => void
+}) {
+  const startTime = event.start
+    ? new Date(event.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+    : ''
+  const endTime = event.end
+    ? new Date(event.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+    : ''
+  const isOnline = Boolean(event.location?.match(/^https?:\/\//i))
+
+  return (
+    <div className={styles.contextPanel}>
+      <div className={styles.contextPanelHeader}>
+        <span className={styles.contextPanelTime}>{startTime}{endTime ? ` – ${endTime}` : ''}</span>
+        <button className={styles.contextPanelClose} onClick={onClose} title="Schließen">✕</button>
+      </div>
+      <div className={styles.contextPanelBody}>
+        <h3 className={styles.contextPanelTitle}>{event.subject}</h3>
+
+        {event.location && (
+          <div className={styles.contextPanelLocRow}>
+            {isOnline ? (
+              <a href={event.location} target="_blank" rel="noopener noreferrer" className={styles.contextLocLink}>
+                🔗 Online-Meeting beitreten
+              </a>
+            ) : (
+              <a
+                href={`https://www.google.com/maps/search/${encodeURIComponent(event.location)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.contextLocLink}
+              >
+                📍 {event.location}
+              </a>
+            )}
+          </div>
+        )}
+
+        <div className={styles.contextActions}>
+          <a
+            href={`https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(event.subject)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${styles.contextActionBtn} ${styles.contextActionLinkedIn}`}
+          >
+            LinkedIn ↗
+          </a>
+          <a
+            href={`https://www.google.com/search?q=${encodeURIComponent(event.subject)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.contextActionBtn}
+          >
+            Google ↗
+          </a>
+        </div>
+
+        {event.body && (
+          <details className={styles.contextBodyDetails}>
+            <summary className={styles.contextBodySummary}>Terminbeschreibung</summary>
+            <div className={styles.contextBodyText}>{event.body}</div>
+          </details>
+        )}
+
+        <div className={styles.contextMailsSection}>
+          <div className={styles.contextMailsSectionTitle}>
+            Relevante Mails
+            {loading && <span className={styles.tileSpinner} style={{ marginLeft: '.4rem', fontSize: '.75rem' }}>⟳</span>}
+          </div>
+          {context.length === 0 && !loading ? (
+            <div className={styles.contextNoMails}>Keine verknüpften Mails gefunden.</div>
+          ) : (
+            <div className={styles.contextMailList}>
+              {context.map((m) => (
+                <div key={m.id} className={styles.contextMailCard}>
+                  <div className={styles.contextMailCardTop}>
+                    <span className={styles.contextMailSender}>{m.sender}</span>
+                    <span className={`${styles.contextMailScore} ${m.score >= 0.85 ? styles.contextMailScoreHigh : ''}`}>
+                      {Math.round(m.score * 100)}%
+                    </span>
+                  </div>
+                  <div className={styles.contextMailSubject}>{m.subject}</div>
+                  {m.summary && <div className={styles.contextMailSummary}>{m.summary}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function Dashboard() {
   const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter, removeTask } = useStore()
@@ -162,6 +280,7 @@ export function Dashboard() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [taskError, setTaskError] = useState<string | null>(null)
   const [taskGroup, setTaskGroup] = useState<TaskGroup>('none')
+  const [selectedEvent, setSelectedEvent] = useState<CalendarItem | null>(null)
 
   // ── Date navigation ─────────────────────────────────────────────────────
   const [dashDate, setDashDate] = useState(new Date())
@@ -258,153 +377,156 @@ export function Dashboard() {
               className={`${styles.tile} ${styles[colorClass]}`}
               onClick={() => goToMails(cat)}
             >
-              <span className={styles.tileCount}>
-                {counts[cat]}
-                {loadingMails && <span className={styles.tileSpinner}>⟳</span>}
-              </span>
-              <span className={styles.tileLabel}>{label}</span>
-              {totalDone > 0 && (
-                <div className={styles.tileBar}>
-                  <div
-                    className={styles.tileBarFill}
-                    style={{ width: `${Math.round((counts[cat] / totalDone) * 100)}%` }}
-                  />
-                </div>
-              )}
+              <div className={styles.tileMain}>
+                <span className={styles.tileLabel}>{label}</span>
+                <span className={styles.tileCount}>
+                  {loadingMails ? <span className={styles.tileSpinner}>⟳</span> : counts[cat]}
+                </span>
+              </div>
+              <div className={styles.tileBar}>
+                <div
+                  className={styles.tileBarFill}
+                  style={{ width: totalDone > 0 ? `${Math.round((counts[cat] / totalDone) * 100)}%` : '0%' }}
+                />
+              </div>
             </button>
           ))}
         </div>
       </section>
 
-      {/* Two-column: schedule + (tasks + gespräche) */}
+      {/* Two-column: left (schedule + tasks stacked) + right (event context panel) */}
       <div className={styles.twoCol}>
 
-        {/* ── Left: Day schedule with date navigation ── */}
-        <section className={styles.section}>
-          <div className={styles.schedHeader}>
-            <h2 className={styles.sectionTitle}>Tagesplan</h2>
-            <div className={styles.dateNav}>
-              <button className={styles.dateNavBtn} onClick={() => setDashDate(d => addDays(d, -1))}>‹</button>
-              <span className={`${styles.dateNavLabel} ${isToday ? styles.dateNavToday : ''}`}>
-                {formatDashDate(dashDate)}
-              </span>
-              <button className={styles.dateNavBtn} onClick={() => setDashDate(d => addDays(d, 1))}>›</button>
-              {!isToday && (
-                <button className={styles.dateNavTodayBtn} onClick={() => setDashDate(new Date())}>Heute</button>
+        {/* ── Left column: schedule on top, tasks below ── */}
+        <div className={styles.leftCol}>
+
+          {/* Schedule */}
+          <div className={styles.leftSched}>
+            <div className={styles.schedHeader}>
+              <h2 className={styles.sectionTitle}>Tagesplan</h2>
+              <div className={styles.dateNav}>
+                <button className={styles.dateNavBtn} onClick={() => { setDashDate(d => addDays(d, -1)); setSelectedEvent(null) }}>‹</button>
+                <span className={`${styles.dateNavLabel} ${isToday ? styles.dateNavToday : ''}`}>
+                  {formatDashDate(dashDate)}
+                </span>
+                <button className={styles.dateNavBtn} onClick={() => { setDashDate(d => addDays(d, 1)); setSelectedEvent(null) }}>›</button>
+                {!isToday && (
+                  <button className={styles.dateNavTodayBtn} onClick={() => { setDashDate(new Date()); setSelectedEvent(null) }}>Heute</button>
+                )}
+              </div>
+            </div>
+            <DaySchedule
+              events={dashEvents}
+              isToday={isToday}
+              selectedEventId={selectedEvent?.id ?? null}
+              onSelectEvent={(item) => setSelectedEvent(prev => prev?.id === item.id ? null : item)}
+            />
+          </div>
+
+          {/* Tasks */}
+          <div className={styles.leftTasks}>
+            <div className={styles.subSection}>
+              <div className={styles.subSectionHeader}>
+                <h2 className={styles.sectionTitle}>Heute &amp; morgen</h2>
+                <div className={styles.taskGroupBar}>
+                  {(['none', 'priority', 'due_date'] as TaskGroup[]).map((g) => (
+                    <button
+                      key={g}
+                      className={`${styles.taskGroupBtn} ${taskGroup === g ? styles.taskGroupBtnActive : ''}`}
+                      onClick={() => setTaskGroup(g)}
+                    >
+                      {g === 'none' ? 'Alle' : g === 'priority' ? 'Prio' : 'Datum'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {urgentTasks.length === 0 ? (
+                <p className={styles.noTasks}>Keine Aufgaben für heute und morgen.</p>
+              ) : (
+                <div className={styles.taskList}>
+                  {groupedTasks.map(({ label, items }) => (
+                    <div key={label}>
+                      {label && <div className={styles.taskGroupHeader}>{label}</div>}
+                      {items.map((t) => (
+                        <div key={t.id} className={styles.taskItem}>
+                          <span className={`${styles.taskDot} ${styles[(t.priority ?? 'Normal').toLowerCase()]}`} />
+                          <div className={styles.taskBody}>
+                            <span className={styles.taskTitle}>{t.subject}</span>
+                            {t.due_date && <span className={styles.taskDue}>{t.due_date.slice(0, 10)}</span>}
+                          </div>
+                          {user?.ews_connected && (
+                            <div className={styles.taskActions}>
+                              <button
+                                className={`${styles.taskDoneBtn}${taskError === t.id ? ` ${styles.taskDoneErr}` : ''}`}
+                                onClick={() => quickComplete(t)}
+                                disabled={completing === t.id || deleting === t.id}
+                                title={taskError === t.id ? 'Fehler' : 'Als erledigt markieren'}
+                              >
+                                {completing === t.id ? '…' : '✓'}
+                              </button>
+                              <button
+                                className={`${styles.taskDelBtn}${taskError === t.id ? ` ${styles.taskDoneErr}` : ''}`}
+                                onClick={() => quickDelete(t)}
+                                disabled={completing === t.id || deleting === t.id}
+                                title="Aus Exchange löschen"
+                              >
+                                {deleting === t.id ? '…' : '✕'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
-          <DaySchedule events={dashEvents} isToday={isToday} />
-        </section>
 
-        {/* ── Right: Tasks + Gespräche ── */}
-        <section className={styles.section}>
+        </div>
 
-          {/* Tasks sub-section */}
-          <div className={styles.subSection}>
-            <div className={styles.subSectionHeader}>
-              <h2 className={styles.sectionTitle}>Heute &amp; morgen</h2>
-              <div className={styles.taskGroupBar}>
-                {(['none', 'priority', 'due_date'] as TaskGroup[]).map((g) => (
-                  <button
-                    key={g}
-                    className={`${styles.taskGroupBtn} ${taskGroup === g ? styles.taskGroupBtnActive : ''}`}
-                    onClick={() => setTaskGroup(g)}
-                  >
-                    {g === 'none' ? 'Alle' : g === 'priority' ? 'Prio' : 'Datum'}
-                  </button>
-                ))}
+        {/* ── Right column: event context panel ── */}
+        <div className={styles.rightCol}>
+          {selectedEvent ? (
+            <EventContextPanel
+              event={selectedEvent}
+              context={meetingContexts[selectedEvent.id] ?? []}
+              loading={loadingMeetings}
+              onClose={() => setSelectedEvent(null)}
+            />
+          ) : (
+            <div className={styles.contextEmpty}>
+              <div className={styles.contextEmptyHint}>
+                <span className={styles.contextEmptyIcon}>◫</span>
+                Termin anklicken für Details &amp; verknüpfte Mails
               </div>
+              {dashEvents.length > 0 && (
+                <div className={styles.contextEventList}>
+                  {dashEvents.map((ev) => {
+                    const startTime = ev.start
+                      ? new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+                      : ''
+                    const relCount = (meetingContexts[ev.id] ?? []).length
+                    return (
+                      <button
+                        key={ev.id}
+                        className={styles.contextEventMini}
+                        onClick={() => setSelectedEvent(ev)}
+                      >
+                        <span className={styles.contextEventMiniTime}>{startTime}</span>
+                        <span className={styles.contextEventMiniTitle}>{ev.subject}</span>
+                        {relCount > 0 && (
+                          <span className={styles.contextEventMiniBadge}>{relCount}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-            {urgentTasks.length === 0 ? (
-              <p className={styles.noTasks}>Keine Aufgaben für heute und morgen.</p>
-            ) : (
-              <div className={styles.taskList}>
-                {groupedTasks.map(({ label, items }) => (
-                  <div key={label}>
-                    {label && <div className={styles.taskGroupHeader}>{label}</div>}
-                    {items.map((t) => (
-                      <div key={t.id} className={styles.taskItem}>
-                        <span className={`${styles.taskDot} ${styles[(t.priority ?? 'Normal').toLowerCase()]}`} />
-                        <div className={styles.taskBody}>
-                          <span className={styles.taskTitle}>{t.subject}</span>
-                          {t.due_date && <span className={styles.taskDue}>{t.due_date.slice(0, 10)}</span>}
-                        </div>
-                        {user?.ews_connected && (
-                          <div className={styles.taskActions}>
-                            <button
-                              className={`${styles.taskDoneBtn}${taskError === t.id ? ` ${styles.taskDoneErr}` : ''}`}
-                              onClick={() => quickComplete(t)}
-                              disabled={completing === t.id || deleting === t.id}
-                              title={taskError === t.id ? 'Fehler' : 'Als erledigt markieren'}
-                            >
-                              {completing === t.id ? '…' : '✓'}
-                            </button>
-                            <button
-                              className={`${styles.taskDelBtn}${taskError === t.id ? ` ${styles.taskDoneErr}` : ''}`}
-                              onClick={() => quickDelete(t)}
-                              disabled={completing === t.id || deleting === t.id}
-                              title="Aus Exchange löschen"
-                            >
-                              {deleting === t.id ? '…' : '✕'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Gespräche mit Personen sub-section */}
-          <div className={styles.subSection}>
-            <h2 className={styles.sectionTitle} style={{ marginBottom: '.5rem', marginTop: '.75rem' }}>
-              Gespräche mit Personen
-              {loadingMeetings && <span className={styles.tileSpinner} style={{ marginLeft: '.4rem', fontSize: '.75rem' }}>⟳</span>}
-            </h2>
-            {dashEvents.length === 0 ? (
-              <div className={styles.noTasks}>Keine Termine {isToday ? 'heute' : 'an diesem Tag'}.</div>
-            ) : (
-              <div className={styles.gesprachList}>
-                {dashEvents.map((ev) => {
-                  const relMails = meetingContexts[ev.id] ?? []
-                  const startTime = ev.start ? new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''
-                  const endTime = ev.end ? new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''
-                  return (
-                    <div key={ev.id} className={styles.gesprachItem}>
-                      <div className={styles.gesprachHeader}>
-                        <span className={styles.gesprachTime}>{startTime} – {endTime}</span>
-                        <span className={styles.gesprachTitle}>{ev.subject}</span>
-                        {ev.location && (
-                          <span className={styles.gesprachLoc}>
-                            {ev.location.match(/^https?:\/\//i) ? '🔗 Online' : `📍 ${ev.location}`}
-                          </span>
-                        )}
-                      </div>
-                      {relMails.length > 0 ? (
-                        <div className={styles.gesprachMails}>
-                          <span className={styles.gesprachMailsLabel}>Relevante Unterlagen:</span>
-                          {relMails.map((m) => (
-                            <div key={m.id} className={styles.gesprachMail}>
-                              <span className={styles.gesprachMailSender}>{m.sender}</span>
-                              <span className={styles.gesprachMailSubject}>{m.subject}</span>
-                              {m.summary && <span className={styles.gesprachMailSummary}>{m.summary}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className={styles.gesprachNoMails}>Keine relevanten Unterlagen verknüpft.</div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-        </section>
       </div>
     </div>
   )
