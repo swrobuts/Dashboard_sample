@@ -24,6 +24,8 @@ from backend.knowledge_store import KnowledgeStore
 from backend.ontology_store import OntologyStore
 from backend.attachment_extractor import extract_text as extract_attachment_text
 from backend.llm_client import get_llm_client
+from backend.memory_store import MemoryStore
+from backend.web_search import WEB_SEARCH_TRIGGER_RE, build_web_context
 
 try:
     # ChromaDB uses memory-mapped HNSW files — must NOT live in OneDrive (causes SIGBUS).
@@ -41,6 +43,16 @@ try:
 except Exception as e:
     logging.warning(f"[Ontology] OntologyStore deaktiviert: {type(e).__name__}: {e}")
     ontology_store = None
+
+try:
+    memory_store = MemoryStore(
+        db_path="./data/memory.db",
+        chroma_path="/tmp/phil_chroma",
+    )
+    logging.info("[Memory] MemoryStore initialisiert")
+except Exception as e:
+    logging.warning(f"[Memory] MemoryStore deaktiviert: {type(e).__name__}: {e}")
+    memory_store = None
 
 app = FastAPI(title="PHIL PIM Dashboard", version="2.0.0")
 
@@ -982,6 +994,15 @@ class BriefingRequest(BaseModel):
     body: str = ""
 
 
+class MemoryFeedbackRequest(BaseModel):
+    fact_id: str
+    rating: str  # "up" | "down"
+
+class MemoryUpdateRequest(BaseModel):
+    text: str | None = None
+    correction_note: str | None = None
+
+
 BRIEFING_SYSTEM = """\
 Du bist PHIL, der persönliche KI-Assistent von Prof. Dr. Butscher.
 Erstelle ein kompaktes Meeting-Briefing auf Deutsch.
@@ -1069,6 +1090,66 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Memory / Learning API ─────────────────────────────────────────────────────
+
+@app.get("/api/memory/facts")
+def memory_list_facts(
+    category: str | None = None,
+    min_confidence: float | None = None,
+    source_ref: str | None = None,
+    session_id: str | None = Cookie(default=None),
+):
+    _get_session(session_id)
+    if memory_store is None:
+        return {"facts": []}
+    return {"facts": memory_store.list_facts(
+        category=category,
+        min_confidence=min_confidence,
+        source_ref=source_ref,
+    )}
+
+
+@app.delete("/api/memory/facts/{fact_id}")
+def memory_delete_fact(fact_id: str, session_id: str | None = Cookie(default=None)):
+    _get_session(session_id)
+    if memory_store is None:
+        raise HTTPException(status_code=503, detail="MemoryStore nicht verfügbar")
+    memory_store.delete_fact(fact_id)
+    return {"ok": True}
+
+
+@app.patch("/api/memory/facts/{fact_id}")
+def memory_update_fact(
+    fact_id: str,
+    req: MemoryUpdateRequest,
+    session_id: str | None = Cookie(default=None),
+):
+    _get_session(session_id)
+    if memory_store is None:
+        raise HTTPException(status_code=503, detail="MemoryStore nicht verfügbar")
+    memory_store.update_fact(fact_id, text=req.text, correction_note=req.correction_note)
+    return {"ok": True}
+
+
+@app.post("/api/memory/feedback")
+def memory_feedback(req: MemoryFeedbackRequest, session_id: str | None = Cookie(default=None)):
+    _get_session(session_id)
+    if memory_store is None:
+        raise HTTPException(status_code=503, detail="MemoryStore nicht verfügbar")
+    if req.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating muss 'up' oder 'down' sein")
+    memory_store.apply_feedback(req.fact_id, req.rating)
+    return {"ok": True}
+
+
+@app.get("/api/memory/stats")
+def memory_stats(session_id: str | None = Cookie(default=None)):
+    _get_session(session_id)
+    if memory_store is None:
+        return {"total": 0, "by_category": []}
+    return memory_store.stats()
 
 
 # ── Graph / Knowledge-Map ──────────────────────────────────────────────────────
