@@ -8,10 +8,10 @@ const INSTITUTIONS = ['THWS', 'DHBW']
 interface Props { onLogin: (user: User) => void }
 
 export function Login({ onLogin }: Props) {
-  const [institution, setInstitution] = useState('THWS')
-  const [username, setUsername] = useState('')
+  const [institution, setInstitution] = useState(() => localStorage.getItem('phil_institution') ?? 'THWS')
+  const [username, setUsername] = useState(() => localStorage.getItem('phil_username') ?? '')
   const [password, setPassword] = useState('')
-  const [exchangeEmail, setExchangeEmail] = useState('')
+  const [exchangeEmail, setExchangeEmail] = useState(() => localStorage.getItem('phil_exchange_email') ?? '')
   const [error, setError] = useState('')
   const [lockoutSecs, setLockoutSecs] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -27,6 +27,11 @@ export function Login({ onLogin }: Props) {
         username, password, institution,
         needsExchangeEmail && exchangeEmail ? exchangeEmail : undefined
       )
+      localStorage.setItem('phil_institution', institution)
+      localStorage.setItem('phil_username', username)
+      if (needsExchangeEmail && exchangeEmail) {
+        localStorage.setItem('phil_exchange_email', exchangeEmail)
+      }
       onLogin({
         username: data.username,
         institution: data.institution,
@@ -99,7 +104,7 @@ export function Login({ onLogin }: Props) {
             {loading ? 'Verbinde…' : 'Anmelden'}
           </button>
         </form>
-        <p className={styles.notice}>Credentials werden nicht gespeichert.</p>
+        <p className={styles.notice}>Passwort wird nicht gespeichert.</p>
       </div>
     </div>
   )

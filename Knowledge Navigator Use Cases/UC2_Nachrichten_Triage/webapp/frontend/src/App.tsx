@@ -7,6 +7,7 @@ import { Dashboard } from './components/Views/Dashboard'
 import { MailsView } from './components/Views/MailsView'
 import { CalendarView } from './components/Views/CalendarView'
 import { TasksView } from './components/Views/TasksView'
+import { TrainView } from './components/Views/TrainView'
 import { useDataLoader } from './hooks/useDataLoader'
 import type { User } from './api/types'
 
@@ -16,6 +17,7 @@ function ViewRouter() {
   if (view === 'mails') return <MailsView />
   if (view === 'calendar') return <CalendarView />
   if (view === 'tasks') return <TasksView />
+  if (view === 'trains') return <TrainView />
   return null
 }
 

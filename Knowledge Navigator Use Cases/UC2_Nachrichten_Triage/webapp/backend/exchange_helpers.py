@@ -435,19 +435,28 @@ def fetch_tasks(account: Account, max_count: int = 100) -> list[dict]:
     """Lädt offene Aufgaben (nicht 'Completed')."""
     try:
         tasks = []
-        for item in account.tasks.filter(status__not="Completed").order_by("due_date")[:max_count]:
+        # Alle Aufgaben holen, dann in Python filtern (vermeidet Syntax-Probleme
+        # mit exchangelib-Feldfiltern für Choice-Felder wie status)
+        for item in account.tasks.all()[:max_count * 2]:
+            status_str = str(item.status) if item.status else "NotStarted"
+            if status_str == "Completed":
+                continue
             tasks.append({
                 "id": item.id,
                 "changekey": item.changekey,
                 "subject": item.subject or "(keine Bezeichnung)",
                 "due_date": item.due_date.isoformat() if item.due_date else None,
-                "status": str(item.status) if item.status else "NotStarted",
+                "status": status_str,
                 "priority": str(item.importance) if item.importance else "Normal",
                 "percent_complete": item.percent_complete or 0,
                 "body": (item.text_body or item.body or "")[:500],
             })
+            if len(tasks) >= max_count:
+                break
+        _logger.warning(f"[EWS-Tasks] {len(tasks)} offene Aufgaben geladen")
         return tasks
-    except Exception:
+    except Exception as exc:
+        _logger.warning(f"[EWS-Tasks] fetch_tasks fehlgeschlagen: {type(exc).__name__}: {exc}")
         return []
 
 
@@ -457,6 +466,20 @@ def complete_task(account: Account, task_id: str, changekey: str) -> bool:
     task.status = "Completed"
     task.percent_complete = 100
     task.save(update_fields=["status", "percent_complete"])
+    return True
+
+
+def delete_task(account: Account, task_id: str, changekey: str) -> bool:
+    """Löscht eine Aufgabe dauerhaft aus Exchange (HardDelete).
+    Fällt auf ID-only-Suche zurück, falls der changekey veraltet ist."""
+    try:
+        task = account.tasks.get(id=task_id, changekey=changekey)
+    except Exception:
+        # changekey könnte veraltet sein → alle Tasks nach ID durchsuchen
+        task = next((t for t in account.tasks.all()[:500] if t.id == task_id), None)
+        if task is None:
+            return True  # Bereits gelöscht oder nicht mehr vorhanden
+    task.delete()
     return True
 
 
@@ -521,11 +544,12 @@ def fetch_google_calendar(days_ahead: int = 14) -> list[dict]:
     )
 
     if result.returncode != 0:
-        _logger.warning(f"[GCal] gog error: {result.stderr.strip()[:300]}")
+        _logger.warning(f"[GCal] gog error (rc={result.returncode}): {result.stderr.strip()[:300]}")
         raise Exception(f"Google Calendar: {result.stderr.strip()[:200]}")
 
     data = json.loads(result.stdout)
     events_raw = data.get("events", []) if isinstance(data, dict) else data
+    _logger.warning(f"[GCal] {len(events_raw)} Einträge geladen")
 
     items = []
     for e in events_raw:

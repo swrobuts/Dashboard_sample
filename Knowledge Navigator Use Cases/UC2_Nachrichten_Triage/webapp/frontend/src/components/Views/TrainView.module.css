@@ -1,0 +1,107 @@
+.view { padding: 1rem 1.5rem 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; gap: 1rem; }
+
+/* ── Search card ─────────────────────────────────────────────────────────── */
+.searchCard {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg); padding: 1.25rem 1.5rem;
+  box-shadow: var(--card-shadow); flex-shrink: 0;
+  display: flex; flex-direction: column; gap: .875rem;
+}
+.stationRow { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; }
+.timeRow { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; }
+.stationField { display: flex; flex-direction: column; gap: .3rem; flex: 1; min-width: 160px; }
+.label { font-size: var(--text-xs); font-weight: 600; color: #6B7280; letter-spacing: .04em; text-transform: uppercase; }
+.input {
+  padding: .5rem .875rem; border: 1.5px solid var(--content-border);
+  border-radius: var(--radius-sm); font-family: var(--font); font-size: var(--text-sm);
+  background: var(--content-bg); transition: border-color var(--transition); width: 100%; box-sizing: border-box;
+}
+.input:focus { border-color: var(--amber); outline: none; }
+.inputSelected { border-color: #10B981 !important; background: #F0FDF4; }
+
+.swapBtn {
+  padding: .5rem .7rem; border: 1.5px solid var(--content-border); border-radius: var(--radius-sm);
+  background: var(--content-bg); color: #6B7280; cursor: pointer; font-size: 1.1rem;
+  transition: all var(--transition); flex-shrink: 0; align-self: flex-end;
+}
+.swapBtn:hover { border-color: var(--amber); color: var(--amber-dark); }
+
+.searchBtn {
+  padding: .5rem 1.25rem; background: var(--amber); color: white;
+  border: none; border-radius: var(--radius-sm); font-family: var(--font);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+  transition: background var(--transition); flex-shrink: 0; align-self: flex-end; white-space: nowrap;
+}
+.searchBtn:hover:not(:disabled) { background: var(--amber-dark); }
+.searchBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Autocomplete dropdown ───────────────────────────────────────────────── */
+.autocomplete { position: relative; }
+.suggestions {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  overflow: hidden; max-height: 200px; overflow-y: auto;
+}
+.suggestion {
+  display: block; width: 100%; text-align: left;
+  padding: .5rem .875rem; font-family: var(--font); font-size: var(--text-sm);
+  background: none; border: none; cursor: pointer;
+  transition: background .1s; color: #18181B;
+}
+.suggestion:hover { background: var(--amber-light); color: var(--amber-dark); }
+
+/* ── Results ─────────────────────────────────────────────────────────────── */
+.results { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: .625rem; padding-bottom: 1rem; }
+
+.journey {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 1rem 1.25rem;
+  box-shadow: var(--card-shadow); transition: box-shadow var(--transition), transform var(--transition);
+}
+.journey:hover { box-shadow: var(--card-shadow-hover); transform: translateY(-1px); }
+
+.journeyTimes { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+
+.timeBlock { display: flex; flex-direction: column; align-items: center; min-width: 60px; }
+.time { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.delay { font-size: var(--text-xs); color: #EF4444; font-weight: 600; }
+.station { font-size: var(--text-xs); color: #9CA3AF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+
+.journeyMiddle { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: 0 .5rem; }
+.dur { font-size: var(--text-xs); color: #6B7280; font-weight: 600; }
+.bar { position: relative; width: 100%; height: 6px; display: flex; align-items: center; }
+.barLine { position: absolute; left: 0; right: 0; height: 2px; background: #D1D5DB; border-radius: 1px; }
+.barDot {
+  position: absolute; transform: translateX(-50%);
+  width: 8px; height: 8px; border-radius: 50%;
+  background: white; border: 2px solid #D1D5DB; z-index: 1;
+}
+.changes { font-size: var(--text-xs); color: #9CA3AF; }
+
+.journeyMeta { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.products { font-size: var(--text-xs); color: #6B7280; }
+.price { font-size: var(--text-sm); font-weight: 700; color: #10B981; }
+
+/* ── bahn.de link ─────────────────────────────────────────────────────────── */
+.bahnLink {
+  padding: .5rem .875rem; border: 1.5px solid #DC2626; border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: var(--text-sm); font-weight: 600;
+  color: #DC2626; text-decoration: none; flex-shrink: 0; align-self: flex-end;
+  transition: all var(--transition); white-space: nowrap;
+}
+.bahnLink:hover { background: #DC2626; color: white; }
+
+/* ── States ──────────────────────────────────────────────────────────────── */
+.errorBox { display: flex; flex-direction: column; gap: .5rem; }
+.error { color: #EF4444; font-size: var(--text-sm); }
+.bahnLinkBlock {
+  display: inline-block; font-size: var(--text-sm); font-weight: 600;
+  color: #DC2626; text-decoration: none;
+  border: 1.5px solid #DC2626; border-radius: var(--radius-sm);
+  padding: .4rem .875rem; align-self: flex-start;
+  transition: all var(--transition);
+}
+.bahnLinkBlock:hover { background: #DC2626; color: white; }
+.empty { color: #6B7280; font-size: var(--text-sm); padding: 2rem 0; text-align: center; line-height: 1.8; }
+.emptyHint { font-size: var(--text-xs); color: #9CA3AF; }

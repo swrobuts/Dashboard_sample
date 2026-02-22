@@ -1,64 +1,67 @@
 :root {
-  /* Primary accent — deep ink navy, refined and timeless */
-  --amber: #1B3A6B;
-  --amber-light: #EEF2FB;
-  --amber-dark: #122B52;
+  /* ── Accent — Prussian Blue ─────────────────────────────────────────────── */
+  --amber:        #1B3A6B;
+  --amber-dark:   #112B52;
+  --amber-light:  #E8EEF7;
 
-  /* Sidebar */
-  --sidebar-bg: #111111;
-  --sidebar-text: #8A8A8A;
-  --sidebar-text-active: #FFFFFF;
-  --sidebar-hover: #1E1E1E;
-  --sidebar-active: #2A2A2A;
-  --sidebar-border: #1E1E1E;
+  /* ── Category Palette ───────────────────────────────────────────────────── */
+  --vip-bg:            #FEF2F2;
+  --vip-text:          #991B1B;
+  --vip-badge:         #DC2626;
+  --aktion-bg:         #FFFBEB;
+  --aktion-text:       #92400E;
+  --aktion-badge:      #D97706;
+  --info-bg:           #EFF6FF;
+  --info-text:         #1E40AF;
+  --info-badge:        #2563EB;
+  --ignorieren-bg:     #F9FAFB;
+  --ignorieren-text:   #4B5563;
+  --ignorieren-badge:  #9CA3AF;
 
-  /* Content */
-  --content-bg: #F7F6F3;
-  --content-border: #E5E3DE;
+  /* ── Surfaces ───────────────────────────────────────────────────────────── */
+  --content-bg:     #F0EEE9;   /* warm parchment */
+  --content-border: #D8D5CE;
 
-  /* PHIL Panel */
-  --phil-bg: #FFFFFF;
-  --phil-border: #E8E7E4;
+  --card-bg:          #FFFFFF;
+  --card-border:      #E2DFDA;
+  --card-shadow:      0 1px 2px rgba(0,0,0,.05);
+  --card-shadow-hover:0 6px 20px rgba(0,0,0,.09);
 
-  /* Cards */
-  --card-bg: #FFFFFF;
-  --card-border: #ECEAE6;
-  --card-shadow: 0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03);
-  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.08);
+  /* ── Sidebar ────────────────────────────────────────────────────────────── */
+  --sidebar-bg:          #FFFFFF;
+  --sidebar-border:      #E8E5DF;
+  --sidebar-text:        #4B5563;
+  --sidebar-text-active: #1B3A6B;
+  --sidebar-hover:       #F5F3EF;
+  --sidebar-active:      #EBE8E0;
+  --sidebar-accent:      #1B3A6B;
 
-  /* Category colors — used only for small indicators (borders, badges, dots) */
-  --vip-bg: #FFF5F5;
-  --vip-text: #9B1C1C;
-  --vip-badge: #DC2626;
-  --aktion-bg: #FFFBF0;
-  --aktion-text: #92400E;
-  --aktion-badge: #D97706;
-  --info-bg: #F5F8FF;
-  --info-text: #1E3A8A;
-  --info-badge: #2563EB;
-  --ignorieren-bg: #F9FAFB;
-  --ignorieren-text: #4B5563;
-  --ignorieren-badge: #9CA3AF;
+  /* ── Phil Panel ─────────────────────────────────────────────────────────── */
+  --phil-bg:     #FFFFFF;
+  --phil-border: #E2DFDA;
 
-  /* Typography */
-  --font: 'Instrument Sans', system-ui, sans-serif;
-  --text-xs: 0.72rem;
-  --text-sm: 0.83rem;
-  --text-base: 0.938rem;
-  --text-lg: 1.063rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
+  /* ── Typography — DM Sans: geometric, Bauhaus-inspired ─────────────────── */
+  --font:      'DM Sans', system-ui, sans-serif;
+  --font-mono: 'DM Mono', monospace;
 
-  /* Spacing */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --text-xs:   0.6875rem;  /* 11px */
+  --text-sm:   0.8125rem;  /* 13px */
+  --text-base: 0.9375rem;  /* 15px */
+  --text-lg:   1.0625rem;  /* 17px */
+  --text-xl:   1.25rem;    /* 20px */
+  --text-2xl:  1.5rem;     /* 24px */
 
-  /* Layout */
-  --sidebar-w: 220px;
-  --phil-w: 360px;
-  --header-h: 52px;
-  --bottom-nav-h: 60px;
-  --transition: 200ms cubic-bezier(.4,0,.2,1);
+  /* ── Geometry — Bauhaus: minimal, precise ───────────────────────────────── */
+  --radius-sm: 3px;
+  --radius:    5px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  --sidebar-w:      240px;
+  --sidebar-mini:   52px;
+  --header-h:       48px;
+  --phil-w:         340px;
+  --bottom-nav-h:   58px;
+  --transition:     170ms cubic-bezier(.4,0,.2,1);
 }

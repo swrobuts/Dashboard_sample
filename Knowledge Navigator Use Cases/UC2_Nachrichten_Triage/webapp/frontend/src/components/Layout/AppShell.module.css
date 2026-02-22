@@ -1,43 +1,160 @@
+/* ── Shell grid ──────────────────────────────────────────────────────────── */
 .shell {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
+  grid-template-columns: var(--sidebar-w) 1fr 0px;
+  grid-template-rows: 1fr;
+  height: 100%;
   overflow: hidden;
+  transition: grid-template-columns var(--transition);
 }
-
-/* 3-column when PHIL panel open on desktop */
-@media (min-width: 800px) {
+.shell[data-sidebar-collapsed="true"] {
+  grid-template-columns: var(--sidebar-mini) 1fr 0px;
+}
+@media (min-width: 900px) {
   .shell[data-phil-open="true"] {
     grid-template-columns: var(--sidebar-w) 1fr var(--phil-w);
   }
+  .shell[data-sidebar-collapsed="true"][data-phil-open="true"] {
+    grid-template-columns: var(--sidebar-mini) 1fr var(--phil-w);
+  }
 }
 
-.content {
-  overflow-y: auto;
+/* ── Content column (topbar + scroll area) ───────────────────────────────── */
+.contentWrap {
+  display: flex; flex-direction: column;
+  min-height: 0; overflow: hidden;
   background: var(--content-bg);
-  min-height: 100vh;
 }
 
-/* Mobile */
-@media (max-width: 799px) {
-  .shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    height: 100vh;
-  }
-  .content {
-    padding-bottom: var(--bottom-nav-h);
-  }
+/* ── Top header bar ──────────────────────────────────────────────────────── */
+.topbar {
+  height: auto; min-height: var(--header-h);
+  display: flex; align-items: center;
+  padding: 0 1rem 0 1.5rem;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--card-border);
+  flex-shrink: 0; gap: 1rem;
 }
+.titleWithStats {
+  display: flex; align-items: baseline; gap: .75rem; flex: 1; min-width: 0;
+}
+.pageTitle {
+  font-size: var(--text-base); font-weight: 600;
+  font-family: var(--font); letter-spacing: -.01em;
+  color: #0F0F0F; flex-shrink: 0;
+}
+.viewStats {
+  display: flex; align-items: center; gap: .375rem; flex-wrap: wrap;
+}
+.viewStat {
+  font-size: var(--text-xs); font-weight: 500;
+  color: #6B7280; background: #F3F4F6;
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px solid #E5E7EB; white-space: nowrap;
+  font-family: var(--font);
+}
+.pageTitleDate {
+  display: flex; align-items: baseline; gap: .625rem; flex: 1;
+}
+.pageTitleDay {
+  font-size: var(--text-base); font-weight: 700;
+  font-family: var(--font); color: #0F0F0F; letter-spacing: -.01em;
+}
+.pageTitleTime {
+  font-size: var(--text-sm); font-weight: 600;
+  color: var(--amber); font-family: var(--font);
+  background: var(--amber-light); padding: 1px 8px;
+  border-radius: 999px; letter-spacing: .02em;
+}
+/* ── Next appointment pill ───────────────────────────────────────────────── */
+.nextEventPill {
+  display: flex; align-items: center; gap: .375rem;
+  padding: .25rem .75rem .25rem .5rem;
+  border-radius: 999px;
+  border: 1px solid var(--content-border);
+  background: var(--card-bg);
+  font-size: var(--text-xs); color: #374151;
+  font-family: var(--font);
+  max-width: 400px; overflow: hidden;
+  flex-shrink: 1; min-width: 0;
+}
+.nextEventIcon { flex-shrink: 0; font-size: .8rem; }
+.nextEventTime { font-weight: 700; color: var(--amber); flex-shrink: 0; }
+.nextEventTitle {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.nextEventLoc { color: #9CA3AF; white-space: nowrap; flex-shrink: 0; }
+.nextEventRemaining {
+  font-weight: 700; color: var(--amber); white-space: nowrap; flex-shrink: 0;
+  background: var(--amber-light); padding: 1px 6px; border-radius: 999px; font-size: .6rem;
+}
+.nextEventLink {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--amber); color: white; font-weight: 600; font-size: .6rem;
+  white-space: nowrap; flex-shrink: 0; text-decoration: none;
+  transition: background var(--transition);
+}
+.nextEventLink:hover { background: var(--amber-dark); }
 
-.backdrop {
-  position: fixed; inset: 0; z-index: 199;
-  background: rgba(0,0,0,.4);
-}
+.topbarRight { display: flex; align-items: center; gap: .625rem; }
 
-.mobileOnly {
-  display: none;
+/* ── EWS status pill ─────────────────────────────────────────────────────── */
+.ewsPill {
+  display: flex; align-items: center; gap: .375rem;
+  padding: .25rem .7rem .25rem .5rem;
+  border-radius: 999px;
+  border: 1px solid #BBF7D0;
+  background: #F0FDF4;
+  font-size: var(--text-xs); color: #16A34A;
+  font-family: var(--font); font-weight: 500;
+  white-space: nowrap;
 }
-@media (max-width: 799px) {
+.ewsPillDot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #22C55E; flex-shrink: 0;
+}
+.ewsPillErr {
+  border-color: #FDE68A; background: var(--aktion-bg);
+  color: var(--aktion-text);
+}
+.ewsPillErrDot { background: var(--aktion-badge); }
+
+/* ── Phil trigger button (topbar right) ──────────────────────────────────── */
+.philBtn {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .25rem .6rem .25rem .35rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--card-border);
+  background: var(--card-bg);
+  cursor: pointer; transition: all var(--transition);
+  font-family: var(--font); font-size: var(--text-xs); font-weight: 600;
+  color: #374151;
+}
+.philBtn:hover {
+  border-color: var(--amber); color: var(--amber-dark);
+  background: var(--amber-light);
+}
+.philBtnActive {
+  border-color: var(--amber);
+  background: var(--amber-light);
+  color: var(--amber-dark);
+}
+.philBtnAvatar {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+}
+.philBtnLabel { line-height: 1; }
+
+/* ── Scroll area ─────────────────────────────────────────────────────────── */
+.content { flex: 1; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+.backdrop { position: fixed; inset: 0; z-index: 199; background: rgba(0,0,0,.45); }
+.mobileOnly { display: none; }
+@media (max-width: 899px) {
   .mobileOnly { display: block; }
+  .shell { grid-template-columns: 1fr; }
+  .content { padding-bottom: var(--bottom-nav-h); }
+  .philBtnLabel { display: none; }
 }

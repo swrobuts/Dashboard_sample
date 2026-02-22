@@ -1,87 +1,135 @@
+/* ── Sidebar shell ───────────────────────────────────────────────────────── */
 .sidebar {
   background: var(--sidebar-bg);
   color: var(--sidebar-text);
   display: flex; flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  border-right: 1px solid var(--sidebar-border);
+  height: 100%; overflow: hidden;
+  border-right: 1.5px solid var(--sidebar-border);
+  font-family: var(--font);
+  transition: width var(--transition);
+  width: var(--sidebar-w);
+  min-width: 0;
+}
+.sidebar.collapsed { width: var(--sidebar-mini); }
+
+/* ── Brand row ───────────────────────────────────────────────────────────── */
+.brand {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1rem .875rem;
+  border-bottom: 1px solid var(--sidebar-border);
+  flex-shrink: 0; min-height: 56px;
+}
+.collapsed .brand { justify-content: center; padding: 1rem 0; }
+
+.brandText { min-width: 0; }
+.brandName {
+  display: block; color: var(--amber);
+  font-weight: 800; font-size: 1rem;
+  letter-spacing: .1em; text-transform: uppercase;
   font-family: var(--font);
 }
-
-.brand {
-  padding: 1.25rem 1.25rem .75rem;
-  border-bottom: 1px solid var(--sidebar-border);
-  flex-shrink: 0;
+.brandSub {
+  display: block; font-size: var(--text-sm);
+  color: #9CA3AF; margin-top: 1px; letter-spacing: .01em;
 }
-.brandName { display: block; color: var(--amber); font-weight: 700; font-size: var(--text-lg); font-family: var(--font); }
-.brandSub { display: block; font-size: var(--text-xs); color: #52525B; margin-top: 2px; }
 
-.nav { flex: 1; padding: .75rem .5rem; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.collapseBtn {
+  color: #6B7280; font-size: 1rem; font-weight: 700;
+  padding: .25rem .45rem; border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+  flex-shrink: 0; line-height: 1;
+  background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); cursor: pointer;
+}
+.collapseBtn:hover { color: var(--amber); background: var(--amber-light); border-color: var(--amber); }
+
+/* ── Navigation ──────────────────────────────────────────────────────────── */
+.nav {
+  flex: 1; padding: .625rem .625rem;
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto;
+}
+.collapsed .nav { padding: .625rem .25rem; align-items: center; }
 
 .navItem {
   display: flex; align-items: center; gap: .75rem;
-  padding: .6rem .75rem;
+  padding: .65rem .875rem;
   border-radius: var(--radius-sm);
   color: var(--sidebar-text);
-  font-size: var(--text-sm);
-  font-family: var(--font);
+  font-size: 0.9rem; font-family: var(--font); font-weight: 400;
   transition: background var(--transition), color var(--transition);
   position: relative; width: 100%; text-align: left;
+  white-space: nowrap; overflow: hidden;
+  border: none; cursor: pointer; background: none;
 }
 .navItem:hover { background: var(--sidebar-hover); color: var(--sidebar-text-active); }
-.navItem.active { background: var(--sidebar-active); color: var(--sidebar-text-active); }
+.navItem.active {
+  background: var(--amber-light);
+  color: var(--sidebar-text-active);
+  font-weight: 600;
+}
+.collapsed .navItem {
+  width: 40px; padding: .65rem 0;
+  justify-content: center; border-radius: var(--radius-sm);
+}
 
-.navIcon { font-size: 1rem; width: 1.25rem; text-align: center; flex-shrink: 0; }
+.navIcon { font-size: 1rem; width: 1.2rem; text-align: center; flex-shrink: 0; }
 .navLabel { flex: 1; }
 .badge {
-  background: var(--amber); color: white;
-  border-radius: 999px; font-size: .65rem; font-weight: 600;
-  padding: 1px 6px; min-width: 18px; text-align: center;
+  background: var(--vip-badge); color: white;
+  border-radius: 999px; font-size: .6rem; font-weight: 700;
+  padding: 1px 5px; min-width: 16px; text-align: center; flex-shrink: 0;
+}
+.collapsed .badge {
+  position: absolute; top: 3px; right: 2px;
+  min-width: 14px; padding: 1px 3px; font-size: .55rem;
 }
 
+/* ── Bottom user row ─────────────────────────────────────────────────────── */
 .bottom {
-  padding: .75rem;
+  padding: .625rem .75rem;
   border-top: 1px solid var(--sidebar-border);
-  display: flex; flex-direction: column; gap: .5rem;
   flex-shrink: 0;
 }
-
-.philBtn {
-  display: flex; align-items: center; gap: .6rem;
-  padding: .6rem .75rem;
-  background: var(--sidebar-active);
-  border-radius: var(--radius-sm);
-  color: var(--sidebar-text-active);
-  font-size: var(--text-sm);
-  font-family: var(--font);
-  width: 100%;
-  transition: background var(--transition);
-  border: none;
-}
-.philBtn:hover { background: #52525B; }
-.philAvatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-
 .userRow {
   display: flex; align-items: center; justify-content: space-between;
-  padding: .25rem .75rem;
+  padding: .2rem .125rem;
 }
-.userName { font-size: var(--text-xs); color: #52525B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-.logoutBtn { color: #52525B; font-size: 1rem; padding: .2rem; transition: color var(--transition); background: none; border: none; cursor: pointer; }
-.logoutBtn:hover { color: #EF4444; }
+.userName {
+  font-size: var(--text-sm); color: #6B7280;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 160px;
+}
+.logoutBtn {
+  color: #BEBEBE; font-size: .9rem; padding: .2rem .35rem;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+  background: none; border: none; cursor: pointer;
+}
+.logoutBtn:hover { color: #EF4444; background: rgba(239,68,68,.08); }
+.logoutBtnMini {
+  color: #BEBEBE; font-size: .9rem; padding: .35rem .4rem;
+  border-radius: var(--radius-sm); width: 100%; display: flex; justify-content: center;
+  transition: color var(--transition), background var(--transition);
+  background: none; border: none; cursor: pointer;
+}
+.logoutBtnMini:hover { color: #EF4444; background: rgba(239,68,68,.08); }
 
-/* Mobile: bottom nav strip */
-@media (max-width: 799px) {
+/* ── Mobile: bottom strip ────────────────────────────────────────────────── */
+@media (max-width: 899px) {
   .sidebar {
-    flex-direction: row;
-    height: var(--bottom-nav-h);
+    flex-direction: row; height: var(--bottom-nav-h);
     position: fixed; bottom: 0; left: 0; right: 0;
-    border-right: none; border-top: 1px solid var(--sidebar-border);
-    z-index: 100; width: 100%;
+    border-right: none; border-top: 1.5px solid var(--sidebar-border);
+    z-index: 100; width: 100%; transition: none;
   }
   .brand, .bottom { display: none; }
-  .nav { flex-direction: row; padding: 0; gap: 0; }
-  .navItem { flex: 1; flex-direction: column; gap: 2px; padding: .5rem .25rem;
-    font-size: .6rem; border-radius: 0; justify-content: center; align-items: center; }
-  .navIcon { font-size: 1.25rem; width: auto; }
-  .badge { position: absolute; top: 4px; right: 12px; font-size: .55rem; padding: 1px 4px; }
+  .nav { flex-direction: row; padding: 0; gap: 0; overflow: visible; }
+  .navItem {
+    flex: 1; flex-direction: column; gap: 3px;
+    padding: .4rem .25rem; font-size: .6rem;
+    border-radius: 0; justify-content: center; align-items: center;
+    width: auto;
+  }
+  .navIcon { font-size: 1.15rem; width: auto; }
+  .badge { top: 2px; right: 6px; }
 }

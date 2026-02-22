@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { User, TriagedMail, CalendarItem, Task, Category } from '../api/types'
 
-export type View = 'dashboard' | 'mails' | 'calendar' | 'tasks'
+export type View = 'dashboard' | 'mails' | 'calendar' | 'tasks' | 'trains'
 export type Selection =
   | { type: 'mail'; item: TriagedMail }
   | { type: 'calendar'; item: CalendarItem }
@@ -20,6 +20,7 @@ interface AppState {
   tasks: Task[]
   setMails: (m: TriagedMail[]) => void
   updateMail: (id: string, patch: Partial<TriagedMail>) => void
+  removeMail: (id: string) => void
   setCalendar: (c: CalendarItem[]) => void
   setTasks: (t: Task[]) => void
   removeTask: (id: string) => void
@@ -31,6 +32,12 @@ interface AppState {
   setMailFilter: (f: Category | 'all') => void
   selection: Selection
   setSelection: (s: Selection) => void
+  philOpen: boolean
+  setPhilOpen: (b: boolean) => void
+  sentimentMode: boolean
+  setSentimentMode: (b: boolean) => void
+  trainPreset: { to: string } | null
+  setTrainPreset: (p: { to: string } | null) => void
 
   // Loading
   loadingMails: boolean
@@ -56,6 +63,7 @@ export const useStore = create<AppState>((set) => ({
   setMails: (mails) => set({ mails }),
   updateMail: (id, patch) =>
     set((s) => ({ mails: s.mails.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
+  removeMail: (id) => set((s) => ({ mails: s.mails.filter((m) => m.id !== id) })),
   setCalendar: (calendar) => set({ calendar }),
   setTasks: (tasks) => set({ tasks }),
   removeTask: (id) => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
@@ -66,6 +74,12 @@ export const useStore = create<AppState>((set) => ({
   setMailFilter: (mailFilter) => set({ mailFilter }),
   selection: null,
   setSelection: (selection) => set({ selection }),
+  philOpen: false,
+  setPhilOpen: (philOpen) => set({ philOpen }),
+  sentimentMode: false,
+  setSentimentMode: (sentimentMode) => set({ sentimentMode }),
+  trainPreset: null,
+  setTrainPreset: (trainPreset) => set({ trainPreset }),
 
   loadingMails: false,
   loadingCalendar: false,
