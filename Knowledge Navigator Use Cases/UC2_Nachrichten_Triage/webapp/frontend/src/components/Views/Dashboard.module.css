@@ -439,6 +439,12 @@
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 2px 0;
 }
+/* wrapper div per group — must also stack items with gap */
+.taskList > div {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
 .taskItem {
   display: flex;
