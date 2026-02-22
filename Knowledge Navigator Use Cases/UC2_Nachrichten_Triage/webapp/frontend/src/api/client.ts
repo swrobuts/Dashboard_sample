@@ -174,4 +174,56 @@ export const api = {
       cancel() { ctrl.abort() },
     })
   },
+
+  // Meeting Briefing (UC3) — SSE streaming identical to chatStream
+  briefingStream: (event: {
+    subject: string
+    start?: string | null
+    end?: string | null
+    location?: string | null
+    body?: string | null
+  }): ReadableStream<string> => {
+    const ctrl = new AbortController()
+    return new ReadableStream({
+      async start(controller) {
+        try {
+          const r = await fetch('/api/briefing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: event.subject,
+              start: event.start ?? '',
+              end: event.end ?? '',
+              location: event.location ?? '',
+              body: event.body ?? '',
+            }),
+            signal: ctrl.signal,
+          })
+          if (!r.ok || !r.body) {
+            _handle401(r.status)
+            controller.error(new Error(`Fehler ${r.status}`))
+            return
+          }
+          const reader = r.body.getReader()
+          const dec = new TextDecoder()
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const chunk = dec.decode(value)
+            for (const line of chunk.split('\n')) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+                if (data === '[DONE]') { controller.close(); return }
+                controller.enqueue(data)
+              }
+            }
+          }
+          controller.close()
+        } catch (e) {
+          controller.error(e)
+        }
+      },
+      cancel() { ctrl.abort() },
+    })
+  },
 }
