@@ -191,6 +191,18 @@ class MemoryStore:
                 "positive_votes", "negative_votes", "created_at", "corrected_at", "correction_note"]
         return [dict(zip(cols, r)) for r in rows]
 
+    def get_fact(self, fact_id: str) -> dict | None:
+        """Return a single fact by id, or None if not found."""
+        row = self._conn.execute(
+            "SELECT id, text, category, source, source_ref, confidence, positive_votes, negative_votes, created_at, corrected_at, correction_note FROM facts WHERE id = ?",
+            (fact_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        cols = ["id", "text", "category", "source", "source_ref", "confidence",
+                "positive_votes", "negative_votes", "created_at", "corrected_at", "correction_note"]
+        return dict(zip(cols, row))
+
     def search_facts(self, query: str, n_results: int = 10) -> list[dict]:
         if self._chroma_collection is not None and self._chroma_collection.count() > 0:
             try:

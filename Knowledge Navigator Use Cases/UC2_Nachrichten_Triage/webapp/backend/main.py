@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from fastapi import Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 load_dotenv()
 load_dotenv(Path(__file__).parent / ".env", override=False)
@@ -44,9 +44,11 @@ except Exception as e:
     logging.warning(f"[Ontology] OntologyStore deaktiviert: {type(e).__name__}: {e}")
     ontology_store = None
 
+_MEMORY_DB_PATH = str(Path(__file__).parent.parent / "data" / "memory.db")
+
 try:
     memory_store = MemoryStore(
-        db_path="./data/memory.db",
+        db_path=_MEMORY_DB_PATH,
         chroma_path="/tmp/phil_chroma",
     )
     logging.info("[Memory] MemoryStore initialisiert")
@@ -1002,6 +1004,12 @@ class MemoryUpdateRequest(BaseModel):
     text: str | None = None
     correction_note: str | None = None
 
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "MemoryUpdateRequest":
+        if self.text is None and self.correction_note is None:
+            raise ValueError("Mindestens eines der Felder 'text' oder 'correction_note' muss angegeben werden.")
+        return self
+
 
 BRIEFING_SYSTEM = """\
 Du bist PHIL, der persönliche KI-Assistent von Prof. Dr. Butscher.
@@ -1129,6 +1137,8 @@ def memory_update_fact(
     _get_session(session_id)
     if memory_store is None:
         raise HTTPException(status_code=503, detail="MemoryStore nicht verfügbar")
+    if memory_store.get_fact(fact_id) is None:
+        raise HTTPException(status_code=404, detail=f"Fakt nicht gefunden: {fact_id}")
     memory_store.update_fact(fact_id, text=req.text, correction_note=req.correction_note)
     return {"ok": True}
 

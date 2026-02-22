@@ -85,6 +85,20 @@ def test_update_fact_text(store):
     assert fact["corrected_at"] is not None
 
 
+def test_get_fact_returns_dict(store):
+    store.upsert_fact("f1", "Flaschenpost = Getränkelieferdienst", "Konzept", "chat")
+    fact = store.get_fact("f1")
+    assert fact is not None
+    assert fact["id"] == "f1"
+    assert fact["text"] == "Flaschenpost = Getränkelieferdienst"
+    assert fact["category"] == "Konzept"
+
+
+def test_get_fact_returns_none_for_unknown_id(store):
+    result = store.get_fact("does-not-exist")
+    assert result is None
+
+
 def test_list_facts_filter_by_category(store):
     store.upsert_fact("f1", "Max Müller", "Person", "chat")
     store.upsert_fact("f2", "Flaschenpost", "Konzept", "chat")
