@@ -597,22 +597,28 @@ def _gog_env() -> dict:
     return env
 
 
-def fetch_google_calendar(days_ahead: int = 14) -> list[dict]:
-    """Liest Google Kalender via gog CLI."""
+def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
+    """Liest Google Kalender via gog CLI (±6 Monate)."""
     account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
     gog = _gog_binary()
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    from_dt = (now - timedelta(days=180)).strftime("%Y-%m-%d")
+    to_dt   = (now + timedelta(days=180)).strftime("%Y-%m-%d")
 
     result = subprocess.run(
         [
             gog, "calendar", "events",
             "--account", account,
-            "--days", str(days_ahead),
+            "--from", from_dt,
+            "--to",   to_dt,
             "--json",
-            "--max", "50",
+            "--max", "500",
             "--no-input",
         ],
         capture_output=True, text=True,
-        env=_gog_env(), timeout=20,
+        env=_gog_env(), timeout=30,
     )
 
     if result.returncode != 0:

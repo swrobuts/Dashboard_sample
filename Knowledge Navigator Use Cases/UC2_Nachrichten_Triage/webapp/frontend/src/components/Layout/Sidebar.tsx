@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
 import type { View } from '../../store/useStore'
 import { api } from '../../api/client'
@@ -60,13 +61,24 @@ interface Props {
 
 export function Sidebar({ collapsed, onCollapse }: Props) {
   const { view, setView, user, logout, mails, tasks, calendar } = useStore()
+
+  // Badge counts
   const unread = mails.filter((m) => !m.is_read).length
+  const openTaskCount = tasks.filter((t) => t.status !== 'Completed').length
   const todayStr = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
-  const tasksTodayCount = tasks.filter((t) => t.status !== 'Completed' && t.due_date?.slice(0, 10) === todayStr).length
   const calTodayCount = calendar.filter((e) => e.start?.slice(0, 10) === todayStr).length
+
+  // Login duration (minutes since component mount = login time)
+  const [loginAt] = useState(() => Date.now())
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const loginMinutes = Math.floor((Date.now() - loginAt) / 60_000)
 
   async function handleLogout() {
     await api.logout().catch(() => {})
@@ -106,8 +118,8 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
             {item.view === 'mails' && unread > 0 && (
               <span className={styles.badge}>{unread}</span>
             )}
-            {item.view === 'tasks' && tasksTodayCount > 0 && (
-              <span className={styles.badge}>{tasksTodayCount}</span>
+            {item.view === 'tasks' && openTaskCount > 0 && (
+              <span className={styles.badge}>{openTaskCount}</span>
             )}
             {item.view === 'calendar' && calTodayCount > 0 && (
               <span className={styles.badge}>{calTodayCount}</span>
@@ -118,7 +130,14 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
 
       {/* Bottom user row */}
       <div className={styles.footer}>
-        <span className={styles.user}>{user?.username}</span>
+        <div className={styles.userInfo}>
+          <span className={styles.user}>{user?.username}</span>
+          {!collapsed && (
+            <span className={styles.userSince}>
+              (seit {loginMinutes < 1 ? '< 1' : loginMinutes} Min.)
+            </span>
+          )}
+        </div>
         <button className={styles.logoutBtn} onClick={handleLogout} title="Abmelden">⏻</button>
       </div>
     </nav>
