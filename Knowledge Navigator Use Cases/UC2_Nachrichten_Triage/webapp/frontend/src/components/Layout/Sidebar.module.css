@@ -59,7 +59,7 @@
   padding: 0 10px;
   height: 44px;
   border-radius: var(--radius);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 500;
   color: var(--sidebar-text);
   background: transparent;
@@ -149,15 +149,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius);
   border: none;
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--error);
   cursor: pointer;
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: 18px;
   transition: background var(--transition), color var(--transition);
 }
 .logoutBtn:hover {

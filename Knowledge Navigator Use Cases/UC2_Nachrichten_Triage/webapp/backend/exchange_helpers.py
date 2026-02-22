@@ -551,8 +551,12 @@ def delete_task(account: Account, task_id: str, changekey: str) -> bool:
         task = next((t for t in account.tasks.all()[:500] if t.id == task_id), None)
         if task is None:
             return True  # Bereits gelöscht oder nicht mehr vorhanden
-    task.delete()
-    return True
+    try:
+        task.delete()
+        return True
+    except Exception as exc:
+        _logger.error(f"[EWS-Tasks] Löschen fehlgeschlagen für {task_id}: {type(exc).__name__}: {exc}")
+        raise
 
 
 def create_task(

@@ -311,7 +311,6 @@ export function PhilPanel({ open, onClose }: Props) {
           <div className={styles.avatarName}>PHIL</div>
           {contextLabel && <span className={styles.contextLabel} title={contextLabel}>{contextLabel}</span>}
         </div>
-        <button className={styles.closeBtn} onClick={onClose} aria-label="Schließen">✕</button>
       </div>
 
       {/* ── Quick Actions ──────────────────────────────────────────────────── */}

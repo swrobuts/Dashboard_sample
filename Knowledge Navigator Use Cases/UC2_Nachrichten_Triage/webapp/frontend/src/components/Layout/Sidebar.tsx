@@ -115,13 +115,13 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
           >
             <span className={styles.navIcon}>{item.icon}</span>
             <span className={styles.navLabel}>{item.label}</span>
-            {item.view === 'mails' && unread > 0 && (
+            {item.view === 'mails' && (
               <span className={styles.badge}>{unread}</span>
             )}
-            {item.view === 'tasks' && openTaskCount > 0 && (
+            {item.view === 'tasks' && (
               <span className={styles.badge}>{openTaskCount}</span>
             )}
-            {item.view === 'calendar' && calTodayCount > 0 && (
+            {item.view === 'calendar' && (
               <span className={styles.badge}>{calTodayCount}</span>
             )}
           </button>

@@ -730,7 +730,10 @@ def post_delete_task(
     session_id: str | None = Cookie(default=None),
 ):
     account = _get_account(session_id)
-    delete_task(account, task_id, req.changekey)
+    try:
+        delete_task(account, task_id, req.changekey)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Löschen fehlgeschlagen: {exc}")
     return {"status": "deleted"}
 
 
