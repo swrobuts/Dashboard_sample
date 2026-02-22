@@ -1,6 +1,7 @@
 # webapp/backend/main.py
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -23,8 +24,12 @@ from backend.knowledge_store import KnowledgeStore
 
 try:
     knowledge_store = KnowledgeStore()
-except Exception:
-    knowledge_store = None  # RAG disabled when OPENAI_API_KEY missing — non-fatal
+except ValueError as e:
+    logging.warning(f"[RAG] KnowledgeStore deaktiviert (kein API-Key): {e}")
+    knowledge_store = None
+except Exception as e:
+    logging.warning(f"[RAG] KnowledgeStore deaktiviert (unerwarteter Fehler): {type(e).__name__}: {e}")
+    knowledge_store = None
 
 app = FastAPI(title="PHIL PIM Dashboard", version="2.0.0")
 
@@ -126,7 +131,7 @@ def analyze(req: AnalyzeRequest):
                 body_snippet=req.email_text[:500],
             )
         except Exception as exc:
-            import logging; logging.warning(f"[RAG] Indexierung fehlgeschlagen: {exc}")
+            logging.warning(f"[RAG] Indexierung fehlgeschlagen: {exc}")
 
     return result
 

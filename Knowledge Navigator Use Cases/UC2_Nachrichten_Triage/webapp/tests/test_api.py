@@ -407,7 +407,7 @@ def test_analyze_indexes_mail_when_mail_id_provided(mocker):
 
 def test_analyze_still_works_without_mail_id(mocker):
     """mail_id is optional — old callers without it must still work."""
-    mocker.patch("backend.main.knowledge_store.index_mail")
+    mock_index = mocker.patch("backend.main.knowledge_store.index_mail")
     mocker.patch("backend.main.anthropic_client.messages.create",
         return_value=mocker.Mock(
             content=[mocker.Mock(text='{"kategorie":"Nur Info","priorität":3,"zusammenfassung":"ok","empfohlene_aktion":"Ignorieren","stimmung":0.0}')]
@@ -416,3 +416,4 @@ def test_analyze_still_works_without_mail_id(mocker):
     client = get_client()
     response = client.post("/api/analyze", json={"email_text": "test"})
     assert response.status_code == 200
+    mock_index.assert_not_called()
