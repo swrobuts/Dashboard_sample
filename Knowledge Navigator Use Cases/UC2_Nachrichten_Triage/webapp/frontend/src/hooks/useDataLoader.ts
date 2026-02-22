@@ -8,7 +8,6 @@ export function useDataLoader() {
   const {
     setMails, updateMail, setCalendar, setTasks,
     setLoadingMails, setLoadingCalendar, setLoadingTasks,
-    user,
   } = useStore()
 
   async function loadMails() {
@@ -38,12 +37,18 @@ export function useDataLoader() {
               toTriage.slice(i, i + BATCH).map(async (mail) => {
                 try {
                   const text = `Von: ${mail.sender}\nBetreff: ${mail.subject}\nDatum: ${mail.datetime_received ?? ''}\n\n${mail.body}`
-                  const result = await api.analyze(text)
+                  const result = await api.analyze(text, {
+                    mail_id: mail.id,
+                    subject: mail.subject ?? '',
+                    sender: mail.sender ?? '',
+                    date: mail.datetime_received?.slice(0, 10) ?? '',
+                  })
                   updateMail(mail.id, {
                     kategorie: result.kategorie as TriagedMail['kategorie'],
                     priorität: result.priorität,
                     zusammenfassung: result.zusammenfassung,
                     empfohlene_aktion: result.empfohlene_aktion,
+                    stimmung: result.stimmung,
                     triageStatus: 'done' as const,
                   })
                 } catch {
@@ -75,7 +80,6 @@ export function useDataLoader() {
   }
 
   async function loadTasks() {
-    if (!user?.ews_connected) return
     setLoadingTasks(true)
     try {
       const { tasks } = await api.tasks()
