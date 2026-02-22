@@ -27,23 +27,23 @@
   border-radius: var(--radius-sm); flex-shrink: 0;
 }
 .eventActionTitle {
-  font-size: var(--text-sm); font-weight: 600; color: #111;
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-primary);
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .eventActionTime {
-  font-size: var(--text-xs); color: #6B7280; flex-shrink: 0;
+  font-size: var(--text-xs); color: var(--text-secondary); flex-shrink: 0;
 }
 .eventActionBtns { display: flex; gap: .35rem; flex-shrink: 0; }
 .eventDeleteBtn {
   padding: .2rem .6rem; border-radius: var(--radius-sm); font-size: var(--text-xs);
-  border: 1.5px solid #EF4444; color: #EF4444; background: none;
+  border: 1.5px solid var(--error); color: var(--error); background: none;
   cursor: pointer; font-weight: 600; transition: background .1s;
 }
-.eventDeleteBtn:hover { background: #FEF2F2; }
+.eventDeleteBtn:hover { background: var(--vip-bg); }
 .eventDeleteBtn:disabled { opacity: .5; cursor: not-allowed; }
 .eventCloseBtnSmall {
   padding: .2rem .5rem; border-radius: var(--radius-sm); font-size: .75rem;
-  border: 1px solid var(--card-border); color: #9CA3AF; background: none; cursor: pointer;
+  border: 1px solid var(--card-border); color: var(--text-tertiary); background: none; cursor: pointer;
 }
 .eventCloseBtnSmall:hover { background: var(--content-bg); }
 
@@ -98,7 +98,7 @@
 .rbcToday {
   padding: .35rem .75rem; border: 1.5px solid var(--content-border);
   border-radius: var(--radius-sm); font-size: var(--text-sm); font-family: var(--font);
-  background: var(--content-bg); cursor: pointer; color: #374151;
+  background: var(--content-bg); cursor: pointer; color: var(--text-secondary);
   transition: all var(--transition);
 }
 .rbcToday:hover { border-color: var(--amber); color: var(--amber-dark); }
@@ -108,7 +108,7 @@
 }
 .rbc :global(.rbc-header) {
   font-family: var(--font); font-size: var(--text-xs); font-weight: 700;
-  text-transform: uppercase; letter-spacing: .04em; color: #6B7280;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);
   padding: .5rem .25rem; border-color: var(--card-border);
 }
 .rbc :global(.rbc-month-view),
@@ -133,7 +133,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   font-size: .8rem;
 }
-.rbc :global(.rbc-off-range-bg) { background: #F9FAFB; }
+.rbc :global(.rbc-off-range-bg) { background: var(--content-bg); }
 
 /* Events */
 .rbc :global(.rbc-event) {
@@ -176,24 +176,24 @@
   margin: 0;
 }
 .modalCloseBtn {
-  color: #9CA3AF; font-size: .875rem; padding: .3rem;
+  color: var(--text-tertiary); font-size: .875rem; padding: .3rem;
   background: none; border: none; cursor: pointer;
   transition: color var(--transition); line-height: 1;
 }
-.modalCloseBtn:hover { color: #374151; }
+.modalCloseBtn:hover { color: var(--text-primary); }
 .modalDeleteBtn {
   padding: .42rem .9rem; border-radius: var(--radius-sm); font-size: var(--text-sm);
-  font-family: var(--font); border: 1.5px solid #EF4444; color: #EF4444;
+  font-family: var(--font); border: 1.5px solid var(--error); color: var(--error);
   background: none; cursor: pointer; transition: all .1s;
 }
-.modalDeleteBtn:hover { background: #FEF2F2; }
+.modalDeleteBtn:hover { background: var(--vip-bg); }
 .modalDeleteBtn:disabled { opacity: .5; cursor: not-allowed; }
 .saveError {
-  font-size: var(--text-xs); color: #EF4444;
-  background: #FEF2F2; border: 1px solid #FECACA;
+  font-size: var(--text-xs); color: var(--error);
+  background: var(--vip-bg); border: 1px solid #FECACA;
   border-radius: var(--radius-sm); padding: .4rem .65rem; margin: 0;
 }
-.label { font-size: var(--text-xs); font-weight: 600; color: #6B7280; display: block; margin-bottom: .3rem; }
+.label { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: .3rem; }
 .input {
   padding: .6rem .85rem; border: 1.5px solid var(--content-border);
   border-radius: var(--radius-sm); font-family: var(--font); font-size: var(--text-sm);
@@ -210,7 +210,7 @@
 .formActions { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; }
 .cancelBtn {
   padding: .42rem .9rem; border-radius: var(--radius-sm); font-size: var(--text-sm);
-  font-family: var(--font); color: #6B7280; border: none; cursor: pointer; background: none;
+  font-family: var(--font); color: var(--text-secondary); border: none; cursor: pointer; background: none;
 }
 .cancelBtn:hover { background: var(--content-border); }
 .saveBtn {
@@ -229,11 +229,11 @@
 .navBtn {
   padding: .3rem .7rem; border: 1.5px solid var(--content-border);
   border-radius: var(--radius-sm); background: var(--content-bg); font-size: 1.1rem;
-  cursor: pointer; transition: all var(--transition); color: #374151;
+  cursor: pointer; transition: all var(--transition); color: var(--text-secondary);
 }
 .navBtn:hover { border-color: var(--amber); color: var(--amber-dark); }
 .yearTitle { font-size: var(--text-xl); font-weight: 700; font-family: var(--font); }
-.yearLoading { font-size: var(--text-sm); color: #9CA3AF; }
+.yearLoading { font-size: var(--text-sm); color: var(--text-tertiary); }
 
 .yearGrid {
   display: grid;
@@ -254,24 +254,24 @@
 }
 .miniMonthName {
   font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
-  letter-spacing: .05em; color: #374151; margin-bottom: .4rem;
+  letter-spacing: .05em; color: var(--text-secondary); margin-bottom: .4rem;
   font-family: var(--font);
 }
 .miniGrid {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
 }
 .miniDow {
-  font-size: .6rem; font-weight: 700; color: #9CA3AF;
+  font-size: .6rem; font-weight: 700; color: var(--text-tertiary);
   text-align: center; padding: 1px 0;
 }
 .miniDay {
   position: relative;
   display: flex; flex-direction: column; align-items: center;
-  padding: 2px 0; border-radius: 3px; cursor: pointer;
+  padding: 2px 0; border-radius: var(--radius-sm); cursor: pointer;
   transition: background .1s;
 }
 .miniDay:hover, .miniHover { background: var(--amber-light); }
-.miniDayNum { font-size: .65rem; line-height: 1.4; color: #374151; }
+.miniDayNum { font-size: .65rem; line-height: 1.4; color: var(--text-secondary); }
 .miniToday .miniDayNum {
   background: var(--amber); color: white; border-radius: 50%;
   width: 16px; height: 16px; display: flex; align-items: center;
