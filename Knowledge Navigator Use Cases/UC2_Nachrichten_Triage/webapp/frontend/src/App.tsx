@@ -27,13 +27,17 @@ export default function App() {
 
   useEffect(() => {
     api.me()
-      .then((u) => {
-        setUser(u)
-        loadAll()
-      })
+      .then((u) => { setUser(u); loadAll() })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Globaler 401-Handler: Session abgelaufen → sofort zur Login-Seite
+  useEffect(() => {
+    function onSessionExpired() { setUser(null) }
+    window.addEventListener('session-expired', onSessionExpired)
+    return () => window.removeEventListener('session-expired', onSessionExpired)
+  }, [setUser])
 
   function handleLogin(u: User) {
     setUser(u)

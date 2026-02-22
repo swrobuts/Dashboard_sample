@@ -1,4 +1,9 @@
-import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult, OntologyEntities } from './types'
+import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult, OntologyEntities, LLMMode } from './types'
+
+/** Feuert ein CustomEvent wenn der Server 401 zurückgibt — App.tsx hört darauf und zeigt Login. */
+function _handle401(status: number) {
+  if (status === 401) window.dispatchEvent(new CustomEvent('session-expired'))
+}
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(path, {
@@ -7,6 +12,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!r.ok) {
+    _handle401(r.status)
     const err = await r.json().catch(() => ({ detail: r.statusText }))
     throw Object.assign(new Error(err.detail ?? r.statusText), { status: r.status, data: err })
   }
@@ -20,6 +26,7 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!r.ok) {
+    _handle401(r.status)
     const err = await r.json().catch(() => ({ detail: r.statusText }))
     throw Object.assign(new Error(err.detail ?? r.statusText), { status: r.status, data: err })
   }
@@ -33,6 +40,7 @@ async function del<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!r.ok) {
+    _handle401(r.status)
     const err = await r.json().catch(() => ({ detail: r.statusText }))
     throw Object.assign(new Error(err.detail ?? r.statusText), { status: r.status, data: err })
   }
@@ -51,8 +59,14 @@ async function get<T>(path: string): Promise<T> {
 export const api = {
   // Auth
   me: () => get<User>('/api/auth/me'),
-  login: (username: string, password: string, institution: string, exchange_email?: string) =>
-    post<User & { status: string }>('/api/auth/login', { username, password, institution, exchange_email }),
+  login: (username: string, password: string, institution: string, exchange_email?: string, llm_mode: LLMMode = 'cloud') =>
+    post<User & { status: string }>('/api/auth/login', { username, password, institution, exchange_email, llm_mode }),
+
+  // LLM Health
+  llmHealth: (mode: LLMMode = 'local') =>
+    get<{ status: string; provider: string; endpoint?: string; model?: string; error?: string }>(
+      `/api/health/llm?mode=${mode}`
+    ),
   logout: () => post<{ status: string }>('/api/auth/logout', {}),
 
   // Mails
@@ -133,6 +147,7 @@ export const api = {
             signal: ctrl.signal,
           })
           if (!r.ok || !r.body) {
+            _handle401(r.status)
             const msg = r.status === 401 ? 'Sitzung abgelaufen. Bitte neu anmelden.' : `Fehler ${r.status}`
             controller.error(new Error(msg))
             return
