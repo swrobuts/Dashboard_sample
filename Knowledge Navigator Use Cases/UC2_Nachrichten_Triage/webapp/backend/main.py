@@ -564,6 +564,26 @@ class ChatRequest(BaseModel):
     include_context: bool = True
 
 
+def _build_rag_context(query: str) -> str:
+    """Retrieve semantically similar past mails and format as context block."""
+    if knowledge_store is None:
+        return ""
+    try:
+        results = knowledge_store.search(query, n_results=3)
+    except Exception:
+        return ""
+    if not results:
+        return ""
+    lines = ["\n=== MAILHISTORIE (semantisch ähnliche frühere Mails) ==="]
+    for r in results:
+        lines.append(
+            f"  [{r['date']}] Von: {r['sender']} | Betreff: {r['subject']}"
+            f" | Kategorie: {r['kategorie']} | Relevanz: {int(r['score']*100)}%"
+            f"\n  Zusammenfassung: {r['summary']}"
+        )
+    return "\n".join(lines)
+
+
 def _build_context(mails: list, cal_items: list, tasks: list) -> str:
     lines = ["=== AKTUELLE SITUATION ==="]
     if mails:
@@ -624,6 +644,11 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
             tasks = []
         context_str = _build_context(mails, cal, tasks)
         import logging; logging.warning(f"[Chat-Ctx] Kontext: {len(mails)} Mails, {len(cal)} Kalender, {len(tasks)} Aufgaben")
+
+        # RAG: enrich with semantically similar past mails
+        rag_str = _build_rag_context(req.message)
+        if rag_str:
+            context_str += rag_str
 
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 

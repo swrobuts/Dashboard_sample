@@ -444,3 +444,32 @@ def test_knowledge_search_returns_results(mocker):
     assert len(data["results"]) == 1
     assert data["results"][0]["subject"] == "Projektstatus"
     assert data["results"][0]["score"] == 0.92
+
+
+def test_chat_includes_rag_context(mocker):
+    """Knowledge base results appear in the prompt sent to Claude."""
+    mocker.patch("backend.main._get_session", return_value={"username": "test"})
+    mocker.patch("backend.main.fetch_emails", return_value=[])
+    mocker.patch("backend.main.fetch_tasks", return_value=[])
+    mocker.patch("backend.main.fetch_google_calendar", return_value=[])
+    mocker.patch("backend.main.knowledge_store.search", return_value=[
+        {"id": "m1", "subject": "Förderantrag 2025", "sender": "dfg@example.de",
+         "date": "2025-11-01", "kategorie": "VIP",
+         "summary": "DFG-Förderung genehmigt.", "score": 0.88},
+    ])
+    captured = {}
+    def fake_stream(**kwargs):
+        captured["messages"] = kwargs.get("messages", [])
+        mock_ctx = mocker.MagicMock()
+        mock_ctx.__enter__ = mocker.MagicMock(return_value=mocker.MagicMock(text_stream=iter(["ok"])))
+        mock_ctx.__exit__ = mocker.MagicMock(return_value=False)
+        return mock_ctx
+    mocker.patch("backend.main.anthropic_client.messages.stream", side_effect=fake_stream)
+
+    client_inst = get_client()
+    client_inst.post("/api/chat", json={"message": "Was war mit dem Förderantrag?", "include_context": True})
+
+    assert "messages" in captured, "fake_stream was never called"
+    user_content = captured["messages"][0]["content"]
+    assert "MAILHISTORIE" in user_content
+    assert "Förderantrag 2025" in user_content
