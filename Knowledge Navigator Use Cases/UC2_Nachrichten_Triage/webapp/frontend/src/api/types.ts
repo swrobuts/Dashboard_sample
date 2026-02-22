@@ -1,7 +1,11 @@
 export interface User {
   username: string
+  first_name?: string
   institution: string
   inbox_count: number
+  unread_count?: number
+  drafts_count?: number
+  sent_today?: number
   ews_connected: boolean
   ews_error?: string | null
 }
@@ -19,6 +23,7 @@ export interface TriagedMail {
   priorität: number
   zusammenfassung: string
   empfohlene_aktion: string
+  stimmung?: number   // -1 (sehr negativ) … 0 (neutral) … +1 (sehr positiv)
   // ui
   id: string
   triageStatus: 'pending' | 'done' | 'error'
@@ -44,4 +49,29 @@ export interface Task {
   priority: string
   percent_complete: number
   body: string
+}
+
+export interface TrainStation {
+  id: string
+  name: string
+}
+
+export interface TrainJourney {
+  departure: string | null
+  arrival: string | null
+  delay_dep: number    // minutes
+  delay_arr: number    // minutes
+  changes: number
+  products: string[]
+  price: number | null
+}
+
+export interface KnowledgeResult {
+  id: string
+  subject: string
+  sender: string
+  date: string
+  kategorie: string
+  summary: string
+  score: number
 }
