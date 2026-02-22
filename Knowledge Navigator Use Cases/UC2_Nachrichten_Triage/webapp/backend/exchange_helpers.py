@@ -26,6 +26,21 @@ from email.utils import parsedate_to_datetime
 
 _logger = logging.getLogger(__name__)
 
+
+def _to_rfc3339(dt_str: str) -> str:
+    """'2026-02-23T14:00' → '2026-02-23T14:00:00+01:00' (lokale Zeitzone).
+
+    gog CLI erwartet RFC3339 mit Timezone-Offset; datetime-local-Inputs
+    aus dem Browser liefern nur 'YYYY-MM-DDTHH:MM' ohne Offset.
+    """
+    try:
+        dt = datetime.fromisoformat(dt_str)
+        if dt.tzinfo is None:
+            dt = dt.astimezone()   # lokale Systemzeitzone anhängen
+        return dt.isoformat()
+    except ValueError:
+        return dt_str  # bereits RFC3339 oder unbekanntes Format → unverändert
+
 from exchangelib import (
     DELEGATE,
     NTLM,
@@ -608,7 +623,7 @@ def delete_google_calendar_event(event_id: str) -> bool:
     account_email = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
     gog = _gog_binary()
     result = subprocess.run(
-        [gog, "calendar", "delete", account_email, event_id, "--no-input"],
+        [gog, "calendar", "delete", account_email, event_id, "--force", "--no-input"],
         capture_output=True, text=True,
         env=_gog_env(), timeout=20,
     )
@@ -632,8 +647,8 @@ def update_google_calendar_event(
     cmd = [
         gog, "calendar", "update", account, event_id,
         "--summary", subject,
-        "--from", start,
-        "--to", end,
+        "--from", _to_rfc3339(start),
+        "--to", _to_rfc3339(end),
         "--location", location,   # leer = löscht Location
         "--json",
         "--no-input",
@@ -667,8 +682,8 @@ def create_google_calendar_event(
     cmd = [
         gog, "calendar", "create", account,
         "--summary", subject,
-        "--from", start,
-        "--to", end,
+        "--from", _to_rfc3339(start),
+        "--to", _to_rfc3339(end),
         "--json",
         "--no-input",
     ]
