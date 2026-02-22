@@ -323,23 +323,44 @@ export function PhilPanel({ open, onClose }: Props) {
     setStreaming(true)
     stopAudio()
 
+    // Build a rich, focused context for the selected item.
+    // include_context=false when something is selected so the backend does NOT add
+    // the general calendar/mail/task dump — that would dilute the specific focus.
     let contextMsg = text
     if (selection?.type === 'mail') {
       const m = selection.item
-      contextMsg = `[Ausgewählte Mail]\nVon: ${m.sender}\nBetreff: ${m.subject}\nKategorie: ${m.kategorie}\n${m.zusammenfassung ? 'Zusammenfassung: ' + m.zusammenfassung + '\n' : ''}\n${text}`
+      contextMsg = `FOKUS: Beantworte die Frage NUR zu dieser Mail, nicht zu anderen.\n`
+        + `Von: ${m.sender}\nBetreff: ${m.subject}\nDatum: ${m.datetime_received?.slice(0, 16) ?? '?'}\n`
+        + `Kategorie: ${m.kategorie} | Priorität: ${m.priorität}\n`
+        + (m.zusammenfassung ? `Zusammenfassung: ${m.zusammenfassung}\n` : '')
+        + (m.body ? `Inhalt:\n${m.body.slice(0, 800)}\n` : '')
+        + `\nFrage/Aufgabe: ${text}`
     } else if (selection?.type === 'calendar') {
       const c = selection.item
-      contextMsg = `[Ausgewählter Termin]\n"${c.subject}" am ${c.start?.slice(0, 10) ?? '?'}${c.location ? ', Ort: ' + c.location : ''}\n\n${text}`
+      const startStr = c.start ? new Date(c.start).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '?'
+      const endStr   = c.end   ? new Date(c.end).toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''
+      contextMsg = `FOKUS: Beantworte die Frage NUR zu diesem Termin, nicht zu anderen.\n`
+        + `Termin: "${c.subject}"\n`
+        + `Wann: ${startStr}${endStr ? ' – ' + endStr : ''}\n`
+        + (c.location ? `Ort: ${c.location}\n` : '')
+        + (c.body ? `Details: ${c.body}\n` : '')
+        + `\nFrage/Aufgabe: ${text}`
     } else if (selection?.type === 'task') {
       const t = selection.item
-      contextMsg = `[Ausgewählte Aufgabe]\n"${t.subject}", Priorität: ${t.priority}, Fällig: ${t.due_date ?? 'unbekannt'}\n\n${text}`
+      contextMsg = `FOKUS: Beantworte die Frage NUR zu dieser Aufgabe.\n`
+        + `Aufgabe: "${t.subject}"\n`
+        + `Priorität: ${t.priority} | Status: ${t.status} | Fällig: ${t.due_date ?? 'kein Datum'}\n`
+        + (t.body ? `Details: ${t.body}\n` : '')
+        + `\nFrage/Aufgabe: ${text}`
     }
 
     let philText = ''
     setMessages((prev) => [...prev, { role: 'phil', text: '' }])
 
     try {
-      const stream = api.chatStream(contextMsg, true)
+      // include_context=false when item selected (avoids general context noise)
+      // include_context=true for open questions without selection
+      const stream = api.chatStream(contextMsg, !selection)
       const reader = stream.getReader()
       while (true) {
         const { done, value } = await reader.read()
