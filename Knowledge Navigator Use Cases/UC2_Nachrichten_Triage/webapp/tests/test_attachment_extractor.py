@@ -23,9 +23,12 @@ def test_extract_pdf_returns_text(mocker):
 def test_extract_docx_returns_text(mocker):
     """_extract_docx joins non-empty paragraphs with newlines."""
     import docx  # ensure in sys.modules
-    mock_p1 = mocker.MagicMock(); mock_p1.text = "Erster Absatz"
-    mock_p2 = mocker.MagicMock(); mock_p2.text = ""   # blank — must be excluded
-    mock_p3 = mocker.MagicMock(); mock_p3.text = "Dritter Absatz"
+    mock_p1 = mocker.MagicMock()
+    mock_p1.text = "Erster Absatz"
+    mock_p2 = mocker.MagicMock()
+    mock_p2.text = ""   # blank — must be excluded
+    mock_p3 = mocker.MagicMock()
+    mock_p3.text = "Dritter Absatz"
     mock_doc = mocker.MagicMock()
     mock_doc.paragraphs = [mock_p1, mock_p2, mock_p3]
     mocker.patch("docx.Document", return_value=mock_doc)
@@ -35,18 +38,25 @@ def test_extract_docx_returns_text(mocker):
     assert result == "Erster Absatz\nDritter Absatz"
 
 
-def test_extract_msword_also_supported(mocker):
-    """application/msword is also handled as DOCX."""
-    import docx
-    mock_doc = mocker.MagicMock()
-    mock_doc.paragraphs = []
-    mocker.patch("docx.Document", return_value=mock_doc)
-
+def test_extract_msword_returns_empty():
+    """application/msword (binary .doc) is not supported — returns empty string."""
     result = extract_text(b"fake", "application/msword")
-    assert result == ""   # no paragraphs → empty, but no exception
+    assert result == ""
 
 
 def test_extract_unknown_mime_returns_empty():
     """Unsupported MIME types return empty string without error."""
     assert extract_text(b"data", "image/jpeg") == ""
     assert extract_text(b"data", "text/plain") == ""
+
+
+def test_extract_pdf_corrupt_returns_empty():
+    """Corrupt PDF bytes return empty string instead of raising."""
+    result = extract_text(b"this is not a pdf", "application/pdf")
+    assert result == ""
+
+
+def test_extract_docx_corrupt_returns_empty():
+    """Corrupt DOCX bytes return empty string instead of raising."""
+    result = extract_text(b"this is not a docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    assert result == ""
