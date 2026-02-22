@@ -9,10 +9,17 @@ class KnowledgeStore:
     """Persistent semantic mail index backed by ChromaDB + OpenAI embeddings."""
 
     COLLECTION = "phil_mails"
+    _BODY_LIMIT = 300  # keep embeddings short; ChromaDB has no hard limit but costs money
 
     def __init__(self, persist_path: str = "./data/chroma", openai_api_key: str = ""):
+        api_key = openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ValueError(
+                "KnowledgeStore: OPENAI_API_KEY is not set. "
+                "Pass openai_api_key= or set the environment variable."
+            )
         ef = OpenAIEmbeddingFunction(
-            api_key=openai_api_key or os.getenv("OPENAI_API_KEY", ""),
+            api_key=api_key,
             model_name="text-embedding-3-small",
         )
         self._client = chromadb.PersistentClient(path=persist_path)
@@ -33,7 +40,12 @@ class KnowledgeStore:
         body_snippet: str,
     ) -> None:
         """Embed and upsert a mail into the collection."""
-        document = f"Betreff: {subject}\nVon: {sender}\nZusammenfassung: {summary}\n{body_snippet[:300]}"
+        document = (
+            f"Betreff: {subject}\n"
+            f"Von: {sender}\n"
+            f"Zusammenfassung: {summary}\n"
+            f"{body_snippet[:self._BODY_LIMIT]}"
+        )
         self.collection.upsert(
             ids=[mail_id],
             documents=[document],
