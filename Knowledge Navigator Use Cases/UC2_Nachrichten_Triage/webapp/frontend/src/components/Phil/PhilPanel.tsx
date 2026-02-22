@@ -233,6 +233,64 @@ export function PhilPanel({ open, onClose }: Props) {
     finally { setLoadingGraph(false) }
   }
 
+  async function sendBriefing() {
+    if (!selection || selection.type !== 'calendar' || streaming) return
+    setBriefingDone(true)
+    setRagResults([])
+    setMailGraphData(null)
+
+    const item = selection.item
+    setMessages((prev) => [...prev, { role: 'user', text: `📋 Meeting-Briefing für „${item.subject}"` }])
+    setStreaming(true)
+    stopAudio()
+
+    // RAG: search by event subject to populate the sources block
+    api.knowledgeSearch(item.subject, 5)
+      .then(({ results }) => setRagResults(results))
+      .catch(() => {})
+
+    let philText = ''
+    setMessages((prev) => [...prev, { role: 'phil', text: '' }])
+
+    try {
+      const stream = api.briefingStream({
+        subject: item.subject,
+        start: item.start,
+        end: item.end,
+        location: item.location,
+        body: item.body,
+      })
+      const reader = stream.getReader()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        philText += value
+        setMessages((prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { role: 'phil', text: philText }
+          return updated
+        })
+      }
+    } catch (e) {
+      const errText = e instanceof Error ? e.message : 'Briefing fehlgeschlagen.'
+      setMessages((prev) => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { role: 'phil', text: errText }
+        return updated
+      })
+    } finally {
+      setStreaming(false)
+      setMessages((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1].role === 'phil' && prev[prev.length - 1].text === '') {
+          const updated = [...prev]
+          updated[updated.length - 1] = { role: 'phil', text: 'Keine Antwort erhalten.' }
+          return updated
+        }
+        return prev
+      })
+    }
+  }
+
   async function send(text: string) {
     if (!text.trim() || streaming) return
     setInput('')
@@ -337,7 +395,7 @@ export function PhilPanel({ open, onClose }: Props) {
             </span>
             <button
               className={styles.briefingBannerBtn}
-              onClick={() => {}}
+              onClick={() => sendBriefing()}
               disabled={streaming}
             >
               Vorbereitung erstellen →
