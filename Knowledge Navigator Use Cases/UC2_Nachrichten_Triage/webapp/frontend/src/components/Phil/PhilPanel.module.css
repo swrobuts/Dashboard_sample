@@ -276,6 +276,30 @@
 .msgTtsBtn:disabled { opacity: .5; cursor: not-allowed; }
 .msgTtsBtnPlaying { border-color: var(--amber) !important; color: var(--amber-dark) !important; background: var(--amber-light) !important; }
 
+/* ── Per-message actions row (TTS + thumbs) ──────────────────────────────── */
+.msgActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.thumbBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.4;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+.thumbBtn:hover:not(:disabled) { opacity: 1; background: #f0f0f0; }
+.thumbBtn:disabled { cursor: default; }
+.thumbUp  { opacity: 1; }
+.thumbDown { opacity: 1; }
+
 /* ── Inline sources block (below last Phil message) ─────────────────────── */
 .sourcesBlock {
   margin-left: 34px; /* aligns with message bubble */

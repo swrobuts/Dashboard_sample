@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
+import { v4 as uuidv4 } from 'uuid'
 import { useStore } from '../../store/useStore'
 import { api } from '../../api/client'
 import { PhilGraph } from './PhilGraph'
@@ -8,7 +9,12 @@ import type { GraphData } from './PhilGraph'
 import type { KnowledgeResult } from '../../api/types'
 import styles from './PhilPanel.module.css'
 
-interface ChatMessage { role: 'user' | 'phil'; text: string }
+interface ChatMessage {
+  role: 'user' | 'phil'
+  text: string
+  messageId?: string        // uuid sent with the request (for feedback linking)
+  feedback?: 'up' | 'down' | null  // user's thumbs vote on this message
+}
 
 interface Props { open: boolean; onClose: () => void }
 
@@ -291,6 +297,18 @@ export function PhilPanel({ open, onClose }: Props) {
     }
   }
 
+  async function handleFeedback(msg: ChatMessage, idx: number, rating: 'up' | 'down') {
+    if (!msg.messageId || msg.feedback) return
+    // Optimistic UI update
+    setMessages((prev) => prev.map((m, i) => i === idx ? { ...m, feedback: rating } : m))
+    try {
+      const { facts } = await api.memoryFacts({ source_ref: msg.messageId })
+      await Promise.all(facts.map((f) => api.memoryFeedback(f.id, rating)))
+    } catch {
+      // silent — feedback is best-effort
+    }
+  }
+
   async function send(text: string) {
     if (!text.trim() || streaming) return
     setInput('')
@@ -354,13 +372,14 @@ export function PhilPanel({ open, onClose }: Props) {
         + `\n${text}`
     }
 
+    const msgId = uuidv4()
     let philText = ''
     setMessages((prev) => [...prev, { role: 'phil', text: '' }])
 
     try {
       // include_context=false when item selected (avoids general context noise)
       // include_context=true for open questions without selection
-      const stream = api.chatStream(contextMsg, !selection)
+      const stream = api.chatStream(contextMsg, !selection, msgId)
       const reader = stream.getReader()
       while (true) {
         const { done, value } = await reader.read()
@@ -382,13 +401,17 @@ export function PhilPanel({ open, onClose }: Props) {
     } finally {
       setStreaming(false)
       setMessages((prev) => {
-        if (prev.length > 0 && prev[prev.length - 1].role === 'phil' && prev[prev.length - 1].text === '') {
-          const updated = [...prev]
-          updated[updated.length - 1] = { role: 'phil', text: 'Keine Antwort erhalten.' }
-          return updated
+        const last = prev[prev.length - 1]
+        if (!last || last.role !== 'phil') return prev
+        const updated = [...prev]
+        if (last.text === '') {
+          updated[updated.length - 1] = { role: 'phil', text: 'Keine Antwort erhalten.', messageId: msgId }
+        } else {
+          updated[updated.length - 1] = { ...last, messageId: msgId }
         }
-        return prev
+        return updated
       })
+      // Memory count badge refresh happens in Task 8 after store is wired
     }
   }
 
@@ -508,15 +531,35 @@ export function PhilPanel({ open, onClose }: Props) {
                     : (streaming && i === messages.length - 1 ? <span className={styles.typingDot}>…</span> : null)
                   : msg.text}
                 {msg.role === 'phil' && msg.text && !(streaming && i === messages.length - 1) && (
-                  <button
-                    className={`${styles.msgTtsBtn} ${ttsIdx === i ? styles.msgTtsBtnPlaying : ''}`}
-                    onClick={() => toggleTts(msg.text, i)}
-                    disabled={ttsLoadingIdx === i}
-                    title={ttsIdx === i ? 'Pause' : 'Vorlesen'}
-                    aria-label={ttsIdx === i ? 'Pause' : 'Vorlesen'}
-                  >
-                    {ttsLoadingIdx === i ? '…' : ttsIdx === i ? '⏸' : '▶'}
-                  </button>
+                  <div className={styles.msgActions}>
+                    <button
+                      className={`${styles.msgTtsBtn} ${ttsIdx === i ? styles.msgTtsBtnPlaying : ''}`}
+                      onClick={() => toggleTts(msg.text, i)}
+                      disabled={ttsLoadingIdx === i}
+                      title={ttsIdx === i ? 'Pause' : 'Vorlesen'}
+                      aria-label={ttsIdx === i ? 'Pause' : 'Vorlesen'}
+                    >
+                      {ttsLoadingIdx === i ? '…' : ttsIdx === i ? '⏸' : '▶'}
+                    </button>
+                    {msg.messageId && (
+                      <>
+                        <button
+                          className={`${styles.thumbBtn} ${msg.feedback === 'up' ? styles.thumbUp : ''}`}
+                          onClick={() => handleFeedback(msg, i, 'up')}
+                          disabled={!!msg.feedback}
+                          title="Hilfreich"
+                          aria-label="Hilfreich"
+                        >👍</button>
+                        <button
+                          className={`${styles.thumbBtn} ${msg.feedback === 'down' ? styles.thumbDown : ''}`}
+                          onClick={() => handleFeedback(msg, i, 'down')}
+                          disabled={!!msg.feedback}
+                          title="Nicht hilfreich"
+                          aria-label="Nicht hilfreich"
+                        >👎</button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
