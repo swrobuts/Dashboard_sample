@@ -2,7 +2,6 @@
 .shell {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  grid-template-rows: var(--header-h) 1fr;
   height: 100dvh;
   overflow: hidden;
   background: var(--content-bg);
