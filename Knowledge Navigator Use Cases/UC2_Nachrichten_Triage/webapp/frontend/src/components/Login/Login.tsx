@@ -34,6 +34,7 @@ export function Login({ onLogin }: Props) {
       }
       onLogin({
         username: data.username,
+        first_name: data.first_name,
         institution: data.institution,
         inbox_count: data.inbox_count,
         ews_connected: data.ews_connected,
