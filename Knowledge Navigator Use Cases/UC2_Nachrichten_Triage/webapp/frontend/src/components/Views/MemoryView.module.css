@@ -1,0 +1,47 @@
+.container { display: flex; flex-direction: column; height: 100%; padding: 24px; gap: 16px; overflow: hidden; }
+.header { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.title { font-size: 20px; font-weight: 600; color: #111; margin: 0; }
+.count { font-size: 13px; color: #6B7280; background: #F3F4F6; padding: 2px 8px; border-radius: 12px; }
+.refreshBtn { background: none; border: 1px solid #E5E7EB; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 16px; color: #6B7280; }
+.refreshBtn:hover { background: #F9FAFB; }
+
+.filters { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; flex-shrink: 0; }
+.categoryChips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { background: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 16px; padding: 4px 12px; font-size: 13px; cursor: pointer; color: #374151; }
+.chip:hover { background: #E5E7EB; }
+.chipActive { background: #1D4ED8; color: #fff; border-color: #1D4ED8; }
+
+.confidenceLabel { font-size: 13px; color: #6B7280; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.slider { width: 120px; accent-color: #1D4ED8; }
+
+.empty { color: #9CA3AF; font-size: 14px; padding: 32px 0; text-align: center; }
+.tableWrap { overflow-y: auto; flex: 1; border: 1px solid #E5E7EB; border-radius: 8px; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { background: #F9FAFB; padding: 10px 12px; text-align: left; font-weight: 500; color: #6B7280; border-bottom: 1px solid #E5E7EB; position: sticky; top: 0; z-index: 1; }
+.table td { padding: 10px 12px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: #FAFAFA; }
+
+.textCell { max-width: 360px; word-break: break-word; color: #111; }
+.editInput { width: 100%; border: 1px solid #6366F1; border-radius: 4px; padding: 4px 8px; font-size: 13px; outline: none; }
+
+.categoryBadge { background: #EEF2FF; color: #4338CA; border-radius: 12px; padding: 2px 8px; font-size: 12px; font-weight: 500; }
+
+.sourceCell { display: flex; align-items: center; gap: 4px; }
+.sourceBadge { font-size: 11px; border-radius: 4px; padding: 2px 6px; font-weight: 500; }
+.sourceBadge[data-source="chat"]     { background: #D1FAE5; color: #065F46; }
+.sourceBadge[data-source="mail"]     { background: #DBEAFE; color: #1E40AF; }
+.sourceBadge[data-source="calendar"] { background: #FEF3C7; color: #92400E; }
+.sourceBadge[data-source="task"]     { background: #F3E8FF; color: #6B21A8; }
+.sourceBadge[data-source="web"]      { background: #FFE4E6; color: #9F1239; }
+.sourceRef { color: #9CA3AF; font-size: 11px; cursor: default; }
+
+.confBar { display: flex; align-items: center; gap: 6px; }
+.confBarTrack { position: relative; width: 60px; height: 6px; background: #E5E7EB; border-radius: 3px; overflow: hidden; }
+.confFill { height: 6px; border-radius: 3px; transition: width 0.3s; }
+.confLabel { font-size: 11px; color: #6B7280; min-width: 32px; }
+
+.actionsCell { white-space: nowrap; }
+.actionBtn { background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 14px; color: #6B7280; }
+.actionBtn:hover { background: #F3F4F6; color: #111; }
+.deleteBtn:hover { background: #FEE2E2; color: #DC2626; }
