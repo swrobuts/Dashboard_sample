@@ -58,6 +58,36 @@ class KnowledgeStore:
             }],
         )
 
+    def index_attachment(
+        self,
+        mail_id: str,
+        filename: str,
+        summary: str,
+        body_snippet: str,
+    ) -> None:
+        """Embed and upsert an attachment into the mail collection.
+
+        Uses the same ChromaDB collection as mails.
+        ID format: ``att-<mail_id>-<filename>``.
+        Metadata includes ``doc_type=attachment`` for later filtering.
+        """
+        document = (
+            f"Dateiname: {filename}\n"
+            f"Zusammenfassung: {summary}\n"
+            f"{body_snippet[:self._BODY_LIMIT]}"
+        )
+        att_id = f"att-{mail_id}-{filename}"
+        self.collection.upsert(
+            ids=[att_id],
+            documents=[document],
+            metadatas=[{
+                "mail_id": mail_id,
+                "filename": filename,
+                "summary": summary,
+                "doc_type": "attachment",
+            }],
+        )
+
     def search(self, query: str, n_results: int = 3) -> list[dict]:
         """Return top-n semantically similar mails. Empty list if store is empty."""
         if self.collection.count() == 0:

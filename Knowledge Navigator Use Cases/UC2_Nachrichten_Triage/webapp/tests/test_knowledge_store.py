@@ -58,3 +58,23 @@ def test_index_upsert_idempotent(store):
     for _ in range(2):
         store.index_mail("id1", "Betreff", "a@b.de", "2026-01-01", "Info", "Summary", "Body")
     assert store.collection.count() == 1
+
+
+def test_index_attachment_and_search(store):
+    """index_attachment stores into the same collection with doc_type=attachment."""
+    store.index_attachment(
+        mail_id="mail-42",
+        filename="bericht.pdf",
+        summary="Jahresbericht 2025 des Instituts.",
+        body_snippet="Das Jahr 2025 war geprägt von Wachstum.",
+    )
+    # search returns the attachment entry (same collection as mails)
+    results = store.search("Jahresbericht Institut", n_results=1)
+    assert len(results) == 1
+    assert results[0]["id"] == "att-mail-42-bericht.pdf"
+
+
+def test_index_attachment_upsert_idempotent(store):
+    for _ in range(2):
+        store.index_attachment("mid", "doc.docx", "Summary", "Body text")
+    assert store.collection.count() == 1
