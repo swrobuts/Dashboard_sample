@@ -60,16 +60,15 @@ interface Props {
 }
 
 export function Sidebar({ collapsed, onCollapse }: Props) {
-  const { view, setView, user, logout, mails, tasks, calendar } = useStore()
+  const { view, setView, user, logout, mails, tasks, calendar, dashDateStr } = useStore()
 
-  // Badge counts
+  // Badge counts — calendar & tasks reflect the currently selected dashboard day
   const unread = mails.filter((m) => !m.is_read).length
-  const openTaskCount = tasks.filter((t) => t.status !== 'Completed').length
-  const todayStr = (() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })()
-  const calTodayCount = calendar.filter((e) => e.start?.slice(0, 10) === todayStr).length
+  const calDayCount = calendar.filter((e) => e.start?.slice(0, 10) === dashDateStr).length
+  const taskDayCount = tasks.filter((t) => {
+    if (t.status === 'Completed') return false
+    return t.due_date?.slice(0, 10) === dashDateStr
+  }).length
 
   // Login duration (minutes since component mount = login time)
   const [loginAt] = useState(() => Date.now())
@@ -119,10 +118,10 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
               <span className={styles.badge}>{unread}</span>
             )}
             {item.view === 'tasks' && (
-              <span className={styles.badge}>{openTaskCount}</span>
+              <span className={styles.badge}>{taskDayCount}</span>
             )}
             {item.view === 'calendar' && (
-              <span className={styles.badge}>{calTodayCount}</span>
+              <span className={styles.badge}>{calDayCount}</span>
             )}
           </button>
         ))}

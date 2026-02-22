@@ -294,7 +294,7 @@ function EventContextPanel({
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export function Dashboard() {
-  const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter, removeTask } = useStore()
+  const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter, removeTask, setDashDateStr } = useStore()
   const [completing, setCompleting] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [taskError, setTaskError] = useState<string | null>(null)
@@ -305,6 +305,9 @@ export function Dashboard() {
   const [dashDate, setDashDate] = useState(new Date())
   const dashDateStr = toLocalDateStr(dashDate)
   const isToday = dashDateStr === toLocalDateStr(new Date())
+
+  // Keep global store in sync so sidebar badges reflect selected day
+  useEffect(() => { setDashDateStr(dashDateStr) }, [dashDateStr])
 
   // ── Meeting contexts (knowledge search per event) ─────────────────────
   const [meetingContexts, setMeetingContexts] = useState<Record<string, KnowledgeResult[]>>({})

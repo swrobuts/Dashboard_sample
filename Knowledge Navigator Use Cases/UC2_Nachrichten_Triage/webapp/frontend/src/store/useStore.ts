@@ -39,6 +39,8 @@ interface AppState {
   setSentimentMode: (b: boolean) => void
   trainPreset: { to: string } | null
   setTrainPreset: (p: { to: string } | null) => void
+  dashDateStr: string
+  setDashDateStr: (s: string) => void
 
   // Loading
   loadingMails: boolean
@@ -82,6 +84,8 @@ export const useStore = create<AppState>((set) => ({
   setSentimentMode: (sentimentMode) => set({ sentimentMode }),
   trainPreset: null,
   setTrainPreset: (trainPreset) => set({ trainPreset }),
+  dashDateStr: new Date().toISOString().slice(0, 10),
+  setDashDateStr: (dashDateStr) => set({ dashDateStr }),
 
   loadingMails: false,
   loadingCalendar: false,
