@@ -26,7 +26,9 @@ from backend.attachment_extractor import extract_text as extract_attachment_text
 from backend.llm_client import get_llm_client
 
 try:
-    knowledge_store = KnowledgeStore()
+    # ChromaDB uses memory-mapped HNSW files — must NOT live in OneDrive (causes SIGBUS).
+    # Store under /tmp so OneDrive never touches these files.
+    knowledge_store = KnowledgeStore(persist_path="/tmp/phil_chroma")
 except ValueError as e:
     logging.warning(f"[RAG] KnowledgeStore deaktiviert (kein API-Key): {e}")
     knowledge_store = None
@@ -899,7 +901,7 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
             logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
             mails = []
         try:
-            cal: list = fetch_google_calendar(days_ahead=7)
+            cal: list = fetch_google_calendar(days_ahead=14, days_behind=1)
         except Exception as exc:
             logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
             cal = []
@@ -945,6 +947,100 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                     yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
             else:
                 yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Meeting Briefing (UC3) ────────────────────────────────────────────────────
+class BriefingRequest(BaseModel):
+    subject: str
+    start: str = ""
+    end: str = ""
+    location: str = ""
+    body: str = ""
+
+
+BRIEFING_SYSTEM = """\
+Du bist PHIL, der persönliche KI-Assistent von Prof. Dr. Butscher.
+Erstelle ein kompaktes Meeting-Briefing auf Deutsch.
+Verwende EXAKT diese Markdown-Struktur, keine Abweichungen:
+
+## 👤 Teilnehmer
+<Namen aus dem Termin, oder "Keine erkannt">
+
+## 📬 Letzte Mails
+<Relevante Mails aus dem Kontext mit Datum, oder "Keine gefunden.">
+
+## 📋 Agenda-Vorschlag
+<3–5 konkrete Punkte basierend auf Termin und Mails>
+
+Sei prägnant. Maximal 200 Wörter insgesamt. Kein Einleitungssatz.
+"""
+
+
+@app.post("/api/briefing")
+def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)):
+    """Erstellt ein Meeting-Briefing: Teilnehmer, Mails, Agenda (SSE streaming)."""
+    session = _get_session(session_id)
+    llm = _get_llm(session)
+
+    # 1. Person aus Betreff extrahieren
+    person_match = re.search(
+        r'\bmit\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)+)',
+        req.subject,
+        re.IGNORECASE,
+    )
+    person_name = person_match.group(1) if person_match else None
+
+    # 2. RAG-Suche nach ähnlichen Mails
+    rag_lines: list[str] = []
+    rag_query = f"{person_name} {req.subject}" if person_name else req.subject
+    if knowledge_store is not None:
+        try:
+            results = knowledge_store.search(rag_query, n_results=5)
+            for r in results:
+                if r.get("score", 0) >= 0.60:
+                    rag_lines.append(
+                        f"  [{r['date']}] Von: {r['sender']} | Betreff: {r['subject']}"
+                        f" | Relevanz: {int(r['score'] * 100)}%"
+                    )
+        except Exception as exc:
+            logging.warning(f"[Briefing] RAG fehlgeschlagen: {exc}")
+
+    # 3. Prompt zusammenbauen
+    parts = [f"Termin: {req.subject}"]
+    if req.start:
+        parts.append(f"Datum/Uhrzeit: {req.start[:16].replace('T', ' ')}")
+    if req.end:
+        parts.append(f"Ende: {req.end[:16].replace('T', ' ')}")
+    if req.location:
+        parts.append(f"Ort: {req.location}")
+    if person_name:
+        parts.append(f"Erkannte Person: {person_name}")
+    if rag_lines:
+        parts.append("\nRelevante frühere Mails:")
+        parts.extend(rag_lines)
+    else:
+        parts.append("\nKeine ähnlichen Mails gefunden.")
+
+    user_prompt = "\n".join(parts)
+
+    def generate():
+        stream_kwargs = dict(task="chat", prompt=user_prompt, max_tokens=512, system=BRIEFING_SYSTEM)
+        try:
+            for text in llm.stream(**stream_kwargs):
+                yield f"data: {text}\n\n"
+        except Exception as exc:
+            logging.warning(f"[Briefing] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
+            if getattr(llm, "mode", "cloud") != "cloud":
+                try:
+                    for text in get_llm_client("cloud").stream(**stream_kwargs):
+                        yield f"data: {text}\n\n"
+                except Exception as exc2:
+                    yield f"data: [Fehler: {type(exc2).__name__}]\n\n"
+            else:
+                yield f"data: [Fehler: {type(exc).__name__}]\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
