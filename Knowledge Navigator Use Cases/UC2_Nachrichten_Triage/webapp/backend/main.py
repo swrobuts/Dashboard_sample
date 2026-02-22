@@ -1056,8 +1056,9 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                     yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
             else:
                 yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
-        # Async fact extraction after response is complete
-        _extract_and_store_facts(req.message, "".join(_full_response), req.message_id)
+        # Async fact extraction after response is complete (skip if LLM errored out)
+        if _full_response:
+            _extract_and_store_facts(req.message, "".join(_full_response), req.message_id)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
