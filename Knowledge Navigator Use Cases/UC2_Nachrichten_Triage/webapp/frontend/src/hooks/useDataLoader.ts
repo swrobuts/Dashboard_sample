@@ -63,7 +63,6 @@ export function useDataLoader() {
   }
 
   async function loadCalendar() {
-    if (!user?.ews_connected) return
     setLoadingCalendar(true)
     try {
       const { items } = await api.calendar()

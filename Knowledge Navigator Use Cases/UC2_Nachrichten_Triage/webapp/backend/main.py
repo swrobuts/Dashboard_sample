@@ -135,9 +135,9 @@ from backend.exchange_helpers import (
     connect_to_exchange,
     connect_to_exchange_thws,
     connect_to_imap,
-    create_calendar_entry,
+    create_google_calendar_event,
     create_task,
-    fetch_calendar,
+    fetch_google_calendar,
     fetch_emails,
     fetch_emails_imap,
     fetch_tasks,
@@ -389,11 +389,12 @@ def get_calendar(
     days_ahead: int = 14,
     session_id: str | None = Cookie(default=None),
 ):
-    session = _get_session(session_id)
-    account = session.get("account")
-    if account is None:
-        return {"items": []}
-    return {"items": fetch_calendar(account, days_ahead)}
+    _get_session(session_id)  # nur Login-Check; Kalender kommt von Google
+    try:
+        return {"items": fetch_google_calendar(days_ahead)}
+    except Exception as e:
+        import logging; logging.warning(f"[GCal] {e}")
+        raise HTTPException(status_code=502, detail=f"Google Calendar: {e}")
 
 
 class CreateCalendarRequest(BaseModel):
@@ -409,8 +410,11 @@ def post_create_calendar(
     req: CreateCalendarRequest,
     session_id: str | None = Cookie(default=None),
 ):
-    account = _get_account(session_id)
-    return create_calendar_entry(account, req.subject, req.start, req.end, req.location, req.body)
+    _get_session(session_id)
+    try:
+        return create_google_calendar_event(req.subject, req.start, req.end, req.location, req.body)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Google Calendar create: {e}")
 
 
 # ── Tasks Endpoints ────────────────────────────────────────────────────────
@@ -502,9 +506,12 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                 mails = fetch_emails(session["account"], max_count=10, unread_only=True)
                 if mails and "_skipped" in mails[-1]:
                     mails = mails[:-1]
-            # Kalender/Aufgaben: nur wenn EWS-Account vorhanden
+            # Google Calendar (immer) + EWS-Aufgaben (nur wenn EWS vorhanden)
+            try:
+                cal: list = fetch_google_calendar(days_ahead=7)
+            except Exception:
+                cal = []
             account = session.get("account")
-            cal: list = fetch_calendar(account, days_ahead=7) if account else []
             tasks: list = fetch_tasks(account, max_count=20) if account else []
             context_str = _build_context(mails, cal, tasks)
         except Exception:

@@ -15,7 +15,11 @@ Sicherheitsprinzip:
 
 import email
 import imaplib
+import json
 import logging
+import os
+import shutil
+import subprocess
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -474,3 +478,103 @@ def create_task(
     )
     task.save()
     return {"id": task.id, "subject": task.subject}
+
+
+# ── Google Calendar via gog CLI ───────────────────────────────────────────────
+
+def _gog_binary() -> str:
+    """Findet das gog-Binary: ~/bin/gog (Docker/Linux) oder PATH (macOS/Dev)."""
+    home_bin = os.path.expanduser("~/bin/gog")
+    if os.path.isfile(home_bin) and os.access(home_bin, os.X_OK):
+        return home_bin
+    gog_in_path = shutil.which("gog")
+    if gog_in_path:
+        return gog_in_path
+    raise FileNotFoundError("gog binary nicht gefunden (~/.bin/gog oder PATH)")
+
+
+def _gog_env() -> dict:
+    """Env-Dict für gog-Aufrufe (inkl. optionalem Keyring-Passwort für Docker)."""
+    env = dict(os.environ)
+    keyring_pw = os.getenv("GOG_KEYRING_PASSWORD", "")
+    if keyring_pw:
+        env["GOG_KEYRING_PASSWORD"] = keyring_pw
+    return env
+
+
+def fetch_google_calendar(days_ahead: int = 14) -> list[dict]:
+    """Liest Google Kalender via gog CLI."""
+    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    gog = _gog_binary()
+
+    result = subprocess.run(
+        [
+            gog, "calendar", "events",
+            "--account", account,
+            "--days", str(days_ahead),
+            "--json",
+            "--max", "50",
+            "--no-input",
+        ],
+        capture_output=True, text=True,
+        env=_gog_env(), timeout=20,
+    )
+
+    if result.returncode != 0:
+        _logger.warning(f"[GCal] gog error: {result.stderr.strip()[:300]}")
+        raise Exception(f"Google Calendar: {result.stderr.strip()[:200]}")
+
+    data = json.loads(result.stdout)
+    events_raw = data.get("events", []) if isinstance(data, dict) else data
+
+    items = []
+    for e in events_raw:
+        start_obj = e.get("start", {})
+        end_obj = e.get("end", {})
+        items.append({
+            "id": e.get("id", ""),
+            "changekey": "",
+            "subject": e.get("summary", "(kein Titel)"),
+            "start": start_obj.get("dateTime") or start_obj.get("date"),
+            "end": end_obj.get("dateTime") or end_obj.get("date"),
+            "location": e.get("location", ""),
+            "body": "",
+            "is_recurring": bool(e.get("recurringEventId")),
+        })
+    items.sort(key=lambda x: x["start"] or "")
+    return items
+
+
+def create_google_calendar_event(
+    subject: str,
+    start: str,
+    end: str,
+    location: str = "",
+    body: str = "",
+) -> dict:
+    """Erstellt einen Google Kalender-Termin via gog CLI."""
+    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    gog = _gog_binary()
+
+    cmd = [
+        gog, "calendar", "create", account,
+        "--summary", subject,
+        "--from", start,
+        "--to", end,
+        "--json",
+        "--no-input",
+    ]
+    if location:
+        cmd += ["--location", location]
+    if body:
+        cmd += ["--description", body]
+
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        env=_gog_env(), timeout=20,
+    )
+    if result.returncode != 0:
+        raise Exception(f"gog create: {result.stderr.strip()[:200]}")
+
+    created = json.loads(result.stdout)
+    return {"id": created.get("id", ""), "subject": created.get("summary", subject)}

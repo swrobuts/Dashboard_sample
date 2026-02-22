@@ -12,7 +12,7 @@ const CATS: Array<{ cat: Category; label: string; colorClass: string }> = [
 
 export function Dashboard() {
   const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter } = useStore()
-  const { loadCalendar, loadTasks } = useDataLoader()
+  const { loadTasks } = useDataLoader()
 
   const counts = CATS.reduce((acc, { cat }) => {
     acc[cat] = mails.filter((m) => m.kategorie === cat && m.triageStatus === 'done').length
@@ -99,16 +99,16 @@ export function Dashboard() {
         {user?.ews_connected ? (
           <>
             <span className={styles.ewsDot} />
-            <span>Exchange verbunden — Kalender &amp; Aufgaben aktiv</span>
+            <span>Exchange verbunden — Aufgaben aktiv</span>
           </>
         ) : (
           <>
             <span>⚠</span>
             <span>
-              Kalender &amp; Aufgaben: Exchange nicht verbunden.
+              Aufgaben: Exchange nicht verbunden.
               {user?.ews_error && <span className={styles.ewsErrorDetail}> ({user.ews_error})</span>}
             </span>
-            <button className={styles.ewsRetry} onClick={() => { loadCalendar(); loadTasks() }}>
+            <button className={styles.ewsRetry} onClick={() => { loadTasks() }}>
               Neu verbinden
             </button>
           </>

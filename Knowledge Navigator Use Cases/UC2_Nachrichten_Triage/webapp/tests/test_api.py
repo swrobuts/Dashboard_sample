@@ -313,14 +313,14 @@ def test_tasks_create(mocker):
 
 
 def test_calendar_create(mocker):
-    """POST /api/calendar/create mit EWS-Session (DHBW) → 200."""
+    """POST /api/calendar/create (Google Calendar) mit gültiger Session → 200."""
     _clear_lockout()
     client = get_client()
     r, mock_account = _login_ews(client, mocker)
     session_id = r.cookies["session_id"]
 
-    # Mock create_calendar_entry
-    mocker.patch("backend.main.create_calendar_entry",
+    # Mock create_google_calendar_event (calendar no longer uses EWS)
+    mocker.patch("backend.main.create_google_calendar_event",
                  return_value={"id": "cal-456", "subject": "Vorlesung BWL"})
 
     r2 = client.post("/api/calendar/create",
