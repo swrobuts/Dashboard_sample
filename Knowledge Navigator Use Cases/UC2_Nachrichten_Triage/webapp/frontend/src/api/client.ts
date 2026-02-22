@@ -1,4 +1,4 @@
-import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult } from './types'
+import type { User, TriagedMail, CalendarItem, Task, TrainStation, TrainJourney, KnowledgeResult, OntologyEntities } from './types'
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(path, {
@@ -95,6 +95,11 @@ export const api = {
   // Knowledge / RAG Search
   knowledgeSearch: (q: string, n = 3) =>
     get<{ results: KnowledgeResult[] }>(`/api/knowledge/search?q=${encodeURIComponent(q)}&n=${n}`),
+
+  // Ontology / Knowledge Graph
+  ontologyEntities: () => get<OntologyEntities>('/api/ontology/entities'),
+  ontologySearch: (q: string) =>
+    get<{ context: string }>(`/api/ontology/search?q=${encodeURIComponent(q)}`),
 
   // Chat (SSE streaming)
   chatStream: (message: string, include_context = true): ReadableStream<string> => {

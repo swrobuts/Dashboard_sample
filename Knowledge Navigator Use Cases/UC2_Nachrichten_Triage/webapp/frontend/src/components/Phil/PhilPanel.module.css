@@ -234,3 +234,14 @@
 .ragSubject { font-weight: 600; color: #18181B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ragSender { color: #9CA3AF; }
 .ragSummaryText { color: #6B7280; font-style: italic; }
+
+.graphSources {
+  border-top: 1px solid var(--border);
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  background: var(--surface);
+}
+
+.graphSources[open] {
+  padding-bottom: 8px;
+}

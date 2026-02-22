@@ -4,7 +4,7 @@ import { useStore } from '../../store/useStore'
 import { api } from '../../api/client'
 import { PhilGraph } from './PhilGraph'
 import type { GraphData } from './PhilGraph'
-import type { KnowledgeResult } from '../../api/types'
+import type { KnowledgeResult, OntologyEntities } from '../../api/types'
 import styles from './PhilPanel.module.css'
 
 interface ChatMessage { role: 'user' | 'phil'; text: string }
@@ -37,6 +37,7 @@ export function PhilPanel({ open, onClose }: Props) {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [ragResults, setRagResults] = useState<KnowledgeResult[]>([])
+  const [ontologyData, setOntologyData] = useState<OntologyEntities | null>(null)
 
   // Per-message TTS state
   const [ttsIdx, setTtsIdx] = useState<number | null>(null)       // which message is playing
@@ -161,6 +162,12 @@ export function PhilPanel({ open, onClose }: Props) {
     setRagResults([])
     api.knowledgeSearch(text, 3)
       .then(({ results }) => setRagResults(results))
+      .catch(() => {})
+    api.ontologyEntities()
+      .then(data => {
+        const hasData = data.persons.length > 0 || data.projects.length > 0 || data.tasks.length > 0
+        setOntologyData(hasData ? data : null)
+      })
       .catch(() => {})
     setMessages((prev) => [...prev, { role: 'user', text }])
     setStreaming(true)
@@ -345,6 +352,34 @@ export function PhilPanel({ open, onClose }: Props) {
               </div>
             </div>
           ))}
+        </details>
+      )}
+      {ontologyData && (
+        <details className={styles.graphSources}>
+          <summary className={styles.ragSummary}>
+            🧠 Wissensgraph
+          </summary>
+          {ontologyData.persons.length > 0 && (
+            <div className={styles.ragItem}>
+              <span className={styles.ragSender}>
+                Personen: {ontologyData.persons.map(p => p.name).join(', ')}
+              </span>
+            </div>
+          )}
+          {ontologyData.projects.length > 0 && (
+            <div className={styles.ragItem}>
+              <span className={styles.ragSender}>
+                Projekte: {ontologyData.projects.map(p => p.description).join(', ')}
+              </span>
+            </div>
+          )}
+          {ontologyData.tasks.length > 0 && (
+            <div className={styles.ragItem}>
+              <span className={styles.ragSummaryText}>
+                Aufgaben: {ontologyData.tasks.map(t => t.description).join('; ')}
+              </span>
+            </div>
+          )}
         </details>
       )}
 

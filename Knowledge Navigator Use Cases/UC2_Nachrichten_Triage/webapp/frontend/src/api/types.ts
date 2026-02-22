@@ -75,3 +75,16 @@ export interface KnowledgeResult {
   summary: string
   score: number
 }
+
+export interface AttachmentIn {
+  filename: string
+  mime_type: string
+  data_b64: string
+}
+
+export interface OntologyEntities {
+  persons: Array<{ name: string; mail_count: number }>
+  projects: Array<{ description: string }>
+  tasks: Array<{ description: string }>
+  deadlines: Array<{ date: string }>
+}
