@@ -3,12 +3,54 @@ import type { View } from '../../store/useStore'
 import { api } from '../../api/client'
 import styles from './Sidebar.module.css'
 
-const NAV_ITEMS: Array<{ view: View; label: string; icon: string }> = [
-  { view: 'dashboard', label: 'Dashboard', icon: '⊞' },
-  { view: 'mails',     label: 'Mails',     icon: '✉' },
-  { view: 'calendar',  label: 'Kalender',  icon: '◫' },
-  { view: 'tasks',     label: 'Aufgaben',  icon: '✓' },
-  { view: 'trains',    label: 'Züge',      icon: '🚄' },
+const IconDashboard = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+    <rect x="1" y="1" width="6" height="6" rx="1"/>
+    <rect x="9" y="1" width="6" height="6" rx="1"/>
+    <rect x="1" y="9" width="6" height="6" rx="1"/>
+    <rect x="9" y="9" width="6" height="6" rx="1"/>
+  </svg>
+);
+
+const IconMail = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+    <path d="M1 5l7 5 7-5"/>
+  </svg>
+);
+
+const IconCalendar = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+    <rect x="1" y="2.5" width="14" height="12" rx="1.5"/>
+    <path d="M1 6.5h14"/>
+    <path d="M5 1v3M11 1v3"/>
+  </svg>
+);
+
+const IconTasks = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+    <path d="M2 4h12M2 8h8M2 12h10"/>
+    <circle cx="13" cy="11.5" r="2" fill="none"/>
+    <path d="M12 11.5l.8.8 1.6-1.6"/>
+  </svg>
+);
+
+const IconTrain = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="1" width="10" height="11" rx="2"/>
+    <path d="M3 7h10"/>
+    <circle cx="5.5" cy="9.5" r="1" fill="currentColor" stroke="none"/>
+    <circle cx="10.5" cy="9.5" r="1" fill="currentColor" stroke="none"/>
+    <path d="M5 12l-2 3M11 12l2 3"/>
+  </svg>
+);
+
+const NAV_ITEMS: Array<{ view: View; label: string; icon: React.ReactNode }> = [
+  { view: 'dashboard', label: 'Dashboard', icon: <IconDashboard /> },
+  { view: 'mails',     label: 'Mails',     icon: <IconMail /> },
+  { view: 'calendar',  label: 'Kalender',  icon: <IconCalendar /> },
+  { view: 'tasks',     label: 'Aufgaben',  icon: <IconTasks /> },
+  { view: 'trains',    label: 'Züge',      icon: <IconTrain /> },
 ]
 
 interface Props {
@@ -32,17 +74,17 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
   }
 
   return (
-    <nav className={`${styles.sidebar} ${collapsed ? styles.collapsed : ''}`}>
+    <nav className={`${styles.sidebar} ${collapsed ? styles.mini : ''}`}>
       {/* Brand row */}
       <div className={styles.brand}>
         {!collapsed && (
           <div className={styles.brandText}>
-            <span className={styles.brandName}>PHIL</span>
+            <span className={styles.brandTitle}>PHIL</span>
             <span className={styles.brandSub}>PIM Dashboard</span>
           </div>
         )}
         <button
-          className={styles.collapseBtn}
+          className={styles.toggleBtn}
           onClick={onCollapse}
           title={collapsed ? 'Aufklappen' : 'Einklappen'}
         >
@@ -60,30 +102,24 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
             title={collapsed ? item.label : undefined}
           >
             <span className={styles.navIcon}>{item.icon}</span>
-            {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
+            <span className={styles.navLabel}>{item.label}</span>
             {item.view === 'mails' && unread > 0 && (
               <span className={styles.badge}>{unread}</span>
             )}
             {item.view === 'tasks' && tasksTodayCount > 0 && (
-              <span className={`${styles.badge} ${styles.badgeTask}`}>{tasksTodayCount}</span>
+              <span className={styles.badge}>{tasksTodayCount}</span>
             )}
             {item.view === 'calendar' && calTodayCount > 0 && (
-              <span className={`${styles.badge} ${styles.badgeCal}`}>{calTodayCount}</span>
+              <span className={styles.badge}>{calTodayCount}</span>
             )}
           </button>
         ))}
       </div>
 
       {/* Bottom user row */}
-      <div className={styles.bottom}>
-        {collapsed ? (
-          <button className={styles.logoutBtnMini} onClick={handleLogout} title="Abmelden">⏻</button>
-        ) : (
-          <div className={styles.userRow}>
-            <span className={styles.userName}>{user?.username}</span>
-            <button className={styles.logoutBtn} onClick={handleLogout} title="Abmelden">⏻</button>
-          </div>
-        )}
+      <div className={styles.footer}>
+        <span className={styles.user}>{user?.username}</span>
+        <button className={styles.logoutBtn} onClick={handleLogout} title="Abmelden">⏻</button>
       </div>
     </nav>
   )
