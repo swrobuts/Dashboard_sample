@@ -586,3 +586,73 @@ def test_ontology_skipped_when_no_mail_id(mocker):
     r = client.post("/api/analyze", json={"email_text": "Kein mail_id hier."})
     assert r.status_code == 200
     mock_store.add_mail_triples.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# New Tests: Ontology Endpoints + WISSENSGRAPH in chat()
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_ontology_entities_requires_session():
+    client = get_client()
+    r = client.get("/api/ontology/entities")
+    assert r.status_code == 401
+
+
+def test_ontology_search_requires_session():
+    client = get_client()
+    r = client.get("/api/ontology/search?q=Mueller")
+    assert r.status_code == 401
+
+
+def test_ontology_entities_returns_structure(mocker):
+    """GET /api/ontology/entities returns dict with persons/projects/tasks/deadlines."""
+    client = get_client()
+    _login(client, mocker)
+    mock_store = mocker.patch("backend.main.ontology_store")
+    mock_store.get_all_entities.return_value = {
+        "persons": [{"name": "Alice", "mail_count": 2}],
+        "projects": [],
+        "tasks": [],
+        "deadlines": [],
+    }
+    r = client.get("/api/ontology/entities")
+    assert r.status_code == 200
+    data = r.json()
+    assert "persons" in data
+    assert data["persons"][0]["name"] == "Alice"
+
+
+def test_chat_includes_graph_context(mocker):
+    """POST /api/chat appends WISSENSGRAPH block when _build_graph_context returns data."""
+    client = get_client()
+    _login(client, mocker)
+
+    mocker.patch("backend.main.fetch_emails_imap", return_value=[])
+    mocker.patch("backend.main.fetch_google_calendar", return_value=[])
+    mocker.patch("backend.main.fetch_tasks", return_value=[])
+    mocker.patch("backend.main._build_rag_context", return_value="")
+    mocker.patch(
+        "backend.main._build_graph_context",
+        return_value="\n=== WISSENSGRAPH ===\n  Personen: Alice (3 Mails)",
+    )
+
+    captured_msgs = []
+
+    def fake_stream_cm(**kwargs):
+        captured_msgs.extend(kwargs.get("messages", []))
+        class FakeStream:
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                pass
+            @property
+            def text_stream(self):
+                yield "Antwort von PHIL."
+        return FakeStream()
+
+    mocker.patch("backend.main.anthropic_client.messages.stream", side_effect=fake_stream_cm)
+
+    r = client.post("/api/chat", json={"message": "Wer hat mir geschrieben?", "include_context": True})
+    assert r.status_code == 200
+    assert len(captured_msgs) == 1
+    assert "WISSENSGRAPH" in captured_msgs[0]["content"]

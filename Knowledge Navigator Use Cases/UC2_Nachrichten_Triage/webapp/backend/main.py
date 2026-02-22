@@ -711,6 +711,17 @@ def _build_rag_context(query: str) -> str:
     return "\n".join(lines)
 
 
+def _build_graph_context(query: str) -> str:
+    """Get structured knowledge graph context block from the ontology."""
+    if ontology_store is None:
+        return ""
+    try:
+        return ontology_store.get_context_for_chat(query)
+    except Exception as exc:
+        logging.warning(f"[Ontology] Graph-Kontext fehlgeschlagen: {exc}")
+        return ""
+
+
 def _build_context(mails: list, cal_items: list, tasks: list) -> str:
     lines = ["=== AKTUELLE SITUATION ==="]
     if mails:
@@ -776,6 +787,11 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
         rag_str = _build_rag_context(req.message)
         if rag_str:
             context_str += rag_str
+
+        # Ontology: enrich with structured knowledge graph
+        graph_str = _build_graph_context(req.message)
+        if graph_str:
+            context_str += graph_str
 
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 
@@ -937,6 +953,38 @@ def knowledge_search(
         return {"results": []}
     results = knowledge_store.search(q.strip(), n_results=min(n, 10))
     return {"results": results}
+
+
+# ── Ontology Endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/ontology/entities")
+def get_ontology_entities(session_id: str | None = Cookie(default=None)):
+    _get_session(session_id)
+    if ontology_store is None:
+        return {"persons": [], "projects": [], "tasks": [], "deadlines": []}
+    return ontology_store.get_all_entities()
+
+
+@app.get("/api/ontology/search")
+def get_ontology_search(
+    q: str = "",
+    session_id: str | None = Cookie(default=None),
+):
+    _get_session(session_id)
+    if ontology_store is None or not q.strip():
+        return {"context": ""}
+    return {"context": ontology_store.get_context_for_chat(q)}
+
+
+@app.get("/api/ontology/graph")
+def get_ontology_graph(
+    mail_id: str = "",
+    session_id: str | None = Cookie(default=None),
+):
+    _get_session(session_id)
+    if ontology_store is None or not mail_id:
+        return {"triples": []}
+    return {"triples": ontology_store.get_triples_for_mail(mail_id)}
 
 
 # Frontend statisch servieren (React build → static/)
