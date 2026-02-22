@@ -989,7 +989,6 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
     person_match = re.search(
         r'\bmit\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)+)',
         req.subject,
-        re.IGNORECASE,
     )
     person_name = person_match.group(1) if person_match else None
 
@@ -1016,6 +1015,8 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
         parts.append(f"Ende: {req.end[:16].replace('T', ' ')}")
     if req.location:
         parts.append(f"Ort: {req.location}")
+    if req.body:
+        parts.append(f"Terminbeschreibung: {req.body[:300]}")
     if person_name:
         parts.append(f"Erkannte Person: {person_name}")
     if rag_lines:
@@ -1034,13 +1035,15 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
         except Exception as exc:
             logging.warning(f"[Briefing] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
             if getattr(llm, "mode", "cloud") != "cloud":
+                logging.warning("[Briefing] Fallback auf Cloud-LLM")
                 try:
                     for text in get_llm_client("cloud").stream(**stream_kwargs):
                         yield f"data: {text}\n\n"
                 except Exception as exc2:
-                    yield f"data: [Fehler: {type(exc2).__name__}]\n\n"
+                    logging.warning(f"[Briefing] Cloud-Fallback fehlgeschlagen: {exc2}")
+                    yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
             else:
-                yield f"data: [Fehler: {type(exc).__name__}]\n\n"
+                yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
