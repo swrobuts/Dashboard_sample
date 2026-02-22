@@ -1,6 +1,7 @@
 # backend/memory_store.py
 from __future__ import annotations
 import logging
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ _CONFIDENCE_DOWN = 0.10
 _CONFIDENCE_MIN  = 0.10
 _CONFIDENCE_MAX  = 1.00
 _INJECT_THRESHOLD = 0.30
+_VOTE_COLUMNS: dict[str, str] = {"up": "positive_votes", "down": "negative_votes"}
 
 COLLECTION = "phil_facts"
 
@@ -38,7 +40,6 @@ class MemoryStore:
         chroma_path: str = "/tmp/phil_chroma",
         openai_api_key: str = "",
     ):
-        import os
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -89,6 +90,9 @@ class MemoryStore:
     ) -> None:
         base = confidence if confidence is not None else _BASE_CONFIDENCE.get(source, 0.65)
         now = datetime.now(timezone.utc).isoformat()
+        # ON CONFLICT preserves confidence and vote counts intentionally:
+        # earned RLHF feedback must not be overwritten by re-ingestion.
+        # source is also preserved to keep original provenance.
         self._conn.execute("""
             INSERT INTO facts (id, text, category, source, source_ref, confidence, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -109,7 +113,9 @@ class MemoryStore:
                 logging.warning(f"[Memory] ChromaDB upsert fehlgeschlagen: {exc}")
 
     def apply_feedback(self, fact_id: str, rating: str) -> None:
-        col = "positive_votes" if rating == "up" else "negative_votes"
+        col = _VOTE_COLUMNS.get(rating)
+        if col is None:
+            raise ValueError(f"Ungültiger rating-Wert: {rating!r}. Erlaubt: 'up', 'down'")
         delta = _CONFIDENCE_UP if rating == "up" else -_CONFIDENCE_DOWN
         self._conn.execute(f"""
             UPDATE facts
@@ -145,6 +151,9 @@ class MemoryStore:
             WHERE id = ?
         """, (text, correction_note, now, fact_id))
         self._conn.commit()
+        if self._conn.execute("SELECT changes()").fetchone()[0] == 0:
+            logging.warning(f"[Memory] update_fact: Fakt nicht gefunden: {fact_id}")
+            return
         if text and self._chroma_collection is not None:
             try:
                 row = self._conn.execute(

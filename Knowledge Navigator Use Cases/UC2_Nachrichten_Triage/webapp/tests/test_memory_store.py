@@ -67,7 +67,7 @@ def test_confidence_clamped_at_minimum(store):
     store.upsert_fact("f1", "Text", "Konzept", "chat", confidence=0.2)
     store.apply_feedback("f1", "down")
     store.apply_feedback("f1", "down")
-    assert store.list_facts()[0]["confidence"] >= 0.10
+    assert store.list_facts()[0]["confidence"] == pytest.approx(0.10)
 
 
 def test_delete_fact(store):
@@ -133,3 +133,16 @@ def test_list_facts_filter_by_source_ref(store):
     result = store.list_facts(source_ref="msg-abc")
     assert len(result) == 1
     assert result[0]["id"] == "f1"
+
+
+def test_apply_feedback_invalid_rating(store):
+    store.upsert_fact("f1", "Text", "Konzept", "chat", confidence=0.7)
+    with pytest.raises(ValueError):
+        store.apply_feedback("f1", "sideways")
+
+
+def test_confidence_clamped_at_maximum(store):
+    store.upsert_fact("f1", "Text", "Konzept", "chat", confidence=0.98)
+    store.apply_feedback("f1", "up")
+    store.apply_feedback("f1", "up")
+    assert store.list_facts()[0]["confidence"] == pytest.approx(1.0)
