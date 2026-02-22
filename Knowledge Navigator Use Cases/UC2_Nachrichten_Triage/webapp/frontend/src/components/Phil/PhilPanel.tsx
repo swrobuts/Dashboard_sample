@@ -323,35 +323,35 @@ export function PhilPanel({ open, onClose }: Props) {
     setStreaming(true)
     stopAudio()
 
-    // Build a rich, focused context for the selected item.
+    // Build context for the selected item.
     // include_context=false when something is selected so the backend does NOT add
     // the general calendar/mail/task dump — that would dilute the specific focus.
     let contextMsg = text
     if (selection?.type === 'mail') {
       const m = selection.item
-      contextMsg = `FOKUS: Beantworte die Frage NUR zu dieser Mail, nicht zu anderen.\n`
+      contextMsg = `[Geöffnete Mail]\n`
         + `Von: ${m.sender}\nBetreff: ${m.subject}\nDatum: ${m.datetime_received?.slice(0, 16) ?? '?'}\n`
         + `Kategorie: ${m.kategorie} | Priorität: ${m.priorität}\n`
         + (m.zusammenfassung ? `Zusammenfassung: ${m.zusammenfassung}\n` : '')
         + (m.body ? `Inhalt:\n${m.body.slice(0, 800)}\n` : '')
-        + `\nFrage/Aufgabe: ${text}`
+        + `\n${text}`
     } else if (selection?.type === 'calendar') {
       const c = selection.item
       const startStr = c.start ? new Date(c.start).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '?'
       const endStr   = c.end   ? new Date(c.end).toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''
-      contextMsg = `FOKUS: Beantworte die Frage NUR zu diesem Termin, nicht zu anderen.\n`
-        + `Termin: "${c.subject}"\n`
+      contextMsg = `[Geöffneter Termin]\n`
+        + `Titel: "${c.subject}"\n`
         + `Wann: ${startStr}${endStr ? ' – ' + endStr : ''}\n`
         + (c.location ? `Ort: ${c.location}\n` : '')
         + (c.body ? `Details: ${c.body}\n` : '')
-        + `\nFrage/Aufgabe: ${text}`
+        + `\n${text}`
     } else if (selection?.type === 'task') {
       const t = selection.item
-      contextMsg = `FOKUS: Beantworte die Frage NUR zu dieser Aufgabe.\n`
-        + `Aufgabe: "${t.subject}"\n`
+      contextMsg = `[Geöffnete Aufgabe]\n`
+        + `Titel: "${t.subject}"\n`
         + `Priorität: ${t.priority} | Status: ${t.status} | Fällig: ${t.due_date ?? 'kein Datum'}\n`
         + (t.body ? `Details: ${t.body}\n` : '')
-        + `\nFrage/Aufgabe: ${text}`
+        + `\n${text}`
     }
 
     let philText = ''
