@@ -769,6 +769,24 @@ def train_journeys(
     return {"journeys": journeys}
 
 
+# ── Knowledge Search (RAG) ────────────────────────────────────────────────
+
+@app.get("/api/knowledge/search")
+def knowledge_search(
+    q: str,
+    n: int = 3,
+    session_id: str | None = Cookie(default=None),
+):
+    """Semantische Suche in der Mail-Historiendatenbank."""
+    _get_session(session_id)
+    if not q.strip():
+        return {"results": []}
+    if knowledge_store is None:
+        return {"results": []}
+    results = knowledge_store.search(q.strip(), n_results=min(n, 10))
+    return {"results": results}
+
+
 # Frontend statisch servieren (React build → static/)
 _static = Path(__file__).parent.parent / "static"
 if _static.exists():

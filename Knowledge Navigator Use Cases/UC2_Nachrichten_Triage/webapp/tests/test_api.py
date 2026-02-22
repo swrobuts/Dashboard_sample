@@ -417,3 +417,30 @@ def test_analyze_still_works_without_mail_id(mocker):
     response = client.post("/api/analyze", json={"email_text": "test"})
     assert response.status_code == 200
     mock_index.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# New Tests: RAG — GET /api/knowledge/search
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_knowledge_search_requires_session():
+    client = get_client()
+    response = client.get("/api/knowledge/search?q=test")
+    assert response.status_code == 401
+
+
+def test_knowledge_search_returns_results(mocker):
+    # Patch session check
+    mocker.patch("backend.main._get_session", return_value={"username": "test"})
+    mocker.patch("backend.main.knowledge_store.search", return_value=[
+        {"id": "m1", "subject": "Projektstatus", "sender": "a@b.de",
+         "date": "2026-01-15", "kategorie": "Aktion nötig",
+         "summary": "Projekt verzögert", "score": 0.92},
+    ])
+    client = get_client()
+    response = client.get("/api/knowledge/search?q=Projektverzögerung")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["results"]) == 1
+    assert data["results"][0]["subject"] == "Projektstatus"
+    assert data["results"][0]["score"] == 0.92
