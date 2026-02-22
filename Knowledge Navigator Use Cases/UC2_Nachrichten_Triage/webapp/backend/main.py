@@ -854,6 +854,7 @@ Antworte auf Deutsch. Prägnant, direkt, kein Bullshit. Länge: so viel wie nöt
 class ChatRequest(BaseModel):
     message: str
     include_context: bool = True
+    message_id: str = ""  # uuid4 from frontend; used to tag extracted facts
 
 
 def _build_rag_context(query: str) -> str:
@@ -886,6 +887,48 @@ def _build_graph_context(query: str) -> str:
     except Exception as exc:
         logging.warning(f"[Ontology] Graph-Kontext fehlgeschlagen: {exc}")
         return ""
+
+
+FACT_EXTRACTION_SYSTEM = """\
+Extrahiere aus diesem Gespräch maximal 3 neue, konkrete Fakten über Personen,
+Projekte, Konzepte, Orte oder Abläufe.
+Nur wirklich neue Informationen — keine allgemeinen Aussagen.
+Antworte ausschließlich mit validem JSON (kein Markdown):
+[{"text": "...", "category": "Person|Projekt|Konzept|Prozedur|Ort", "confidence": 0.7}]
+Wenn keine neuen Fakten: []
+"""
+
+
+def _extract_and_store_facts(user_msg: str, phil_response: str, message_id: str) -> None:
+    """Async fact extraction after chat response. Errors are swallowed — non-blocking."""
+    if memory_store is None:
+        return
+    try:
+        llm = get_llm_client("cloud")
+        prompt = f"[Nutzer]: {user_msg[:400]}\n[Phil]: {phil_response[:800]}"
+        raw = llm.create(task="entities", prompt=prompt, max_tokens=256, system=FACT_EXTRACTION_SYSTEM)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        facts = json.loads(raw.strip())
+        if not isinstance(facts, list):
+            return
+        for f in facts[:3]:
+            if not isinstance(f, dict) or not f.get("text") or not f.get("category"):
+                continue
+            fact_id = str(uuid.uuid4())
+            memory_store.upsert_fact(
+                fact_id=fact_id,
+                text=f["text"],
+                category=f["category"],
+                source="chat",
+                source_ref=message_id or None,
+                confidence=float(f.get("confidence", 0.7)),
+            )
+            logging.info(f"[Memory] Fakt gespeichert: [{f['category']}] {f['text'][:60]}")
+    except Exception as exc:
+        logging.warning(f"[Memory] Fact-Extraction fehlgeschlagen: {exc}")
 
 
 def _build_context(mails: list, cal_items: list, tasks: list) -> str:
@@ -959,29 +1002,62 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
         if graph_str:
             context_str += graph_str
 
+    # Memory context: always inject relevant facts (regardless of include_context)
+    if memory_store is not None:
+        try:
+            memory_str = memory_store.build_context_block(req.message)
+            if memory_str:
+                context_str += memory_str
+        except Exception as exc:
+            logging.warning(f"[Memory] Kontext fehlgeschlagen: {exc}")
+
+    # Web search: trigger on keywords in user message
+    if WEB_SEARCH_TRIGGER_RE.search(req.message):
+        try:
+            web_str, web_results = build_web_context(req.message)
+            if web_str:
+                context_str += web_str
+            if memory_store is not None:
+                for wr in web_results:
+                    memory_store.upsert_fact(
+                        fact_id=str(uuid.uuid4()),
+                        text=wr["snippet"][:200],
+                        category="Konzept",
+                        source="web",
+                        source_ref=req.message[:80],
+                    )
+        except Exception as exc:
+            logging.warning(f"[Memory] Web-Suche fehlgeschlagen: {exc}")
+
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 
     # ── LLM-Client für diese Session ──────────────────────────────────
     llm = _get_llm(session)
 
+    # Capture full Phil response for async fact extraction
+    _full_response: list[str] = []
+
     def generate():
         stream_kwargs = dict(task="chat", prompt=user_msg, max_tokens=1024, system=PHIL_SYSTEM)
         try:
             for text in llm.stream(**stream_kwargs):
+                _full_response.append(text)
                 yield f"data: {text}\n\n"
         except Exception as exc:
             logging.warning(f"[Chat] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
-            # Cloud-Fallback wenn primärer LLM nicht erreichbar ist
             if getattr(llm, 'mode', 'cloud') != 'cloud':
                 logging.warning("[Chat] Fallback auf Cloud-LLM")
                 try:
                     for text in get_llm_client("cloud").stream(**stream_kwargs):
+                        _full_response.append(text)
                         yield f"data: {text}\n\n"
                 except Exception as exc2:
                     logging.warning(f"[Chat] Cloud-Fallback fehlgeschlagen: {exc2}")
                     yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
             else:
                 yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
+        # Async fact extraction after response is complete
+        _extract_and_store_facts(req.message, "".join(_full_response), req.message_id)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
