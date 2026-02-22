@@ -36,19 +36,24 @@ def search_web(query: str, max_results: int = 3) -> list[dict]:
     results: list[dict] = []
     if data.get("Abstract"):
         results.append({"snippet": data["Abstract"], "url": data.get("AbstractURL", "")})
-    for topic in data.get("RelatedTopics", [])[:max_results]:
+    remaining = max(0, max_results - len(results))
+    for topic in data.get("RelatedTopics", [])[:remaining]:
         if isinstance(topic, dict) and topic.get("Text"):
             results.append({"snippet": topic["Text"], "url": topic.get("FirstURL", "")})
-    return results[:max_results]
+            if len(results) >= max_results:
+                break
+        elif isinstance(topic, dict) and "Topics" in topic:
+            logging.debug(f"[WebSearch] Themengruppe übersprungen: {topic.get('Name', '?')}")
+    return results
 
 
-def build_web_context(query: str) -> tuple[str, list[dict]]:
+def build_web_context(query: str, max_results: int = 3) -> tuple[str, list[dict]]:
     """Run search and return (context_block, raw_results).
 
     context_block is empty string if no results.
     raw_results are used for fact extraction.
     """
-    results = search_web(query)
+    results = search_web(query, max_results=max_results)
     if not results:
         return "", []
     lines = [f"\n=== WEBSUCHE: '{query}' ==="]

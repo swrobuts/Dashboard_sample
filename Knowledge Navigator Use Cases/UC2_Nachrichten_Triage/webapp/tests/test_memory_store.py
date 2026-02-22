@@ -233,3 +233,39 @@ def test_build_web_context_empty_on_no_results():
     block, results = build_web_context("nothing")
     assert block == ""
     assert results == []
+
+
+@respx.mock
+def test_search_web_max_results_cap():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={
+            "Abstract": "Abstract text",
+            "AbstractURL": "https://example.com",
+            "RelatedTopics": [
+                {"Text": "Topic 1", "FirstURL": "https://example.com/1"},
+                {"Text": "Topic 2", "FirstURL": "https://example.com/2"},
+                {"Text": "Topic 3", "FirstURL": "https://example.com/3"},
+            ],
+        })
+    )
+    results = search_web("test", max_results=2)
+    assert len(results) == 2
+    assert results[0]["snippet"] == "Abstract text"
+    assert results[1]["snippet"] == "Topic 1"
+
+
+@respx.mock
+def test_search_web_max_results_one_no_abstract():
+    respx.get("https://api.duckduckgo.com/").mock(
+        return_value=httpx.Response(200, json={
+            "Abstract": "",
+            "AbstractURL": "",
+            "RelatedTopics": [
+                {"Text": "Only topic", "FirstURL": "https://example.com/1"},
+                {"Text": "Second topic", "FirstURL": "https://example.com/2"},
+            ],
+        })
+    )
+    results = search_web("test", max_results=1)
+    assert len(results) == 1
+    assert results[0]["snippet"] == "Only topic"
