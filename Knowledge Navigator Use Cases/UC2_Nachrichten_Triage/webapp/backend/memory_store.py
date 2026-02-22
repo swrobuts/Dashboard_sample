@@ -134,6 +134,8 @@ class MemoryStore:
         text: str | None = None,
         correction_note: str | None = None,
     ) -> None:
+        if text is None and correction_note is None:
+            return
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute("""
             UPDATE facts

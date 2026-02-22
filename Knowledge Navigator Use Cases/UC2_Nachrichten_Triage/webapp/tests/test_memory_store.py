@@ -125,3 +125,11 @@ def test_build_context_block_with_facts(store):
     assert "PHIL'S GEDÄCHTNIS" in block
     assert "Max = Kooperationspartner" in block
     assert "80%" in block
+
+
+def test_list_facts_filter_by_source_ref(store):
+    store.upsert_fact("f1", "Text A", "Konzept", "chat", source_ref="msg-abc")
+    store.upsert_fact("f2", "Text B", "Konzept", "chat", source_ref="msg-xyz")
+    result = store.list_facts(source_ref="msg-abc")
+    assert len(result) == 1
+    assert result[0]["id"] == "f1"
