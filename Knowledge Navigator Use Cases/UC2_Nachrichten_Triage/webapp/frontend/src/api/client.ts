@@ -56,6 +56,8 @@ export const api = {
   calendar: (days_ahead = 14) => get<{ items: CalendarItem[] }>(`/api/calendar?days_ahead=${days_ahead}`),
   createCalendar: (subject: string, start: string, end: string, location?: string, body?: string) =>
     post<{ id: string; subject: string }>('/api/calendar/create', { subject, start, end, location, body }),
+  deleteCalendar: (event_id: string, changekey = '') =>
+    del<{ status: string }>(`/api/calendar/${encodeURIComponent(event_id)}`, { changekey }),
 
   // Tasks
   tasks: () => get<{ tasks: Task[] }>('/api/tasks'),
@@ -65,6 +67,8 @@ export const api = {
     post<{ status: string }>(`/api/tasks/${task_id}/complete`, { changekey }),
   deleteTask: (task_id: string, changekey: string) =>
     del<{ status: string }>(`/api/tasks/${task_id}`, { changekey }),
+  deleteMail: (mail_uid: string) =>
+    del<{ status: string }>(`/api/mails/${encodeURIComponent(mail_uid)}`, {}),
 
   // TTS
   tts: async (text: string): Promise<string> => {

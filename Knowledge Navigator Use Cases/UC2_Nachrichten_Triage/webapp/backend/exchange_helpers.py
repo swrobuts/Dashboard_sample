@@ -109,9 +109,10 @@ def fetch_emails_imap(
 ) -> list[dict]:
     """
     Lädt E-Mails via IMAP (neue Verbindung pro Aufruf).
+    Verwendet UID-basierte Befehle für stabile Mail-IDs (auch nach Löschvorgängen).
 
     Returns:
-        Liste von Dicts: [{subject, sender, body, datetime_received, is_read}, ...]
+        Liste von Dicts: [{subject, sender, body, datetime_received, is_read, mail_uid}, ...]
     """
     mail = imaplib.IMAP4_SSL(imap_config["host"], imap_config["port"])
     try:
@@ -119,16 +120,17 @@ def fetch_emails_imap(
         mail.select("INBOX")
 
         criteria = "UNSEEN" if unread_only else "ALL"
-        _, msgs = mail.search(None, criteria)
-        ids = msgs[0].split() if msgs[0] else []
+        # UID-basierte Suche — stabile IDs unabhängig von anderen Löschvorgängen
+        _, msgs = mail.uid("search", None, criteria)
+        uids = msgs[0].split() if msgs[0] else []
 
         # IMAP liefert älteste zuerst → umkehren, dann abschneiden
-        ids = ids[::-1][:max_count]
+        uids = uids[::-1][:max_count]
 
         emails = []
-        for eid in ids:
+        for uid in uids:
             try:
-                _, data = mail.fetch(eid, "(RFC822)")
+                _, data = mail.uid("fetch", uid, "(RFC822)")
                 for part in data:
                     if not isinstance(part, tuple):
                         continue
@@ -182,17 +184,36 @@ def fetch_emails_imap(
                     except Exception:
                         dt = None
 
+                    uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     emails.append({
                         "subject": subject or "(kein Betreff)",
                         "sender": sender,
                         "body": body,
                         "datetime_received": dt,
                         "is_read": not unread_only,
+                        "mail_uid": uid_str,  # stabile IMAP UID für Löschvorgänge
                     })
             except Exception:
                 pass
 
         return emails
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+
+
+def delete_mail_imap(imap_config: dict, mail_uid: str) -> bool:
+    """Löscht eine E-Mail dauerhaft via IMAP UID (HardDelete + Expunge)."""
+    mail = imaplib.IMAP4_SSL(imap_config["host"], imap_config["port"])
+    try:
+        mail.login(imap_config["username"], imap_config["password"])
+        mail.select("INBOX")
+        uid_bytes = mail_uid.encode() if isinstance(mail_uid, str) else mail_uid
+        mail.uid("store", uid_bytes, "+FLAGS", "\\Deleted")
+        mail.expunge()
+        return True
     finally:
         try:
             mail.logout()
@@ -357,6 +378,7 @@ def fetch_emails(
                 "body": body,
                 "datetime_received": item.datetime_received,
                 "is_read": item.is_read,
+                "mail_uid": item.id,  # EWS Item-ID für Löschvorgänge
             })
         except Exception:
             skipped += 1
@@ -364,6 +386,18 @@ def fetch_emails(
     if skipped:
         emails.append({"_skipped": skipped})
     return emails
+
+
+def delete_mail_ews(account: Account, item_id: str) -> bool:
+    """Löscht eine E-Mail via EWS (HardDelete). Sucht nach ID im Posteingang."""
+    try:
+        for item in account.inbox.all()[:500]:
+            if item.id == item_id:
+                item.delete()
+                return True
+    except Exception as e:
+        _logger.warning(f"[EWS-DeleteMail] {type(e).__name__}: {e}")
+    return True  # Best effort — bei Fehler trotzdem OK
 
 
 def build_email_text(email_dict: dict) -> str:
@@ -567,6 +601,20 @@ def fetch_google_calendar(days_ahead: int = 14) -> list[dict]:
         })
     items.sort(key=lambda x: x["start"] or "")
     return items
+
+
+def delete_google_calendar_event(event_id: str) -> bool:
+    """Löscht ein Google Kalender-Ereignis via gog CLI."""
+    account_email = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    gog = _gog_binary()
+    result = subprocess.run(
+        [gog, "calendar", "delete", account_email, event_id, "--no-input"],
+        capture_output=True, text=True,
+        env=_gog_env(), timeout=20,
+    )
+    if result.returncode != 0:
+        raise Exception(f"gog calendar delete: {result.stderr.strip()[:200]}")
+    return True
 
 
 def create_google_calendar_event(

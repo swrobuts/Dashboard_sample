@@ -90,7 +90,12 @@ export function MailCard({ mail }: Props) {
 
   function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
+    // Optimistic update: remove immediately from UI
     removeMail(mail.id)
+    // Fire server delete in background (IMAP UID or EWS ID)
+    if (mail.mail_uid) {
+      api.deleteMail(mail.mail_uid).catch(err => console.error('[deleteMail]', err))
+    }
   }
 
   return (

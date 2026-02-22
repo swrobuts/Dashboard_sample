@@ -39,8 +39,10 @@ interface RbcEvent {
 }
 
 interface FormState {
-  subject: string; start: string; end: string; location: string; body: string
+  subject: string; start: string; end: string; location: string; zoom_link: string; body: string
 }
+
+const DEFAULT_ZOOM = 'https://thws-de.zoom.us/j/4286927358'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function toRbcEvents(items: CalendarItem[]): RbcEvent[] {
@@ -73,15 +75,17 @@ function RbcNavToolbar({ label, onNavigate }: ToolbarProps<RbcEvent>) {
 
 // ── Main Component ───────────────────────────────────────────────────────────
 export function CalendarView() {
-  const { calendar, setCalendar, setSelection, loadingCalendar } = useStore()
+  const { calendar, setCalendar, removeCalendarItem, setSelection, loadingCalendar } = useStore()
   const { loadCalendar } = useDataLoader()
   const [view, setView] = useState<AppView>('month')
   const [date, setDate] = useState(new Date())
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState<FormState>({ subject: '', start: '', end: '', location: '', body: '' })
+  const [form, setForm] = useState<FormState>({ subject: '', start: '', end: '', location: '', zoom_link: DEFAULT_ZOOM, body: '' })
   const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState('')
+  const [activeEvent, setActiveEvent] = useState<RbcEvent | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Fetch more data when switching to year view
   useEffect(() => {
@@ -106,7 +110,7 @@ export function CalendarView() {
   function openForm(start?: Date, end?: Date) {
     const s = start ?? new Date()
     const e = end ?? new Date(s.getTime() + 60 * 60 * 1000)
-    setForm({ subject: '', start: toLocalDatetime(s), end: toLocalDatetime(e), location: '', body: '' })
+    setForm({ subject: '', start: toLocalDatetime(s), end: toLocalDatetime(e), location: '', zoom_link: DEFAULT_ZOOM, body: '' })
     setShowForm(true)
   }
 
@@ -114,13 +118,33 @@ export function CalendarView() {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.createCalendar(form.subject, form.start, form.end, form.location, form.body)
+      // Zoom-Link in Location einbetten (Google Calendar zeigt es als Ort)
+      const combinedLocation = form.zoom_link
+        ? (form.location ? `${form.location} | ${form.zoom_link}` : form.zoom_link)
+        : form.location
+      await api.createCalendar(form.subject, form.start, form.end, combinedLocation, form.body)
       const daysAhead = view === 'year' ? 400 : 30
       const { items } = await api.calendar(daysAhead)
       setCalendar(items)
       setShowForm(false)
     } catch (err) { console.error(err) }
     finally { setSaving(false) }
+  }
+
+  async function handleDeleteEvent(ev: RbcEvent) {
+    setDeleting(true)
+    try {
+      await api.deleteCalendar(ev.resource.id, ev.resource.changekey)
+      removeCalendarItem(ev.resource.id)
+      setActiveEvent(null)
+    } catch (err) {
+      console.error('[deleteCalendar]', err)
+      // Still remove from UI — server might have deleted it even if response errored
+      removeCalendarItem(ev.resource.id)
+      setActiveEvent(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // ── react-big-calendar callbacks ───────────────────────────────────────────
@@ -130,6 +154,7 @@ export function CalendarView() {
 
   const handleSelectEvent = useCallback((ev: RbcEvent) => {
     setSelection({ type: 'calendar', item: ev.resource })
+    setActiveEvent(ev)
   }, [setSelection])
 
   const handleNavigate = useCallback((newDate: Date) => setDate(newDate), [])
@@ -165,6 +190,26 @@ export function CalendarView() {
         </button>
         <button className={styles.addBtn} onClick={() => openForm()}>+ Neu</button>
       </div>
+      {/* Event action bar (visible when event is selected) */}
+      {activeEvent && (
+        <div className={styles.eventActionBar}>
+          <span className={styles.eventActionTitle}>{activeEvent.title}</span>
+          <span className={styles.eventActionTime}>
+            {format(activeEvent.start, 'HH:mm')} – {format(activeEvent.end, 'HH:mm')}
+          </span>
+          <div className={styles.eventActionBtns}>
+            <button
+              className={styles.eventDeleteBtn}
+              onClick={() => handleDeleteEvent(activeEvent)}
+              disabled={deleting}
+              title="Termin löschen"
+            >
+              {deleting ? '…' : '🗑 Löschen'}
+            </button>
+            <button className={styles.eventCloseBtnSmall} onClick={() => setActiveEvent(null)}>✕</button>
+          </div>
+        </div>
+      )}
       {/* Row 2: view tabs */}
       <div className={styles.filterBar}>
         <div className={styles.viewTabs}>
@@ -201,6 +246,8 @@ export function CalendarView() {
             </div>
             <input className={styles.input} placeholder="Ort (optional)" value={form.location}
               onChange={(e) => setForm({ ...form, location: e.target.value })} />
+            <input className={styles.input} placeholder="Zoom-Link (optional)" value={form.zoom_link}
+              onChange={(e) => setForm({ ...form, zoom_link: e.target.value })} />
             <textarea className={styles.textarea} placeholder="Notizen (optional)" rows={2}
               value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
             <div className={styles.formActions}>

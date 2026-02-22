@@ -318,6 +318,9 @@ from backend.exchange_helpers import (
     connect_to_imap,
     create_google_calendar_event,
     create_task,
+    delete_google_calendar_event,
+    delete_mail_imap,
+    delete_mail_ews,
     delete_task,
     fetch_google_calendar,
     fetch_emails,
@@ -686,6 +689,45 @@ def post_delete_task(
 ):
     account = _get_account(session_id)
     delete_task(account, task_id, req.changekey)
+    return {"status": "deleted"}
+
+
+# ── Mail Delete Endpoint ───────────────────────────────────────────────────
+
+@app.delete("/api/mails/{mail_uid}")
+def delete_mail_endpoint(
+    mail_uid: str,
+    session_id: str | None = Cookie(default=None),
+):
+    """Löscht eine E-Mail dauerhaft vom Server (IMAP oder EWS)."""
+    session = _get_session(session_id)
+    if "imap_config" in session:
+        delete_mail_imap(session["imap_config"], mail_uid)
+    else:
+        account = session.get("account")
+        if account:
+            delete_mail_ews(account, mail_uid)
+    return {"status": "deleted"}
+
+
+# ── Calendar Delete Endpoint ───────────────────────────────────────────────
+
+class DeleteCalendarRequest(BaseModel):
+    changekey: str = ""
+
+
+@app.delete("/api/calendar/{event_id}")
+def delete_calendar_endpoint(
+    event_id: str,
+    req: DeleteCalendarRequest,
+    session_id: str | None = Cookie(default=None),
+):
+    """Löscht einen Kalender-Eintrag (Google Calendar via gog CLI)."""
+    _get_session(session_id)
+    try:
+        delete_google_calendar_event(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Kalender-Löschen fehlgeschlagen: {e}")
     return {"status": "deleted"}
 
 

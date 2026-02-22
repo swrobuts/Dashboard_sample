@@ -19,6 +19,34 @@
 }
 .search:focus { border-color: var(--amber); }
 
+/* ── Event action bar (delete / close selected event) ───────────────────── */
+.eventActionBar {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .4rem .75rem; margin-bottom: .5rem;
+  background: var(--amber-light); border: 1.5px solid var(--amber);
+  border-radius: var(--radius-sm); flex-shrink: 0;
+}
+.eventActionTitle {
+  font-size: var(--text-sm); font-weight: 600; color: #111;
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.eventActionTime {
+  font-size: var(--text-xs); color: #6B7280; flex-shrink: 0;
+}
+.eventActionBtns { display: flex; gap: .35rem; flex-shrink: 0; }
+.eventDeleteBtn {
+  padding: .2rem .6rem; border-radius: var(--radius-sm); font-size: var(--text-xs);
+  border: 1.5px solid #EF4444; color: #EF4444; background: none;
+  cursor: pointer; font-weight: 600; transition: background .1s;
+}
+.eventDeleteBtn:hover { background: #FEF2F2; }
+.eventDeleteBtn:disabled { opacity: .5; cursor: not-allowed; }
+.eventCloseBtnSmall {
+  padding: .2rem .5rem; border-radius: var(--radius-sm); font-size: .75rem;
+  border: 1px solid var(--card-border); color: #9CA3AF; background: none; cursor: pointer;
+}
+.eventCloseBtnSmall:hover { background: var(--content-bg); }
+
 /* ── Filter row 2 ────────────────────────────────────────────────────────── */
 .filterBar {
   display: flex; align-items: center; gap: .375rem; flex-wrap: wrap;
