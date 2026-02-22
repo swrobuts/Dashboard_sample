@@ -62,13 +62,12 @@ interface Props {
 export function Sidebar({ collapsed, onCollapse }: Props) {
   const { view, setView, user, logout, mails, tasks, calendar, dashDateStr } = useStore()
 
-  // Badge counts — calendar & tasks reflect the currently selected dashboard day
+  // Badge counts
   const unread = mails.filter((m) => !m.is_read).length
+  // Calendar: events on the selected dashboard day (local-date aware)
   const calDayCount = calendar.filter((e) => e.start?.slice(0, 10) === dashDateStr).length
-  const taskDayCount = tasks.filter((t) => {
-    if (t.status === 'Completed') return false
-    return t.due_date?.slice(0, 10) === dashDateStr
-  }).length
+  // Tasks: ALL open tasks (not day-filtered — tasks without due date should count too)
+  const openTaskCount = tasks.filter((t) => t.status !== 'Completed').length
 
   // Login duration (minutes since component mount = login time)
   const [loginAt] = useState(() => Date.now())
@@ -118,7 +117,7 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
               <span className={styles.badge}>{unread}</span>
             )}
             {item.view === 'tasks' && (
-              <span className={styles.badge}>{taskDayCount}</span>
+              <span className={styles.badge}>{openTaskCount}</span>
             )}
             {item.view === 'calendar' && (
               <span className={styles.badge}>{calDayCount}</span>

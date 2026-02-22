@@ -542,7 +542,7 @@ def complete_task(account: Account, task_id: str, changekey: str) -> bool:
 
 
 def delete_task(account: Account, task_id: str, changekey: str) -> bool:
-    """Löscht eine Aufgabe dauerhaft aus Exchange (HardDelete).
+    """Löscht eine Aufgabe aus Exchange (verschiebt in Papierkorb).
     Fällt auf ID-only-Suche zurück, falls der changekey veraltet ist."""
     try:
         task = account.tasks.get(id=task_id, changekey=changekey)
@@ -552,7 +552,8 @@ def delete_task(account: Account, task_id: str, changekey: str) -> bool:
         if task is None:
             return True  # Bereits gelöscht oder nicht mehr vorhanden
     try:
-        task.delete()
+        # MoveToDeletedItems statt HardDelete — funktioniert auch ohne Admin-Rechte
+        task.delete(delete_type='MoveToDeletedItems')
         return True
     except Exception as exc:
         _logger.error(f"[EWS-Tasks] Löschen fehlgeschlagen für {task_id}: {type(exc).__name__}: {exc}")
@@ -608,8 +609,9 @@ def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
 
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
-    from_dt = (now - timedelta(days=180)).strftime("%Y-%m-%d")
-    to_dt   = (now + timedelta(days=180)).strftime("%Y-%m-%d")
+    # gog erwartet RFC3339 mit Timezone-Offset
+    from_dt = (now - timedelta(days=180)).strftime("%Y-%m-%dT00:00:00Z")
+    to_dt   = (now + timedelta(days=180)).strftime("%Y-%m-%dT23:59:59Z")
 
     result = subprocess.run(
         [
@@ -618,7 +620,7 @@ def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
             "--from", from_dt,
             "--to",   to_dt,
             "--json",
-            "--max", "500",
+            "--max", "2000",
             "--no-input",
         ],
         capture_output=True, text=True,
