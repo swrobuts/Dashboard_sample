@@ -190,6 +190,17 @@ function EventContextPanel({
     : ''
   const isOnline = Boolean(event.location?.match(/^https?:\/\//i))
 
+  // Deduplicate (same mail can appear twice in vector index) and apply score threshold
+  const seen = new Set<string>()
+  const filteredContext = context
+    .filter(m => m.score >= 0.60)
+    .filter(m => {
+      const key = `${m.subject}||${m.sender}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
   return (
     <div className={styles.contextPanel}>
       <div className={styles.contextPanelHeader}>
@@ -249,11 +260,11 @@ function EventContextPanel({
             Relevante Mails
             {loading && <span className={styles.tileSpinner} style={{ marginLeft: '.4rem', fontSize: '.75rem' }}>⟳</span>}
           </div>
-          {context.length === 0 && !loading ? (
+          {filteredContext.length === 0 && !loading ? (
             <div className={styles.contextNoMails}>Keine verknüpften Mails gefunden.</div>
           ) : (
             <div className={styles.contextMailList}>
-              {context.map((m) => (
+              {filteredContext.map((m) => (
                 <div key={m.id} className={styles.contextMailCard}>
                   <div className={styles.contextMailCardTop}>
                     <span className={styles.contextMailSender}>{m.sender}</span>
@@ -300,7 +311,7 @@ export function Dashboard() {
     setLoadingMeetings(true)
     Promise.all(
       dashEvents.map((ev) =>
-        api.knowledgeSearch(ev.subject, 2)
+        api.knowledgeSearch(ev.subject, 4)
           .then(({ results }) => ({ id: ev.id, results }))
           .catch(() => ({ id: ev.id, results: [] as KnowledgeResult[] }))
       )

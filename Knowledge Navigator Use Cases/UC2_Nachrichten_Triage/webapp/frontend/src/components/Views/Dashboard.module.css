@@ -143,21 +143,21 @@
 
 .contextPanelBody {
   flex: 1; overflow-y: auto;
-  padding: .75rem .875rem;
-  display: flex; flex-direction: column; gap: .65rem;
+  padding: 1rem 1.125rem;
+  display: flex; flex-direction: column; gap: .875rem;
 }
 .contextPanelTitle {
   font-size: var(--text-base); font-weight: 700; color: #111;
-  line-height: 1.3; margin: 0; font-family: var(--font);
+  line-height: 1.35; margin: 0; font-family: var(--font);
 }
-.contextPanelLocRow { font-size: var(--text-sm); }
+.contextPanelLocRow { font-size: var(--text-sm); margin-top: -.2rem; }
 .contextLocLink {
   color: #374151; text-decoration: none; font-size: var(--text-sm);
   transition: color var(--transition);
 }
 .contextLocLink:hover { color: var(--amber-dark); }
 
-.contextActions { display: flex; gap: .35rem; flex-wrap: wrap; }
+.contextActions { display: flex; gap: .4rem; flex-wrap: wrap; padding-top: .1rem; }
 .contextActionBtn {
   padding: .22rem .6rem;
   border: 1.5px solid var(--content-border); border-radius: 999px;
@@ -184,17 +184,21 @@
   max-height: 140px; overflow-y: auto; background: var(--content-bg);
 }
 
-.contextMailsSection { display: flex; flex-direction: column; gap: .3rem; }
+.contextMailsSection {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding-top: .25rem;
+  border-top: 1px solid var(--content-border);
+}
 .contextMailsSectionTitle {
   font-size: .68rem; font-weight: 700; color: #6B7280;
   text-transform: uppercase; letter-spacing: .1em;
 }
-.contextNoMails { color: #9CA3AF; font-size: var(--text-xs); }
-.contextMailList { display: flex; flex-direction: column; gap: 4px; }
+.contextNoMails { color: #9CA3AF; font-size: var(--text-xs); padding: .25rem 0; }
+.contextMailList { display: flex; flex-direction: column; gap: 6px; }
 .contextMailCard {
   background: var(--content-bg); border: 1px solid var(--content-border);
-  border-radius: var(--radius-sm); padding: .3rem .5rem;
-  display: flex; flex-direction: column; gap: 2px;
+  border-radius: var(--radius-sm); padding: .5rem .65rem;
+  display: flex; flex-direction: column; gap: 3px;
 }
 .contextMailCardTop {
   display: flex; align-items: center; justify-content: space-between; gap: .4rem;
@@ -381,7 +385,7 @@
 
 .subSectionHeader {
   display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0; margin-bottom: .3rem;
+  flex-shrink: 0; margin-bottom: .5rem;
 }
 .subSectionHeader > .sectionTitle { margin-bottom: 0; }
 
@@ -411,15 +415,15 @@
 
 .taskList {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 5px;
   background: var(--card-bg); border: 1px solid var(--card-border);
   border-radius: var(--radius-lg); box-shadow: var(--card-shadow);
-  padding: .4rem;
+  padding: .5rem .4rem;
 }
 
 .taskItem {
-  display: flex; align-items: center; gap: .5rem;
-  padding: .4rem .65rem;
+  display: flex; align-items: center; gap: .625rem;
+  padding: .6rem .875rem;
   background: var(--content-bg); border-radius: var(--radius);
   border: 1px solid var(--content-border);
   transition: background var(--transition), box-shadow var(--transition);
