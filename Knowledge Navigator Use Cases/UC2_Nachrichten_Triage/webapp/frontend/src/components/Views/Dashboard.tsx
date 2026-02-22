@@ -196,8 +196,15 @@ export function Dashboard() {
     acc[cat] = mails.filter((m) => m.kategorie === cat && m.triageStatus === 'done').length
     return acc
   }, {} as Record<Category, number>)
+  const totalDone = Object.values(counts).reduce((s, v) => s + v, 0)
 
-  const urgentTasks = tasks.filter((t) => t.status !== 'Completed').slice(0, 12)
+  const actualToday = toLocalDateStr(new Date())
+  const actualTomorrow = toLocalDateStr(addDays(new Date(), 1))
+  const urgentTasks = tasks.filter((t) => {
+    if (t.status === 'Completed') return false
+    const d = t.due_date?.slice(0, 10)
+    return d === actualToday || d === actualTomorrow
+  })
   const groupedTasks = groupTasks(urgentTasks, taskGroup)
 
   const hour = new Date().getHours()
@@ -256,6 +263,14 @@ export function Dashboard() {
                 {loadingMails && <span className={styles.tileSpinner}>⟳</span>}
               </span>
               <span className={styles.tileLabel}>{label}</span>
+              {totalDone > 0 && (
+                <div className={styles.tileBar}>
+                  <div
+                    className={styles.tileBarFill}
+                    style={{ width: `${Math.round((counts[cat] / totalDone) * 100)}%` }}
+                  />
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -288,7 +303,7 @@ export function Dashboard() {
           {/* Tasks sub-section */}
           <div className={styles.subSection}>
             <div className={styles.subSectionHeader}>
-              <h2 className={styles.sectionTitle}>Offene Aufgaben</h2>
+              <h2 className={styles.sectionTitle}>Heute &amp; morgen</h2>
               <div className={styles.taskGroupBar}>
                 {(['none', 'priority', 'due_date'] as TaskGroup[]).map((g) => (
                   <button
@@ -302,7 +317,7 @@ export function Dashboard() {
               </div>
             </div>
             {urgentTasks.length === 0 ? (
-              <p className={styles.noTasks}>Keine offenen Aufgaben.</p>
+              <p className={styles.noTasks}>Keine Aufgaben für heute und morgen.</p>
             ) : (
               <div className={styles.taskList}>
                 {groupedTasks.map(({ label, items }) => (

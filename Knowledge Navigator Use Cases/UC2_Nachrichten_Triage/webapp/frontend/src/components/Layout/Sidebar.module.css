@@ -79,6 +79,8 @@
   border-radius: 999px; font-size: .6rem; font-weight: 700;
   padding: 1px 5px; min-width: 16px; text-align: center; flex-shrink: 0;
 }
+.badgeTask { background: var(--amber); }
+.badgeCal  { background: #0891B2; }
 .collapsed .badge {
   position: absolute; top: 3px; right: 2px;
   min-width: 14px; padding: 1px 3px; font-size: .55rem;

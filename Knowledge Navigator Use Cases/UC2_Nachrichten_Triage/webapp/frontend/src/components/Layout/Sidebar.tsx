@@ -17,8 +17,14 @@ interface Props {
 }
 
 export function Sidebar({ collapsed, onCollapse }: Props) {
-  const { view, setView, user, logout, mails } = useStore()
+  const { view, setView, user, logout, mails, tasks, calendar } = useStore()
   const unread = mails.filter((m) => !m.is_read).length
+  const todayStr = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const tasksTodayCount = tasks.filter((t) => t.status !== 'Completed' && t.due_date?.slice(0, 10) === todayStr).length
+  const calTodayCount = calendar.filter((e) => e.start?.slice(0, 10) === todayStr).length
 
   async function handleLogout() {
     await api.logout().catch(() => {})
@@ -57,6 +63,12 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
             {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
             {item.view === 'mails' && unread > 0 && (
               <span className={styles.badge}>{unread}</span>
+            )}
+            {item.view === 'tasks' && tasksTodayCount > 0 && (
+              <span className={`${styles.badge} ${styles.badgeTask}`}>{tasksTodayCount}</span>
+            )}
+            {item.view === 'calendar' && calTodayCount > 0 && (
+              <span className={`${styles.badge} ${styles.badgeCal}`}>{calTodayCount}</span>
             )}
           </button>
         ))}
