@@ -33,6 +33,10 @@ def _login_ews(client, mocker, inbox_count=5):
     """Helper: Mock EWS (DHBW), do auth/login, return (response, mock_account)."""
     mock_account = mocker.MagicMock()
     mock_account.inbox.total_count = inbox_count
+    mock_account.inbox.unread_count = 0
+    mock_account.drafts.total_count = 0
+    # sent.filter(...).only(...) must return an iterable of zero items (for sent_today count)
+    mock_account.sent.filter.return_value.only.return_value = iter([])
     mocker.patch("backend.main.connect_to_exchange", return_value=mock_account)
     r = client.post("/api/auth/login", json={
         "username": "max.mustermann@dhbw-test.de",
@@ -372,3 +376,43 @@ def test_chat_returns_stream(mocker):
     assert "text/event-stream" in r2.headers["content-type"]
     body = r2.text
     assert "data: " in body
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# New Tests: RAG — Auto-index after triage
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_analyze_indexes_mail_when_mail_id_provided(mocker):
+    """After successful triage, the mail is indexed in the knowledge store."""
+    mock_index = mocker.patch("backend.main.knowledge_store.index_mail")
+    mocker.patch("backend.main.anthropic_client.messages.create",
+        return_value=mocker.Mock(
+            content=[mocker.Mock(text='{"kategorie":"VIP","priorität":1,"zusammenfassung":"Test","empfohlene_aktion":"Antworten","stimmung":0.5}')]
+        )
+    )
+    client = get_client()
+    response = client.post("/api/analyze", json={
+        "email_text": "Von: test@example.com\nBetreff: Test\n\nTestinhalt",
+        "mail_id": "mail-42",
+        "subject": "Test",
+        "sender": "test@example.com",
+        "date": "2026-02-22",
+    })
+    assert response.status_code == 200
+    mock_index.assert_called_once()
+    call_kwargs = mock_index.call_args.kwargs
+    assert call_kwargs["mail_id"] == "mail-42"
+    assert call_kwargs["kategorie"] == "VIP"
+
+
+def test_analyze_still_works_without_mail_id(mocker):
+    """mail_id is optional — old callers without it must still work."""
+    mocker.patch("backend.main.knowledge_store.index_mail")
+    mocker.patch("backend.main.anthropic_client.messages.create",
+        return_value=mocker.Mock(
+            content=[mocker.Mock(text='{"kategorie":"Nur Info","priorität":3,"zusammenfassung":"ok","empfohlene_aktion":"Ignorieren","stimmung":0.0}')]
+        )
+    )
+    client = get_client()
+    response = client.post("/api/analyze", json={"email_text": "test"})
+    assert response.status_code == 200

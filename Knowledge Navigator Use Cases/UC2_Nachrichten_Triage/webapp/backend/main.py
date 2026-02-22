@@ -9,6 +9,7 @@ from pathlib import Path
 
 import anthropic
 import openai
+import requests as http_client
 from dotenv import load_dotenv
 from fastapi import Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -16,6 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 load_dotenv()
+load_dotenv(Path(__file__).parent / ".env", override=False)
+
+from backend.knowledge_store import KnowledgeStore
+
+try:
+    knowledge_store = KnowledgeStore()
+except Exception:
+    knowledge_store = None  # RAG disabled when OPENAI_API_KEY missing — non-fatal
 
 app = FastAPI(title="PHIL PIM Dashboard", version="2.0.0")
 
@@ -46,7 +55,8 @@ R (Response): Antworte AUSSCHLIESSLICH mit validem JSON — kein Text davor oder
     "kategorie": "VIP" | "Aktion nötig" | "Nur Info" | "Ignorieren",
     "priorität": 1 | 2 | 3 | 4,
     "zusammenfassung": "Max. 2 prägnante Sätze.",
-    "empfohlene_aktion": "Konkrete, sofort umsetzbare Empfehlung."
+    "empfohlene_aktion": "Konkrete, sofort umsetzbare Empfehlung.",
+    "stimmung": <Zahl von -1.0 bis 1.0; sehr negativ=-1, neutral=0, sehr positiv=1>
 }}
 
 Kategorien:
@@ -70,6 +80,10 @@ def _strip_fences(text: str) -> str:
 
 class AnalyzeRequest(BaseModel):
     email_text: str
+    mail_id: str | None = None
+    subject: str = ""
+    sender: str = ""
+    date: str = ""
 
     @field_validator("email_text")
     @classmethod
@@ -95,9 +109,26 @@ def analyze(req: AnalyzeRequest):
         raise HTTPException(status_code=502, detail=f"Claude API Fehler: {e}")
     raw = _strip_fences(response.content[0].text)
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=502, detail=f"Claude-Antwort kein gültiges JSON: {e}")
+
+    # Index in knowledge base if mail_id provided (non-fatal)
+    if req.mail_id and knowledge_store is not None:
+        try:
+            knowledge_store.index_mail(
+                mail_id=req.mail_id,
+                subject=req.subject,
+                sender=req.sender,
+                date=req.date,
+                kategorie=result.get("kategorie", ""),
+                summary=result.get("zusammenfassung", ""),
+                body_snippet=req.email_text[:500],
+            )
+        except Exception as exc:
+            import logging; logging.warning(f"[RAG] Indexierung fehlgeschlagen: {exc}")
+
+    return result
 
 
 openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
@@ -137,6 +168,7 @@ from backend.exchange_helpers import (
     connect_to_imap,
     create_google_calendar_event,
     create_task,
+    delete_task,
     fetch_google_calendar,
     fetch_emails,
     fetch_emails_imap,
@@ -227,10 +259,13 @@ def auth_login(req: ConnectRequest, request: Request):
                 inst["imap_host"], inst["imap_port"],
             )
             inbox_count = result["inbox_count"]
+            _email = req.exchange_email or ""
+            _fn = _email.split("@")[0].split(".")[0].capitalize() if "@" in _email else req.username.capitalize()
             session_data = {
                 "protocol": "imap+ews",
                 "imap_config": result,
                 "username": result["username"],
+                "first_name": _fn,
                 "institution": req.institution,
                 "account": None,  # wird unten befüllt wenn EWS klappt
             }
@@ -255,6 +290,7 @@ def auth_login(req: ConnectRequest, request: Request):
                 "protocol": "imap",
                 "imap_config": result,
                 "username": result["username"],
+                "first_name": req.username.capitalize(),
                 "institution": req.institution,
                 "account": None,
             }
@@ -262,11 +298,33 @@ def auth_login(req: ConnectRequest, request: Request):
             account = connect_to_exchange(req.username, req.password, req.institution)
             # inbox.total_count ist der erste echte EWS-Call — Authentifizierung passiert hier
             inbox_count = account.inbox.total_count
+            try:
+                unread_count = account.inbox.unread_count
+            except Exception:
+                unread_count = 0
+            try:
+                drafts_count = account.drafts.total_count
+            except Exception:
+                drafts_count = 0
+            try:
+                from datetime import date as _date
+                from exchangelib import EWSTimeZone, EWSDateTime
+                _tz = EWSTimeZone.localzone()
+                _today = _date.today()
+                _start = EWSDateTime(_today.year, _today.month, _today.day, 0, 0, 0, tzinfo=_tz)
+                sent_today = sum(1 for _ in account.sent.filter(datetime_sent__gte=_start).only("id"))
+            except Exception:
+                sent_today = 0
             session_data = {
                 "protocol": "ews",
                 "account": account,
                 "username": req.username,
+                "first_name": req.username.split(".")[0].capitalize(),
                 "institution": req.institution,
+                "inbox_count": inbox_count,
+                "unread_count": unread_count,
+                "drafts_count": drafts_count,
+                "sent_today": sent_today,
             }
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -278,8 +336,12 @@ def auth_login(req: ConnectRequest, request: Request):
     resp = JSONResponse({
         "status": "ok",
         "username": session_data["username"],
+        "first_name": session_data.get("first_name", session_data["username"]),
         "institution": session_data["institution"],
         "inbox_count": inbox_count,
+        "unread_count": session_data.get("unread_count", 0),
+        "drafts_count": session_data.get("drafts_count", 0),
+        "sent_today": session_data.get("sent_today", 0),
         "ews_connected": session_data.get("account") is not None,
         "ews_error": session_data.get("ews_error"),
     })
@@ -310,10 +372,14 @@ def auth_me(session_id: str | None = Cookie(default=None)):
     imap_cfg = s.get("imap_config") or {}
     return {
         "username": s["username"],
+        "first_name": s.get("first_name", s["username"]),
         "institution": s["institution"],
         "ews_connected": s.get("account") is not None,
         "ews_error": s.get("ews_error"),
-        "inbox_count": imap_cfg.get("inbox_count", 0),
+        "inbox_count": s.get("inbox_count", imap_cfg.get("inbox_count", 0)),
+        "unread_count": s.get("unread_count", 0),
+        "drafts_count": s.get("drafts_count", 0),
+        "sent_today": s.get("sent_today", 0),
     }
 
 
@@ -459,13 +525,32 @@ def post_complete_task(
     return {"status": "completed"}
 
 
+class DeleteTaskRequest(BaseModel):
+    changekey: str
+
+
+@app.delete("/api/tasks/{task_id}")
+def post_delete_task(
+    task_id: str,
+    req: DeleteTaskRequest,
+    session_id: str | None = Cookie(default=None),
+):
+    account = _get_account(session_id)
+    delete_task(account, task_id, req.changekey)
+    return {"status": "deleted"}
+
+
 # ── Phil Chat (SSE Streaming) ──────────────────────────────────────────────
 
 PHIL_SYSTEM = """\
 Du bist PHIL, der persönliche KI-Assistent von Prof. Dr. Butscher.
 Du kennst seine aktuellen E-Mails, Kalender-Einträge und offenen Aufgaben.
 Hilf ihm beim Zeitmanagement, Priorisierung und Planung.
-Antworte präzise und freundlich auf Deutsch.
+
+Antworte IMMER auf Deutsch.
+Halte Antworten kurz und präzise — maximal 3–4 Sätze.
+Keine unnötigen Einleitungen, keine Zusammenfassungen am Ende.
+Direkt zur Sache.
 """
 
 
@@ -478,17 +563,29 @@ def _build_context(mails: list, cal_items: list, tasks: list) -> str:
     lines = ["=== AKTUELLE SITUATION ==="]
     if mails:
         lines.append(f"\nUngelesene E-Mails ({len(mails)}):")
-        for m in mails[:5]:
+        for m in mails[:10]:
             lines.append(f"  - Von: {m.get('sender', '?')} | Betreff: {m.get('subject', '?')}")
+    else:
+        lines.append("\nUngelesene E-Mails: keine")
     if cal_items:
         lines.append(f"\nKalender (nächste 7 Tage, {len(cal_items)} Einträge):")
-        for c in cal_items[:5]:
-            lines.append(f"  - {c['start'][:10] if c['start'] else '?'}: {c['subject']}")
+        for c in cal_items:
+            start = c.get("start") or ""
+            date = start[:10] if start else "?"
+            time = start[11:16] if len(start) > 10 else ""
+            loc = f" | Ort: {c['location']}" if c.get("location") else ""
+            lines.append(f"  - {date} {time}: {c['subject']}{loc}")
+    else:
+        lines.append("\nKalender: keine Einträge in den nächsten 7 Tagen")
     if tasks:
         lines.append(f"\nOffene Aufgaben ({len(tasks)}):")
-        for t in tasks[:5]:
-            due = t["due_date"][:10] if t["due_date"] else "kein Datum"
-            lines.append(f"  - {t['subject']} (fällig: {due})")
+        for t in tasks:
+            due = t["due_date"][:10] if t.get("due_date") else "kein Datum"
+            prio = t.get("priority", "Normal")
+            status = t.get("status", "NotStarted")
+            lines.append(f"  - [{prio}] {t['subject']} (fällig: {due}, Status: {status})")
+    else:
+        lines.append("\nOffene Aufgaben: keine")
     return "\n".join(lines)
 
 
@@ -498,24 +595,30 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
 
     context_str = ""
     if req.include_context:
+        # Each source is fetched independently — a single failure won't kill the entire context
         try:
-            # E-Mails: IMAP wenn vorhanden, sonst EWS
             if "imap_config" in session:
-                mails = fetch_emails_imap(session["imap_config"], max_count=10, unread_only=True)
+                mails: list = fetch_emails_imap(session["imap_config"], max_count=10, unread_only=True)
             else:
-                mails = fetch_emails(session["account"], max_count=10, unread_only=True)
-                if mails and "_skipped" in mails[-1]:
-                    mails = mails[:-1]
-            # Google Calendar (immer) + EWS-Aufgaben (nur wenn EWS vorhanden)
-            try:
-                cal: list = fetch_google_calendar(days_ahead=7)
-            except Exception:
-                cal = []
+                account_for_mail = session.get("account")
+                raw = fetch_emails(account_for_mail, max_count=10, unread_only=True) if account_for_mail else []
+                mails = [m for m in raw if "_skipped" not in m]
+        except Exception as exc:
+            import logging; logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
+            mails = []
+        try:
+            cal: list = fetch_google_calendar(days_ahead=7)
+        except Exception as exc:
+            import logging; logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
+            cal = []
+        try:
             account = session.get("account")
-            tasks: list = fetch_tasks(account, max_count=20) if account else []
-            context_str = _build_context(mails, cal, tasks)
-        except Exception:
-            context_str = ""
+            tasks: list = fetch_tasks(account, max_count=50) if account else []
+        except Exception as exc:
+            import logging; logging.warning(f"[Chat-Ctx] Aufgaben fehlgeschlagen: {exc}")
+            tasks = []
+        context_str = _build_context(mails, cal, tasks)
+        import logging; logging.warning(f"[Chat-Ctx] Kontext: {len(mails)} Mails, {len(cal)} Kalender, {len(tasks)} Aufgaben")
 
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 
@@ -531,6 +634,134 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Graph / Knowledge-Map ──────────────────────────────────────────────────────
+class GraphRequest(BaseModel):
+    subject: str
+    text: str  # content to analyze (mail body, event description, task body)
+
+
+@app.post("/api/graph")
+def get_graph(req: GraphRequest, session_id: str | None = Cookie(default=None)):
+    """Extracts a knowledge graph (nodes + edges) from text using Claude."""
+    _get_session(session_id)
+    import re, json as _json
+
+    prompt = f"""Analysiere den folgenden Text und erstelle einen strukturierten Wissensgraphen.
+
+Antworte NUR mit einem validen JSON-Objekt (keine Erklärungen, kein Markdown), exakt diese Struktur:
+{{
+  "nodes": [
+    {{"id": "center", "label": "<Hauptthema max. 4 Wörter>", "type": "center"}},
+    {{"id": "n1", "label": "<Label max. 3 Wörter>", "type": "<typ>"}}
+  ],
+  "edges": [
+    {{"source": "center", "target": "n1", "label": "<Beziehung 1-2 Wörter>"}}
+  ]
+}}
+
+Erlaubte Typen: person, thema, datum, ort, aktion, organisation
+Maximal 10 Knoten (inkl. center). Labels kurz. Nur die wichtigsten Entitäten.
+
+Thema: {req.subject}
+Text:
+{req.text[:3000]}"""
+
+    response = anthropic_client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = response.content[0].text.strip()
+    # Extract JSON — handle potential markdown code fences
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if match:
+        try:
+            return _json.loads(match.group())
+        except Exception:
+            pass
+    # Fallback: minimal graph
+    return {
+        "nodes": [{"id": "center", "label": req.subject[:30], "type": "center"}],
+        "edges": [],
+    }
+
+
+# ── DB HAFAS Train Planner (via pyHafas + NVV profile) ──────────────────────
+
+from pyhafas import HafasClient
+from pyhafas.profile import NVVProfile
+from pyhafas.types.fptf import Station as HafasStation
+from datetime import timezone as _tz
+
+_hafas = HafasClient(NVVProfile())
+
+
+@app.get("/api/trains/stations")
+def train_stations(q: str, session_id: str | None = Cookie(default=None)):
+    """Bahnhofsuche via DB HAFAS (NVV-Profil)."""
+    _get_session(session_id)
+    try:
+        stations = _hafas.locations(q)
+    except Exception as e:
+        raise HTTPException(502, detail=f"HAFAS nicht erreichbar: {e}")
+    return {"stations": [
+        {"id": s.id, "name": s.name}
+        for s in stations[:7]
+        if s.id and s.name
+    ]}
+
+
+@app.get("/api/trains/journeys")
+def train_journeys(
+    from_id: str,
+    to_id: str,
+    when: str = "",
+    results: int = 5,
+    session_id: str | None = Cookie(default=None),
+):
+    """Verbindungssuche via DB HAFAS (NVV-Profil)."""
+    _get_session(session_id)
+    origin = HafasStation(id=from_id, name="")
+    destination = HafasStation(id=to_id, name="")
+    dep_dt = None
+    if when:
+        from datetime import datetime as _dt
+        dep_dt = _dt.fromisoformat(when).replace(tzinfo=_tz.utc)
+    try:
+        raw = _hafas.journeys(
+            origin=origin,
+            destination=destination,
+            date=dep_dt,
+            max_journeys=results,
+            max_changes=-1,
+        )
+    except Exception as e:
+        raise HTTPException(502, detail=f"HAFAS nicht erreichbar: {e}")
+
+    journeys = []
+    for j in raw:
+        if not j.legs:
+            continue
+        first, last = j.legs[0], j.legs[-1]
+        dep = first.departure.isoformat() if first.departure else None
+        arr = last.arrival.isoformat() if last.arrival else None
+        delay_dep = (first.departureDelay or 0)
+        delay_arr = (last.arrivalDelay or 0)
+        real_legs = [lg for lg in j.legs if not getattr(lg, "walking", False)]
+        changes = max(len(real_legs) - 1, 0)
+        products = [lg.name for lg in real_legs if lg.name]
+        journeys.append({
+            "departure": dep,
+            "arrival": arr,
+            "delay_dep": int(delay_dep.total_seconds() // 60) if hasattr(delay_dep, "total_seconds") else int((delay_dep or 0) // 60),
+            "delay_arr": int(delay_arr.total_seconds() // 60) if hasattr(delay_arr, "total_seconds") else int((delay_arr or 0) // 60),
+            "changes": changes,
+            "products": products,
+            "price": None,
+        })
+    return {"journeys": journeys}
 
 
 # Frontend statisch servieren (React build → static/)
