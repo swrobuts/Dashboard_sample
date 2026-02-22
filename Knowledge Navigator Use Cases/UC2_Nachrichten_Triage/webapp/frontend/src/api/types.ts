@@ -27,6 +27,7 @@ export interface TriagedMail {
   // ui
   id: string
   triageStatus: 'pending' | 'done' | 'error'
+  mail_uid?: string   // IMAP UID for deletion
 }
 
 export interface CalendarItem {

@@ -22,6 +22,7 @@ interface AppState {
   updateMail: (id: string, patch: Partial<TriagedMail>) => void
   removeMail: (id: string) => void
   setCalendar: (c: CalendarItem[]) => void
+  removeCalendarItem: (id: string) => void
   setTasks: (t: Task[]) => void
   removeTask: (id: string) => void
 
@@ -65,6 +66,7 @@ export const useStore = create<AppState>((set) => ({
     set((s) => ({ mails: s.mails.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
   removeMail: (id) => set((s) => ({ mails: s.mails.filter((m) => m.id !== id) })),
   setCalendar: (calendar) => set({ calendar }),
+  removeCalendarItem: (id) => set((s) => ({ calendar: s.calendar.filter((c) => c.id !== id) })),
   setTasks: (tasks) => set({ tasks }),
   removeTask: (id) => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
 

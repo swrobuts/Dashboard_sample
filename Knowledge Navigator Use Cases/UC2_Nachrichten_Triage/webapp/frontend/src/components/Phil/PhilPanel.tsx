@@ -122,9 +122,11 @@ export function PhilPanel({ open, onClose }: Props) {
     ? `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(linkedinName)}`
     : null
 
-  // Train quick action — calendar events with a location
+  // Train quick action — calendar events with a physical location (no URLs)
   const trainLocation: string | null =
-    selection?.type === 'calendar' && selection.item.location ? selection.item.location : null
+    selection?.type === 'calendar' && selection.item.location &&
+    !selection.item.location.match(/^https?:\/\//i)
+      ? selection.item.location : null
 
   // Calendar thread action
   const calendarPerson: string | null =

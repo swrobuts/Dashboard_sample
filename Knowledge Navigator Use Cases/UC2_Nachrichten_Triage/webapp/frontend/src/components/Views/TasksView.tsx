@@ -61,7 +61,6 @@ export function TasksView() {
   }
 
   async function handleDelete(task: Task) {
-    if (!confirm(`Aufgabe "${task.subject}" wirklich löschen?`)) return
     setDeleting(task.id)
     try {
       await api.deleteTask(task.id, task.changekey)

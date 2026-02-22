@@ -62,17 +62,18 @@
 .info      { color: var(--info-text); }
 .ignorieren { color: var(--ignorieren-text); }
 
-/* ── Two-column layout — fills remaining height ───────────────────────────── */
+/* ── Two-column layout — bounded height, does not fill entire remaining space */
 .twoCol {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 300px;
+  max-height: min(490px, calc(100vh - 270px));
   align-items: stretch;
   padding-bottom: 1.25rem;
 }
-@media (max-width: 900px) { .twoCol { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .twoCol { grid-template-columns: 1fr; max-height: none; } }
 
 /* Sections inside twoCol fill their grid cell as flex columns */
 .twoCol > .section {
@@ -84,12 +85,13 @@
 
 /* ── Day Schedule ─────────────────────────────────────────────────────────── */
 .schedEmpty {
-  flex: 1;
+  flex: 0 0 auto;   /* no longer fills all remaining space */
   display: flex; align-items: center; justify-content: center;
   color: #9CA3AF; font-size: var(--text-sm);
   background: var(--card-bg); border: 1px solid var(--card-border);
   border-radius: var(--radius-lg); box-shadow: var(--card-shadow);
-  padding: 1.5rem; text-align: center; min-height: 0;
+  padding: 1.5rem; text-align: center;
+  min-height: 80px; max-height: 120px;
 }
 
 .sched {
@@ -230,7 +232,6 @@
 
 .taskList {
   flex: 1; min-height: 0; overflow-y: auto;
-  max-height: 220px;
   display: flex; flex-direction: column; gap: 4px;
   background: var(--card-bg); border: 1px solid var(--card-border);
   border-radius: var(--radius-lg); box-shadow: var(--card-shadow);
