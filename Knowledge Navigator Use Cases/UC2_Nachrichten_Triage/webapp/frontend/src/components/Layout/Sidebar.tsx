@@ -79,6 +79,15 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
   // Tasks: ALL open tasks (not day-filtered — tasks without due date should count too)
   const openTaskCount = tasks.filter((t) => t.status !== 'Completed').length
 
+  // Dark mode toggle
+  const [isDark, setIsDark] = useState(() => {
+    return typeof window !== 'undefined' && localStorage.getItem('phil-theme') === 'dark'
+  })
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
+    localStorage.setItem('phil-theme', isDark ? 'dark' : 'light')
+  }, [isDark])
+
   // Login duration (minutes since component mount = login time)
   const [loginAt] = useState(() => Date.now())
   const [, setTick] = useState(0)
@@ -149,6 +158,13 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
             </span>
           )}
         </div>
+        <button
+          className={styles.themeBtn}
+          onClick={() => setIsDark((d) => !d)}
+          title={isDark ? 'Heller Modus' : 'Dunkler Modus'}
+        >
+          {isDark ? '☀' : '☾'}
+        </button>
         <button className={styles.logoutBtn} onClick={handleLogout} title="Abmelden">⏻</button>
       </div>
     </nav>

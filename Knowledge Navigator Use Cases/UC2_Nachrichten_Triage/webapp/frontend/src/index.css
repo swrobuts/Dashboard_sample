@@ -1,7 +1,7 @@
 /* Vite default reset — replaced by our tokens + reset */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-family: var(--font); font-size: 16px; -webkit-font-smoothing: antialiased; height: 100%; overflow: hidden; }
-body { background: var(--content-bg); color: #0F0F0F; height: 100%; overflow: hidden; }
+body { background: var(--content-bg); color: var(--text-primary); height: 100%; overflow: hidden; }
 #root { height: 100%; overflow: hidden; }
 button { cursor: pointer; border: none; background: none; font: inherit; }
 input, textarea, select { font: inherit; outline: none; }

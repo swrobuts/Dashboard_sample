@@ -153,10 +153,10 @@
 
 .doneBtn {
   padding: .3rem .65rem; border-radius: var(--radius-sm); font-size: .85rem;
-  border: 1.5px solid #10B981; color: #10B981; background: none;
+  border: 1.5px solid var(--success); color: var(--success); background: none;
   cursor: pointer; transition: all .12s; font-weight: 700;
 }
-.doneBtn:hover { background: #D1FAE5; }
+.doneBtn:hover { background: var(--success-bg); }
 .doneBtn:disabled { opacity: .5; cursor: not-allowed; }
 
 .deleteBtn {

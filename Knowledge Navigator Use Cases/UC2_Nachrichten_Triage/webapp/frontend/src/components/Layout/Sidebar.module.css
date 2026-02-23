@@ -186,6 +186,28 @@
   border-color: var(--amber);
 }
 
+/* ── Theme toggle ────────────────────────────────────────────────────────── */
+.themeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.themeBtn:hover {
+  background: var(--surface-chip);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
 /* ── Mini mode ───────────────────────────────────────────────────────────── */
 .mini .brandTitle,
 .mini .brandSub,

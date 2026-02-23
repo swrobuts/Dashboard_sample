@@ -107,4 +107,110 @@
 
   /* ── Motion ─────────────────────────────────────────────────────────────── */
   --transition: 150ms cubic-bezier(.4, 0, .2, 1);
+
+  /* ── Surface variants ───────────────────────────────────────────────────── */
+  --surface-chip:  #F3F4F6;   /* filter chips, count badges, table headers */
+  --surface-hover: #F9FAFB;   /* subtle row/item hover */
+
+  /* ── Accent — Purple (knowledge graph, memory) ──────────────────────────── */
+  --purple-bg:      #F5F3FF;
+  --purple-border:  #7C3AED;
+  --purple-text:    #7C3AED;
+  --purple-text-dk: #5B21B6;
+
+  /* ── Success tint surfaces ──────────────────────────────────────────────── */
+  --success-bg:      #ECFDF5;
+  --success-text-dk: #065F46;
+  --success-fg:      #059669;
+
+  /* ── Error tint surfaces ────────────────────────────────────────────────── */
+  --error-bg: #FEF2F2;
+}
+
+/* ── Dark theme overrides ─────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  /* Brand */
+  --amber:       #4A90D9;
+  --amber-dark:  #6AABFF;
+  --amber-light: rgba(74,144,217,.15);
+
+  /* Backgrounds */
+  --content-bg:     #0F1117;
+  --content-border: #252836;
+
+  /* Cards & Surfaces */
+  --card-bg:           #1A1D27;
+  --card-border:       #252836;
+  --card-shadow:       0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.25);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.45), 0 2px 4px rgba(0,0,0,.3);
+
+  /* Sidebar */
+  --sidebar-bg:          #141620;
+  --sidebar-border:      #252836;
+  --sidebar-text:        #9CA3AF;
+  --sidebar-text-active: #C8D8F4;
+  --sidebar-hover:       #1F2235;
+  --sidebar-active:      rgba(74,144,217,.18);
+  --sidebar-accent:      #4A90D9;
+
+  /* Phil Panel */
+  --phil-bg:     #141620;
+  --phil-border: #252836;
+
+  /* Category — VIP */
+  --vip-bg:    rgba(220,38,38,.18);
+  --vip-text:  #FCA5A5;
+  --vip-badge: #F87171;
+
+  /* Category — Aktion */
+  --aktion-bg:    rgba(217,119,6,.18);
+  --aktion-text:  #FCD34D;
+  --aktion-badge: #F59E0B;
+
+  /* Category — Info */
+  --info-bg:    rgba(74,144,217,.18);
+  --info-text:  #93C5FD;
+  --info-badge: #60A5FA;
+
+  /* Category — Ignorieren */
+  --ignorieren-bg:    rgba(100,116,139,.18);
+  --ignorieren-text:  #94A3B8;
+  --ignorieren-badge: #64748B;
+
+  /* Text */
+  --text-primary:   #E2E8F0;
+  --text-secondary: #9CA3AF;
+  --text-tertiary:  #6B7280;
+
+  /* Semantic */
+  --success:  #34D399;
+  --error:    #F87171;
+  --warning:  #FBBF24;
+
+  /* Borders */
+  --border:       #252836;
+  --border-light: #1F2235;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.35);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
+
+  /* Surface variants */
+  --surface-chip:  #1F2235;
+  --surface-hover: #141620;
+
+  /* Purple accent */
+  --purple-bg:      rgba(167,139,250,.15);
+  --purple-border:  #A78BFA;
+  --purple-text:    #A78BFA;
+  --purple-text-dk: #C4B5FD;
+
+  /* Success tint */
+  --success-bg:      rgba(52,211,153,.15);
+  --success-text-dk: #6EE7B7;
+  --success-fg:      #34D399;
+
+  /* Error tint */
+  --error-bg: rgba(248,113,113,.15);
 }
