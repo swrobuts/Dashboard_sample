@@ -1,5 +1,6 @@
 # tests/test_memory_store.py
 import sqlite3
+import threading
 import pytest
 from backend.memory_store import MemoryStore
 
@@ -9,7 +10,8 @@ def store(tmp_path):
     """SQLite-only store — ChromaDB skipped for unit tests."""
     s = MemoryStore.__new__(MemoryStore)
     s._db_path = str(tmp_path / "memory.db")
-    s._conn = sqlite3.connect(s._db_path, check_same_thread=False)
+    s._lock = threading.Lock()
+    s._conn = sqlite3.connect(s._db_path, check_same_thread=False, isolation_level=None)
     s._conn.execute("PRAGMA journal_mode=WAL")
     s._conn.execute("""
         CREATE TABLE IF NOT EXISTS facts (
@@ -26,7 +28,6 @@ def store(tmp_path):
             correction_note TEXT
         )
     """)
-    s._conn.commit()
     s._chroma_collection = None
     return s
 

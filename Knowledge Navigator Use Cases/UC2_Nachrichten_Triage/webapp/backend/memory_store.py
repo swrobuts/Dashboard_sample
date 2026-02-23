@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,7 +43,9 @@ class MemoryStore:
     ):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.Lock()
+        # isolation_level=None → autocommit; avoids Python 3.12 "no transaction active" errors
+        self._conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS facts (
@@ -93,15 +96,15 @@ class MemoryStore:
         # ON CONFLICT preserves confidence and vote counts intentionally:
         # earned RLHF feedback must not be overwritten by re-ingestion.
         # source is also preserved to keep original provenance.
-        self._conn.execute("""
-            INSERT INTO facts (id, text, category, source, source_ref, confidence, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                text=excluded.text,
-                category=excluded.category,
-                source_ref=excluded.source_ref
-        """, (fact_id, text, category, source, source_ref, base, now))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("""
+                INSERT INTO facts (id, text, category, source, source_ref, confidence, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    text=excluded.text,
+                    category=excluded.category,
+                    source_ref=excluded.source_ref
+            """, (fact_id, text, category, source, source_ref, base, now))
         if self._chroma_collection is not None:
             try:
                 self._chroma_collection.upsert(
@@ -117,17 +120,17 @@ class MemoryStore:
         if col is None:
             raise ValueError(f"Ungültiger rating-Wert: {rating!r}. Erlaubt: 'up', 'down'")
         delta = _CONFIDENCE_UP if rating == "up" else -_CONFIDENCE_DOWN
-        self._conn.execute(f"""
-            UPDATE facts
-            SET {col} = {col} + 1,
-                confidence = MAX({_CONFIDENCE_MIN}, MIN({_CONFIDENCE_MAX}, confidence + ?))
-            WHERE id = ?
-        """, (delta, fact_id))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(f"""
+                UPDATE facts
+                SET {col} = {col} + 1,
+                    confidence = MAX({_CONFIDENCE_MIN}, MIN({_CONFIDENCE_MAX}, confidence + ?))
+                WHERE id = ?
+            """, (delta, fact_id))
 
     def delete_fact(self, fact_id: str) -> None:
-        self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
         if self._chroma_collection is not None:
             try:
                 self._chroma_collection.delete(ids=[fact_id])
@@ -143,14 +146,14 @@ class MemoryStore:
         if text is None and correction_note is None:
             return
         now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute("""
-            UPDATE facts
-            SET text = COALESCE(?, text),
-                correction_note = COALESCE(?, correction_note),
-                corrected_at = ?
-            WHERE id = ?
-        """, (text, correction_note, now, fact_id))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("""
+                UPDATE facts
+                SET text = COALESCE(?, text),
+                    correction_note = COALESCE(?, correction_note),
+                    corrected_at = ?
+                WHERE id = ?
+            """, (text, correction_note, now, fact_id))
         if self._conn.execute("SELECT changes()").fetchone()[0] == 0:
             logging.warning(f"[Memory] update_fact: Fakt nicht gefunden: {fact_id}")
             return
