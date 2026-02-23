@@ -932,11 +932,17 @@ def _extract_and_store_facts(user_msg: str, phil_response: str, message_id: str)
 
 
 _CAL_STOP_WORDS = {
+    # Articles, pronouns, prepositions
     "was", "ist", "hat", "der", "die", "das", "und", "mit", "von", "für",
     "mir", "mich", "mein", "meine", "alle", "wann", "welche", "welcher",
     "gibt", "haben", "hatte", "gab", "nächste", "nächsten", "letzten",
     "du", "ich", "wir", "sie", "zu", "bei", "seit", "bis", "über", "mal",
-    "bitte", "zeig", "zeige", "such", "suche", "finde", "alle", "jeden",
+    "bitte", "zeig", "zeige", "such", "suche", "finde", "jeden", "auch",
+    "oder", "aber", "wenn", "dann", "noch", "schon", "doch", "nur",
+    # Generic nouns / verbs that appear in queries but not in event titles
+    "liste", "termin", "termine", "aufgabe", "aufgaben", "kalender",
+    "heute", "morgen", "gestern", "uhrzeit", "datum", "monat", "jahr",
+    "arbeiten", "akribisch", "genau", "komplett", "vollständig",
 }
 
 
@@ -950,11 +956,15 @@ def _cal_format(c: dict) -> str:
 
 
 def _calendar_keywords(query: str) -> set[str]:
-    """Extract meaningful search keywords from a user query."""
+    """Extract meaningful entity keywords (names, places, topics) from a user query.
+
+    Uses minimum length 5 to avoid matching common short German function words
+    that appear in event descriptions and would cause too many false positives.
+    """
     return {
-        w.lower().strip("?!.,;:-_\"'")
+        w.lower().strip("?!.,;:-_\"'()")
         for w in query.split()
-        if len(w) >= 3 and w.lower().strip("?!.,;:-_\"'") not in _CAL_STOP_WORDS
+        if len(w) >= 5 and w.lower().strip("?!.,;:-_\"'()") not in _CAL_STOP_WORDS
     }
 
 
@@ -967,30 +977,37 @@ def _build_context(mails: list, cal_items: list, tasks: list, cal_query: str = "
     else:
         lines.append("\nUngelesene E-Mails: keine")
 
-    # Split calendar into upcoming and past
     today = datetime.now(timezone.utc).date().isoformat()
-    upcoming = [c for c in cal_items if (c.get("start") or "")[:10] >= today]
-    past     = [c for c in cal_items if (c.get("start") or "")[:10] <  today]
 
-    if upcoming:
-        lines.append(f"\nKalender — nächste 14 Tage ({len(upcoming)} Einträge):")
-        for c in upcoming:
+    # If the query contains specific keywords, prepend a dedicated search-result block
+    # that lists ALL matching events (past + future) from the full date range.
+    # This prevents the LLM from hallucinating or mixing memory with calendar data.
+    if cal_query:
+        kws = _calendar_keywords(cal_query)
+        matched_all = [
+            c for c in cal_items
+            if any(kw in f"{c.get('subject', '')} {c.get('location', '')} {c.get('body', '')}".lower()
+                   for kw in kws)
+        ]
+        if matched_all:
+            lines.append(
+                f"\n=== KALENDERSUCHE: VOLLSTÄNDIGE TREFFERLISTE ==="
+                f"\n(Abfrage: \"{cal_query[:80]}\" | {len(matched_all)} Treffer aus {len(cal_items)} Einträgen"
+                f" — dies ist die autoritative Quelle; zähle NUR diese Einträge)"
+            )
+            for c in matched_all:
+                lines.append(_cal_format(c))
+            lines.append("=== ENDE KALENDERSUCHE ===")
+
+    # Regular upcoming calendar — limit to next 14 days to keep context lean
+    cutoff_14 = (datetime.now(timezone.utc).date() + timedelta(days=14)).isoformat()
+    upcoming_14 = [c for c in cal_items if today <= (c.get("start") or "")[:10] <= cutoff_14]
+    if upcoming_14:
+        lines.append(f"\nKalender — nächste 14 Tage ({len(upcoming_14)} Einträge):")
+        for c in upcoming_14:
             lines.append(_cal_format(c))
     else:
         lines.append("\nKalender: keine Einträge in den nächsten 14 Tagen")
-
-    # Past events: only show those matching keywords from the user message
-    if past and cal_query:
-        kws = _calendar_keywords(cal_query)
-        matched = [
-            c for c in past
-            if any(kw in f"{c.get('subject','')} {c.get('location','')} {c.get('body','')}".lower()
-                   for kw in kws)
-        ]
-        if matched:
-            lines.append(f"\nVergangene Kalendereinträge passend zur Anfrage ({len(matched)}):")
-            for c in matched:
-                lines.append(_cal_format(c))
 
     if tasks:
         lines.append(f"\nOffene Aufgaben ({len(tasks)}):")
@@ -1022,7 +1039,7 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
             logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
             mails = []
         try:
-            cal: list = fetch_google_calendar(days_ahead=30, days_behind=90)
+            cal: list = fetch_google_calendar(days_ahead=365, days_behind=180)
         except Exception as exc:
             logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
             cal = []
@@ -1342,7 +1359,8 @@ Text:
 from pyhafas import HafasClient
 from pyhafas.profile import NVVProfile
 from pyhafas.types.fptf import Station as HafasStation
-from datetime import timezone as _tz
+from datetime import datetime, timedelta, timezone
+_tz = timezone  # backwards-compat alias used in train helpers
 
 _hafas = HafasClient(NVVProfile())
 

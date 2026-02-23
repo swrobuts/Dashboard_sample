@@ -132,11 +132,16 @@ class LocalLLMClient:
             "messages": messages,
             "temperature": 0.1,  # niedrig für konsistente Klassifikation
         }
-        # JSON-Mode für strukturierte Ausgaben
+        # JSON-Mode für strukturierte Ausgaben (nicht alle Modelle unterstützen das)
         if task in _JSON_TASKS:
             kwargs["response_format"] = {"type": "json_object"}
 
-        response = self._client.chat.completions.create(**kwargs)
+        try:
+            response = self._client.chat.completions.create(**kwargs)
+        except openai.BadRequestError:
+            # Modell unterstützt response_format nicht → ohne JSON-Mode wiederholen
+            kwargs.pop("response_format", None)
+            response = self._client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""
 
     def stream(
@@ -221,7 +226,7 @@ class HybridLLMClient:
         client = self._pick(task)
         try:
             return client.create(task=task, prompt=prompt, max_tokens=max_tokens, system=system)
-        except (openai.APIConnectionError, ConnectionError) as exc:
+        except (openai.APIConnectionError, openai.APITimeoutError, ConnectionError) as exc:
             if client is self._local:
                 return self._fallback_cloud(task, exc).create(
                     task=task, prompt=prompt, max_tokens=max_tokens, system=system
@@ -238,7 +243,7 @@ class HybridLLMClient:
         client = self._pick(task)
         try:
             yield from client.stream(task=task, prompt=prompt, max_tokens=max_tokens, system=system)
-        except (openai.APIConnectionError, ConnectionError) as exc:
+        except (openai.APIConnectionError, openai.APITimeoutError, ConnectionError) as exc:
             if client is self._local:
                 yield from self._fallback_cloud(task, exc).stream(
                     task=task, prompt=prompt, max_tokens=max_tokens, system=system

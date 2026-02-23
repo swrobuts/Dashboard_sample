@@ -602,16 +602,20 @@ def _gog_env() -> dict:
     return env
 
 
-def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
-    """Liest Google Kalender via gog CLI (±6 Monate)."""
+def fetch_google_calendar(days_ahead: int = 180, days_behind: int = 180) -> list[dict]:
+    """Liest Google Kalender via gog CLI.
+
+    days_ahead:  wie viele Tage in die Zukunft (Default 180 = 6 Monate)
+    days_behind: wie viele Tage in die Vergangenheit (Default 180 = 6 Monate)
+    """
     account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
     gog = _gog_binary()
 
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     # gog erwartet RFC3339 mit Timezone-Offset
-    from_dt = (now - timedelta(days=180)).strftime("%Y-%m-%dT00:00:00Z")
-    to_dt   = (now + timedelta(days=180)).strftime("%Y-%m-%dT23:59:59Z")
+    from_dt = (now - timedelta(days=days_behind)).strftime("%Y-%m-%dT00:00:00Z")
+    to_dt   = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%dT23:59:59Z")
 
     result = subprocess.run(
         [
@@ -646,7 +650,7 @@ def fetch_google_calendar(days_ahead: int = 180) -> list[dict]:
             "start": start_obj.get("dateTime") or start_obj.get("date"),
             "end": end_obj.get("dateTime") or end_obj.get("date"),
             "location": e.get("location", ""),
-            "body": "",
+            "body": e.get("description", ""),
             "is_recurring": bool(e.get("recurringEventId")),
         })
     items.sort(key=lambda x: x["start"] or "")
