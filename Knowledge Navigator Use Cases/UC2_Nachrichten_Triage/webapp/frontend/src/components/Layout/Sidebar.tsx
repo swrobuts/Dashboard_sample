@@ -46,12 +46,22 @@ const IconTrain = () => (
   </svg>
 );
 
+const IconMemory = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="8" cy="8" r="6"/>
+    <path d="M5 8c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
+    <circle cx="6.5" cy="9.5" r="1"/>
+    <circle cx="9.5" cy="9.5" r="1"/>
+  </svg>
+)
+
 const NAV_ITEMS: Array<{ view: View; label: string; icon: React.ReactNode }> = [
-  { view: 'dashboard', label: 'Dashboard', icon: <IconDashboard /> },
-  { view: 'mails',     label: 'Mails',     icon: <IconMail /> },
-  { view: 'calendar',  label: 'Kalender',  icon: <IconCalendar /> },
-  { view: 'tasks',     label: 'Aufgaben',  icon: <IconTasks /> },
-  { view: 'trains',    label: 'Züge',      icon: <IconTrain /> },
+  { view: 'dashboard', label: 'Dashboard',  icon: <IconDashboard /> },
+  { view: 'mails',     label: 'Mails',      icon: <IconMail /> },
+  { view: 'calendar',  label: 'Kalender',   icon: <IconCalendar /> },
+  { view: 'tasks',     label: 'Aufgaben',   icon: <IconTasks /> },
+  { view: 'trains',    label: 'Züge',       icon: <IconTrain /> },
+  { view: 'memory',    label: 'Gedächtnis', icon: <IconMemory /> },
 ]
 
 interface Props {
@@ -60,7 +70,7 @@ interface Props {
 }
 
 export function Sidebar({ collapsed, onCollapse }: Props) {
-  const { view, setView, user, logout, mails, tasks, calendar, dashDateStr } = useStore()
+  const { view, setView, user, logout, mails, tasks, calendar, dashDateStr, memoryCount } = useStore()
 
   // Badge counts
   const unread = mails.filter((m) => !m.is_read).length
@@ -121,6 +131,9 @@ export function Sidebar({ collapsed, onCollapse }: Props) {
             )}
             {item.view === 'calendar' && (
               <span className={styles.badge}>{calDayCount}</span>
+            )}
+            {item.view === 'memory' && memoryCount > 0 && (
+              <span className={styles.badge}>{memoryCount}</span>
             )}
           </button>
         ))}

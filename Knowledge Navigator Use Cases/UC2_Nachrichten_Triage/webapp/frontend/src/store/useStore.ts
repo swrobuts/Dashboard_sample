@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { User, TriagedMail, CalendarItem, Task, Category } from '../api/types'
 
-export type View = 'dashboard' | 'mails' | 'calendar' | 'tasks' | 'trains'
+export type View = 'dashboard' | 'mails' | 'calendar' | 'tasks' | 'trains' | 'memory'
 export type Selection =
   | { type: 'mail'; item: TriagedMail }
   | { type: 'calendar'; item: CalendarItem }
@@ -41,6 +41,10 @@ interface AppState {
   setTrainPreset: (p: { to: string } | null) => void
   dashDateStr: string
   setDashDateStr: (s: string) => void
+
+  // Memory
+  memoryCount: number
+  setMemoryCount: (n: number) => void
 
   // Loading
   loadingMails: boolean
@@ -86,6 +90,9 @@ export const useStore = create<AppState>((set) => ({
   setTrainPreset: (trainPreset) => set({ trainPreset }),
   dashDateStr: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })(),
   setDashDateStr: (dashDateStr) => set({ dashDateStr }),
+
+  memoryCount: 0,
+  setMemoryCount: (memoryCount) => set({ memoryCount }),
 
   loadingMails: false,
   loadingCalendar: false,

@@ -411,7 +411,10 @@ export function PhilPanel({ open, onClose }: Props) {
         }
         return updated
       })
-      // Memory count badge refresh happens in Task 8 after store is wired
+      // Refresh memory count badge after each chat
+      api.memoryStats()
+        .then((s) => useStore.getState().setMemoryCount(s.total))
+        .catch(() => {})
     }
   }
 
