@@ -3,10 +3,10 @@ import { api } from '../../api/client'
 import type { User, LLMMode } from '../../api/types'
 import styles from './Login.module.css'
 
-const LLM_MODES: { value: LLMMode; icon: string; label: string; hint: string }[] = [
-  { value: 'cloud',  icon: '☁',  label: 'Cloud',  hint: 'Claude API (Anthropic)' },
-  { value: 'hybrid', icon: '⚡', label: 'Hybrid', hint: 'Triage lokal, Chat Cloud' },
-  { value: 'local',  icon: '💻', label: 'Lokal',  hint: 'LM Studio (localhost)' },
+const LLM_MODES: { value: LLMMode; label: string; hint: string }[] = [
+  { value: 'cloud',  label: 'Cloud',  hint: 'Claude API (Anthropic)' },
+  { value: 'hybrid', label: 'Hybrid', hint: 'Triage lokal, Chat Cloud' },
+  { value: 'local',  label: 'Lokal',  hint: 'LM Studio (localhost)' },
 ]
 
 interface Props { onLogin: (user: User) => void }
@@ -108,7 +108,6 @@ export function Login({ onLogin }: Props) {
                   onClick={() => setLlmMode(m.value)}
                   title={m.hint}
                 >
-                  <span className={styles.llmChipIcon}>{m.icon}</span>
                   {m.label}
                 </button>
               ))}
