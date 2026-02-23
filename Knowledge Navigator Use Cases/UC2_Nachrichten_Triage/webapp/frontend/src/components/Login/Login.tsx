@@ -3,8 +3,6 @@ import { api } from '../../api/client'
 import type { User, LLMMode } from '../../api/types'
 import styles from './Login.module.css'
 
-const INSTITUTIONS = ['THWS', 'DHBW']
-
 const LLM_MODES: { value: LLMMode; icon: string; label: string; hint: string }[] = [
   { value: 'cloud',  icon: '☁',  label: 'Cloud',  hint: 'Claude API (Anthropic)' },
   { value: 'hybrid', icon: '⚡', label: 'Hybrid', hint: 'Triage lokal, Chat Cloud' },
@@ -14,7 +12,7 @@ const LLM_MODES: { value: LLMMode; icon: string; label: string; hint: string }[]
 interface Props { onLogin: (user: User) => void }
 
 export function Login({ onLogin }: Props) {
-  const [institution, setInstitution] = useState(() => localStorage.getItem('phil_institution') ?? 'THWS')
+  const institution = 'THWS'
   const [username, setUsername] = useState(() => localStorage.getItem('phil_username') ?? '')
   const [password, setPassword] = useState('')
   const [exchangeEmail, setExchangeEmail] = useState(() => localStorage.getItem('phil_exchange_email') ?? '')
@@ -35,7 +33,6 @@ export function Login({ onLogin }: Props) {
         needsExchangeEmail && exchangeEmail ? exchangeEmail : undefined,
         llmMode
       )
-      localStorage.setItem('phil_institution', institution)
       localStorage.setItem('phil_username', username)
       localStorage.setItem('phil_llm_mode', llmMode)
       if (needsExchangeEmail && exchangeEmail) {
@@ -70,13 +67,6 @@ export function Login({ onLogin }: Props) {
         <p className={styles.subtitle}>Persönlicher Hochschul-Assistent</p>
 
         <form onSubmit={handleSubmit} className={styles.form} noValidate>
-          <select
-            className={styles.select}
-            value={institution}
-            onChange={(e) => setInstitution(e.target.value)}
-          >
-            {INSTITUTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
-          </select>
           <input
             className={styles.input}
             type="text"
