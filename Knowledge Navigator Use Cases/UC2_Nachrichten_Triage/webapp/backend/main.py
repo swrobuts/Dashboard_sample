@@ -931,7 +931,34 @@ def _extract_and_store_facts(user_msg: str, phil_response: str, message_id: str)
         logging.warning(f"[Memory] Fact-Extraction fehlgeschlagen: {exc}")
 
 
-def _build_context(mails: list, cal_items: list, tasks: list) -> str:
+_CAL_STOP_WORDS = {
+    "was", "ist", "hat", "der", "die", "das", "und", "mit", "von", "für",
+    "mir", "mich", "mein", "meine", "alle", "wann", "welche", "welcher",
+    "gibt", "haben", "hatte", "gab", "nächste", "nächsten", "letzten",
+    "du", "ich", "wir", "sie", "zu", "bei", "seit", "bis", "über", "mal",
+    "bitte", "zeig", "zeige", "such", "suche", "finde", "alle", "jeden",
+}
+
+
+def _cal_format(c: dict) -> str:
+    start = c.get("start") or ""
+    date = start[:10] if start else "?"
+    time = start[11:16] if len(start) > 10 else ""
+    loc = f" | Ort: {c['location']}" if c.get("location") else ""
+    body_hint = f" | {c['body'][:60]}…" if c.get("body") and len(c.get("body", "")) > 10 else ""
+    return f"  - {date} {time}: {c['subject']}{loc}{body_hint}"
+
+
+def _calendar_keywords(query: str) -> set[str]:
+    """Extract meaningful search keywords from a user query."""
+    return {
+        w.lower().strip("?!.,;:-_\"'")
+        for w in query.split()
+        if len(w) >= 3 and w.lower().strip("?!.,;:-_\"'") not in _CAL_STOP_WORDS
+    }
+
+
+def _build_context(mails: list, cal_items: list, tasks: list, cal_query: str = "") -> str:
     lines = ["=== AKTUELLE SITUATION ==="]
     if mails:
         lines.append(f"\nUngelesene E-Mails ({len(mails)}):")
@@ -939,16 +966,32 @@ def _build_context(mails: list, cal_items: list, tasks: list) -> str:
             lines.append(f"  - Von: {m.get('sender', '?')} | Betreff: {m.get('subject', '?')}")
     else:
         lines.append("\nUngelesene E-Mails: keine")
-    if cal_items:
-        lines.append(f"\nKalender (nächste 7 Tage, {len(cal_items)} Einträge):")
-        for c in cal_items:
-            start = c.get("start") or ""
-            date = start[:10] if start else "?"
-            time = start[11:16] if len(start) > 10 else ""
-            loc = f" | Ort: {c['location']}" if c.get("location") else ""
-            lines.append(f"  - {date} {time}: {c['subject']}{loc}")
+
+    # Split calendar into upcoming and past
+    today = datetime.now(timezone.utc).date().isoformat()
+    upcoming = [c for c in cal_items if (c.get("start") or "")[:10] >= today]
+    past     = [c for c in cal_items if (c.get("start") or "")[:10] <  today]
+
+    if upcoming:
+        lines.append(f"\nKalender — nächste 14 Tage ({len(upcoming)} Einträge):")
+        for c in upcoming:
+            lines.append(_cal_format(c))
     else:
-        lines.append("\nKalender: keine Einträge in den nächsten 7 Tagen")
+        lines.append("\nKalender: keine Einträge in den nächsten 14 Tagen")
+
+    # Past events: only show those matching keywords from the user message
+    if past and cal_query:
+        kws = _calendar_keywords(cal_query)
+        matched = [
+            c for c in past
+            if any(kw in f"{c.get('subject','')} {c.get('location','')} {c.get('body','')}".lower()
+                   for kw in kws)
+        ]
+        if matched:
+            lines.append(f"\nVergangene Kalendereinträge passend zur Anfrage ({len(matched)}):")
+            for c in matched:
+                lines.append(_cal_format(c))
+
     if tasks:
         lines.append(f"\nOffene Aufgaben ({len(tasks)}):")
         for t in tasks:
@@ -979,7 +1022,7 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
             logging.warning(f"[Chat-Ctx] Mails fehlgeschlagen: {exc}")
             mails = []
         try:
-            cal: list = fetch_google_calendar(days_ahead=14, days_behind=1)
+            cal: list = fetch_google_calendar(days_ahead=30, days_behind=90)
         except Exception as exc:
             logging.warning(f"[Chat-Ctx] Kalender fehlgeschlagen: {exc}")
             cal = []
@@ -989,7 +1032,7 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
         except Exception as exc:
             logging.warning(f"[Chat-Ctx] Aufgaben fehlgeschlagen: {exc}")
             tasks = []
-        context_str = _build_context(mails, cal, tasks)
+        context_str = _build_context(mails, cal, tasks, cal_query=req.message)
         logging.warning(f"[Chat-Ctx] Kontext: {len(mails)} Mails, {len(cal)} Kalender, {len(tasks)} Aufgaben")
 
         # RAG: enrich with semantically similar past mails
