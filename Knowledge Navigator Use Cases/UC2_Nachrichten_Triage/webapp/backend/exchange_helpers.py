@@ -77,7 +77,7 @@ from exchangelib import (
 INSTITUTIONS: dict[str, dict] = {
     "THWS": {
         "display": "THWS Würzburg-Schweinfurt",
-        "username_hint": "butscher  oder  robert.butscher@fhws.de",
+        "username_hint": "nutzername  oder  vorname.nachname@fhws.de",
         # IMAP — E-Mails
         "protocol": "imap+ews",
         "imap_host": "webmail.thws.de",
@@ -102,8 +102,8 @@ def connect_to_imap(username: str, password: str, host: str, port: int = 993) ->
     Testet IMAP-Credentials und gibt ein Konfigurations-Dict zurück.
 
     Probiert Login-Formate:
-        "butscher"          → zuerst butscher (plain), dann butscher@fhws.de
-        "butscher@fhws.de"  → direkt
+        "nutzername"              → zuerst plain, dann nutzername@fhws.de
+        "nutzername@fhws.de"      → direkt
 
     Returns:
         {"host", "port", "username", "password", "inbox_count"}
@@ -268,7 +268,7 @@ def connect_to_exchange_thws(
     Autodiscover ist deaktiviert — direkter Endpoint.
 
     exchange_email: Falls angegeben, wird diese Adresse als primary_smtp_address
-                    verwendet (z.B. "robert.butscher@fhws.de"). Sonst automatische
+                    verwendet (z.B. "vorname.nachname@fhws.de"). Sonst automatische
                     Ableitung aus dem Benutzernamen.
 
     Probiert 5 Username-Formate automatisch durch:
@@ -608,7 +608,7 @@ def fetch_google_calendar(days_ahead: int = 180, days_behind: int = 180) -> list
     days_ahead:  wie viele Tage in die Zukunft (Default 180 = 6 Monate)
     days_behind: wie viele Tage in die Vergangenheit (Default 180 = 6 Monate)
     """
-    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    account = os.getenv("GOG_ACCOUNT", "")
     gog = _gog_binary()
 
     from datetime import datetime, timedelta, timezone
@@ -659,7 +659,7 @@ def fetch_google_calendar(days_ahead: int = 180, days_behind: int = 180) -> list
 
 def delete_google_calendar_event(event_id: str) -> bool:
     """Löscht ein Google Kalender-Ereignis via gog CLI."""
-    account_email = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    account_email = os.getenv("GOG_ACCOUNT", "")
     gog = _gog_binary()
     result = subprocess.run(
         [gog, "calendar", "delete", account_email, event_id, "--force", "--no-input"],
@@ -680,7 +680,7 @@ def update_google_calendar_event(
     body: str = "",
 ) -> dict:
     """Aktualisiert einen Google Kalender-Termin via gog CLI."""
-    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    account = os.getenv("GOG_ACCOUNT", "")
     gog = _gog_binary()
 
     cmd = [
@@ -715,7 +715,7 @@ def create_google_calendar_event(
     body: str = "",
 ) -> dict:
     """Erstellt einen Google Kalender-Termin via gog CLI."""
-    account = os.getenv("GOG_ACCOUNT", "swrobuts@googlemail.com")
+    account = os.getenv("GOG_ACCOUNT", "")
     gog = _gog_binary()
 
     cmd = [
