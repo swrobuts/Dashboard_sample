@@ -569,3 +569,79 @@
 .gesprachMailSubject { font-size: var(--text-xs); color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gesprachMailSummary { font-size: .62rem; color: var(--text-tertiary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gesprachNoMails { font-size: var(--text-xs); color: var(--border); font-style: italic; }
+
+/* ── Sentiment Panel ─────────────────────────────────────────────────────── */
+.sentPanel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  padding: .65rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+
+/* Distribution bar */
+.sentBar {
+  display: flex;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.sentNeg { background: var(--error); }
+.sentNeu { background: var(--content-border); }
+.sentPos { background: var(--success); }
+
+/* Legend row */
+.sentLegend {
+  display: flex;
+  gap: .65rem;
+  font-size: .65rem;
+  font-weight: 600;
+  align-items: center;
+}
+.sentLegNeg { color: var(--error); }
+.sentLegNeu { color: var(--text-tertiary); }
+.sentLegPos { color: var(--success); }
+.sentTotal { margin-left: auto; color: var(--text-tertiary); font-weight: 400; }
+
+/* Sender rows */
+.sentSenders {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid var(--content-border);
+  padding-top: .4rem;
+}
+.sentSenderRow {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.sentSenderName {
+  font-size: .63rem;
+  color: var(--text-secondary);
+  width: 140px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sentSenderBar {
+  flex: 1;
+  height: 5px;
+  background: var(--content-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--content-border);
+}
+.sentSenderFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .3s;
+}
+.sentFillPos { background: var(--success); }
+.sentFillNeu { background: var(--text-tertiary); opacity: .4; }
+.sentFillNeg { background: var(--error); }
+.sentSenderEmoji { font-size: .78rem; flex-shrink: 0; }

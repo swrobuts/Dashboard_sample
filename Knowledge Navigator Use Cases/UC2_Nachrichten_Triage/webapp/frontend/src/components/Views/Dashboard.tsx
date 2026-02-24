@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
 import { api } from '../../api/client'
-import type { Category, Task, CalendarItem, KnowledgeResult } from '../../api/types'
+import type { Category, Task, CalendarItem, KnowledgeResult, TriagedMail } from '../../api/types'
 import styles from './Dashboard.module.css'
 
 const CATS: Array<{ cat: Category; label: string; colorClass: string }> = [
@@ -292,6 +292,73 @@ function EventContextPanel({
   )
 }
 
+// ── Sentiment Panel ────────────────────────────────────────────────────────────
+function SentimentPanel({ mails }: { mails: TriagedMail[] }) {
+  const scored = mails.filter(
+    (m) => m.triageStatus === 'done' && m.stimmung !== undefined && m.stimmung !== null
+  )
+  if (scored.length === 0) return null
+
+  const pos = scored.filter((m) => (m.stimmung ?? 0) > 0.2).length
+  const neg = scored.filter((m) => (m.stimmung ?? 0) < -0.2).length
+  const neu = scored.length - pos - neg
+
+  // Group by sender, compute average sentiment
+  const senderMap: Record<string, { sum: number; count: number; name: string }> = {}
+  for (const m of scored) {
+    const key = m.sender
+    const name = m.sender.replace(/\s*<[^>]+>/, '').trim() || m.sender
+    if (!senderMap[key]) senderMap[key] = { sum: 0, count: 0, name }
+    senderMap[key].sum += m.stimmung ?? 0
+    senderMap[key].count++
+  }
+  const senders = Object.values(senderMap)
+    .map((s) => ({ name: s.name, avg: s.sum / s.count }))
+    .sort((a, b) => a.avg - b.avg) // most negative first
+    .slice(0, 5)
+
+  return (
+    <section className={styles.section}>
+      <h2 className={styles.sectionTitle}>Stimmungsbarometer</h2>
+      <div className={styles.sentPanel}>
+        <div className={styles.sentBar}>
+          {neg > 0 && <div className={styles.sentNeg} style={{ flex: neg }} />}
+          {neu > 0 && <div className={styles.sentNeu} style={{ flex: neu }} />}
+          {pos > 0 && <div className={styles.sentPos} style={{ flex: pos }} />}
+        </div>
+        <div className={styles.sentLegend}>
+          <span className={styles.sentLegNeg}>↓ {neg} negativ</span>
+          <span className={styles.sentLegNeu}>{neu} neutral</span>
+          <span className={styles.sentLegPos}>↑ {pos} positiv</span>
+          <span className={styles.sentTotal}>{scored.length} analysiert</span>
+        </div>
+        {senders.length > 0 && (
+          <div className={styles.sentSenders}>
+            {senders.map((s) => {
+              const pct = Math.round(((s.avg + 1) / 2) * 100)
+              const emoji = s.avg > 0.2 ? '😊' : s.avg < -0.2 ? '😟' : '😐'
+              const fillClass = s.avg > 0.2
+                ? styles.sentFillPos
+                : s.avg < -0.2
+                  ? styles.sentFillNeg
+                  : styles.sentFillNeu
+              return (
+                <div key={s.name} className={styles.sentSenderRow}>
+                  <span className={styles.sentSenderName}>{s.name}</span>
+                  <div className={styles.sentSenderBar}>
+                    <div className={`${styles.sentSenderFill} ${fillClass}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className={styles.sentSenderEmoji}>{emoji}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function Dashboard() {
   const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter, removeTask, setDashDateStr } = useStore()
@@ -406,6 +473,9 @@ export function Dashboard() {
           ))}
         </div>
       </section>
+
+      {/* Sentiment Panel */}
+      <SentimentPanel mails={mails} />
 
       {/* Two-column: left (schedule + tasks stacked) + right (event context panel) */}
       <div className={styles.twoCol}>
