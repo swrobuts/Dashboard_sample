@@ -100,8 +100,33 @@ def test_get_states():
     print(f"✓ test_get_states passed: {states}")
 
 
+def test_projection_zero_rate():
+    """0% rate should keep baseline constant."""
+    from simulation import project_deforestation
+    years = list(range(2015, 2025))
+    areas = [1000.0] * 10
+    result = project_deforestation(years, areas, rate_pct=0.0, horizon=2030)
+    assert len(result) == 6, f"Expected 6 values, got {len(result)}"
+    assert abs(result[0] - 1000.0) < 1.0, f"0% should keep ~1000, got {result[0]}"
+    print(f"✓ test_projection_zero_rate passed")
+
+
+def test_projection_decline():
+    """Negative rate should produce declining values."""
+    from simulation import project_deforestation
+    years = list(range(2015, 2025))
+    areas = [1000.0] * 10
+    result = project_deforestation(years, areas, rate_pct=-10.0, horizon=2027)
+    assert len(result) == 3
+    assert result[0] < 1000.0, "Should decline from baseline"
+    assert result[1] < result[0], "Should decline each year"
+    print(f"✓ test_projection_decline passed: {result}")
+
+
 if __name__ == "__main__":
     test_load_deforestation_data_columns()
     test_get_years()
     test_get_states()
+    test_projection_zero_rate()
+    test_projection_decline()
     print("\n✅ All tests passed")

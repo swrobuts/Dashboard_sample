@@ -326,7 +326,245 @@ app.layout = html.Div(
 )
 
 
-# ── Callbacks added in Tasks 7, 8, 9, 10 ────────────────────────────────────
+# ── KPI Callback ─────────────────────────────────────────────────────────────
+@callback(
+    Output("kpi-year-val", "children"),
+    Output("kpi-year-sub", "children"),
+    Output("kpi-total-val", "children"),
+    Output("kpi-total-sub", "children"),
+    Output("kpi-worst-val", "children"),
+    Output("kpi-worst-sub", "children"),
+    Input("filter-year", "value"),
+    Input("filter-biome", "value"),
+    Input("filter-state", "value"),
+)
+def update_kpis(year, biome, state):
+    d = filter_df(year, biome, state)
+
+    # Gerodet aktuelles Jahr
+    area_year = d["area_km2"].sum()
+    prev_d = filter_df(year - 1, biome, state) if year > min(YEARS) else None
+    prev = prev_d["area_km2"].sum() if prev_d is not None else None
+    if prev and prev > 0:
+        pct = (area_year - prev) / prev * 100
+        delta = f"{'↓' if pct < 0 else '↑'} {abs(pct):.1f}% zum Vorjahr"
+    else:
+        delta = ""
+    kpi_year_val = f"{area_year:,.0f} km²"
+
+    # Kumuliert
+    d_all = df.copy()
+    if biome != "all":
+        d_all = d_all[d_all["biome_name"] == biome]
+    if state != "all":
+        d_all = d_all[d_all["state_name"] == state]
+    total = d_all[d_all["year"] <= year]["area_km2"].sum()
+    kpi_total_val = f"{total:,.0f} km²"
+    kpi_total_sub = f"≈ {total / 357_114:.1f}× Deutschland" if total > 0 else ""
+
+    # Schlimmster Staat
+    if state == "all" and len(d) > 0:
+        by_state = d.groupby("state_name")["area_km2"].sum()
+        worst = by_state.idxmax()
+        worst_val = by_state.max()
+        kpi_worst_val = worst
+        kpi_worst_sub = f"{worst_val:,.0f} km²"
+    elif state != "all":
+        kpi_worst_val = state
+        kpi_worst_sub = f"{area_year:,.0f} km²"
+    else:
+        kpi_worst_val = "—"
+        kpi_worst_sub = ""
+
+    return kpi_year_val, delta, kpi_total_val, kpi_total_sub, kpi_worst_val, kpi_worst_sub
+
+
+# ── Charts Callback ───────────────────────────────────────────────────────────
+@callback(
+    Output("chart-timeseries", "figure"),
+    Output("chart-topflop", "figure"),
+    Output("chart-topflop-sub", "children"),
+    Output("chart-biome", "figure"),
+    Output("chart-cumulative", "figure"),
+    Input("filter-year", "value"),
+    Input("filter-biome", "value"),
+    Input("filter-state", "value"),
+)
+def update_charts(year, biome, state):
+    d_all = df.copy()
+    if biome != "all":
+        d_all = d_all[d_all["biome_name"] == biome]
+    if state != "all":
+        d_all = d_all[d_all["state_name"] == state]
+
+    # Zeitreihe
+    ts = d_all.groupby("year")["area_km2"].sum().reset_index()
+    fig_ts = go.Figure(
+        go.Scatter(
+            x=ts["year"], y=ts["area_km2"],
+            mode="lines+markers",
+            line=dict(color=GREEN_MED, width=2),
+            marker=dict(size=5),
+            fill="tozeroy",
+            fillcolor="rgba(82,183,136,0.15)",
+            hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+        )
+    )
+    fig_ts.update_layout(**CHART_LAYOUT, yaxis_title="km²", xaxis_title="Jahr")
+
+    # Top 5 Staaten
+    d_year = filter_df(year, biome, state)
+    by_state = d_year.groupby("state_name")["area_km2"].sum().sort_values(ascending=False)
+    top5 = by_state.head(5)
+    fig_top = go.Figure(
+        go.Bar(
+            y=top5.index, x=top5.values,
+            orientation="h",
+            marker_color=RED_MED,
+            hovertemplate="%{y}: %{x:,.0f} km²<extra></extra>",
+        )
+    )
+    fig_top.update_layout(**CHART_LAYOUT, xaxis_title="km²")
+    topflop_sub = f"Meiste Entwaldung · {year}"
+
+    # Biom-Vergleich
+    biome_data = d_year.groupby("biome_name")["area_km2"].sum().sort_values(ascending=False)
+    fig_biome = go.Figure(
+        go.Bar(
+            x=biome_data.index, y=biome_data.values,
+            marker_color=GREEN_MED,
+            hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+        )
+    )
+    fig_biome.update_layout(**CHART_LAYOUT, yaxis_title="km²")
+
+    # Kumulativer Area-Chart
+    pivot = d_all.groupby(["year", "biome_name"])["area_km2"].sum().unstack(fill_value=0)
+    pivot_cumsum = pivot.cumsum()
+    palette = [GREEN_DARK, GREEN_MED, GREEN_LIGHT, "#74c69d", "#b7e4c7", "#d8f3dc"]
+    fig_cum = go.Figure()
+    for i, col in enumerate(pivot_cumsum.columns):
+        fig_cum.add_trace(
+            go.Scatter(
+                x=pivot_cumsum.index, y=pivot_cumsum[col],
+                name=col, mode="lines",
+                stackgroup="one",
+                line=dict(color=palette[i % len(palette)], width=0.5),
+                fillcolor=palette[i % len(palette)],
+                hovertemplate=f"{col}: %{{y:,.0f}} km²<extra></extra>",
+            )
+        )
+    cum_layout = {**CHART_LAYOUT, "showlegend": True,
+                  "yaxis_title": "km² (kumuliert)", "xaxis_title": "Jahr"}
+    fig_cum.update_layout(
+        **cum_layout,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+
+    return fig_ts, fig_top, topflop_sub, fig_biome, fig_cum
+
+
+# ── Map Callback ──────────────────────────────────────────────────────────────
+@callback(
+    Output("layer-raisg", "data"),
+    Input("toggle-raisg", "value"),
+)
+def toggle_raisg(value):
+    if value and "show" in value:
+        return RAISG_GEO
+    return {"type": "FeatureCollection", "features": []}
+
+
+# ── Simulation Callbacks ──────────────────────────────────────────────────────
+@callback(
+    Output("sim-rate", "value"),
+    Input("preset-trend", "n_clicks"),
+    Input("preset-paris", "n_clicks"),
+    Input("preset-zero", "n_clicks"),
+    prevent_initial_call=True,
+)
+def apply_preset(trend_clicks, paris_clicks, zero_clicks):
+    from dash import ctx
+    triggered = ctx.triggered_id
+    if triggered == "preset-paris":
+        return -10.0
+    if triggered == "preset-zero":
+        return -30.0
+    # Trend: mean rate of last 5 years
+    ts = df.groupby("year")["area_km2"].sum().sort_index()
+    if len(ts) >= 5:
+        recent = ts.iloc[-5:].values
+        rates = [
+            (recent[i + 1] - recent[i]) / recent[i] * 100
+            for i in range(len(recent) - 1)
+            if recent[i] > 0
+        ]
+        return round(float(np.mean(rates)), 1) if rates else 0.0
+    return 0.0
+
+
+@callback(
+    Output("chart-simulation", "figure"),
+    Output("sim-result-text", "children"),
+    Input("filter-biome", "value"),
+    Input("filter-state", "value"),
+    Input("sim-rate", "value"),
+    Input("sim-horizon", "value"),
+)
+def update_simulation(biome, state, rate_pct, horizon):
+    d = df.copy()
+    if biome != "all":
+        d = d[d["biome_name"] == biome]
+    if state != "all":
+        d = d[d["state_name"] == state]
+
+    ts = d.groupby("year")["area_km2"].sum().sort_index()
+    hist_years = ts.index.tolist()
+    hist_vals = ts.values.tolist()
+
+    proj_vals = project_deforestation(hist_years, hist_vals, rate_pct, horizon)
+    proj_years = list(range(max(hist_years) + 1, horizon + 1))
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=hist_years, y=hist_vals, name="Historisch",
+            line=dict(color=GREEN_MED, width=2),
+            hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+        )
+    )
+    if proj_vals:
+        fig.add_trace(
+            go.Scatter(
+                x=proj_years, y=proj_vals, name="Projektion",
+                line=dict(color=RED_MED, width=2, dash="dash"),
+                hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+            )
+        )
+        fig.add_vline(x=max(hist_years), line_dash="dot", line_color="#999", line_width=1)
+
+    sim_layout = {**CHART_LAYOUT, "showlegend": True}
+    fig.update_layout(
+        **sim_layout,
+        yaxis_title="km²/Jahr",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+
+    if proj_vals:
+        total_proj = sum(proj_vals)
+        total_hist = sum(hist_vals)
+        total_all = total_hist + total_proj
+        text = (
+            f"Bei {rate_pct:+.1f}%/Jahr: Verlust bis {horizon} = "
+            f"{total_proj:,.0f} km² (Projektion) · "
+            f"Gesamtverlust seit 2000 = {total_all:,.0f} km² "
+            f"(≈ {total_all / 357_114:.1f}× Deutschland)"
+        )
+    else:
+        text = "Keine Projektion verfügbar."
+
+    return fig, text
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8050)
