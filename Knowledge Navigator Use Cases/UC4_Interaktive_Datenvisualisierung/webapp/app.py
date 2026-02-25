@@ -9,15 +9,19 @@ import dash
 import dash_leaflet as dl
 import numpy as np
 import plotly.graph_objects as go
-from dash import Input, Output, callback, dcc, html
+from dash import Input, Output, callback, ctx, dcc, html
 
 from data_loader import (
+    SUPABASE_KEY,
     get_biomes,
     get_states,
     get_years,
     load_deforestation_data,
 )
 from simulation import cumulative_projection, project_deforestation
+
+if not SUPABASE_KEY:
+    raise EnvironmentError("SUPABASE_KEY environment variable is not set")
 
 # ── App init ────────────────────────────────────────────────────────────────
 app = dash.Dash(
@@ -345,7 +349,7 @@ def update_kpis(year, biome, state):
     area_year = d["area_km2"].sum()
     prev_d = filter_df(year - 1, biome, state) if year > min(YEARS) else None
     prev = prev_d["area_km2"].sum() if prev_d is not None else None
-    if prev and prev > 0:
+    if prev is not None and prev > 0:
         pct = (area_year - prev) / prev * 100
         delta = f"{'↓' if pct < 0 else '↑'} {abs(pct):.1f}% zum Vorjahr"
     else:
@@ -484,7 +488,6 @@ def toggle_raisg(value):
     prevent_initial_call=True,
 )
 def apply_preset(trend_clicks, paris_clicks, zero_clicks):
-    from dash import ctx
     triggered = ctx.triggered_id
     if triggered == "preset-paris":
         return -10.0

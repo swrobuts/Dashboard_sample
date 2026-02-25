@@ -27,7 +27,7 @@ def _headers() -> dict:
 
 def _fetch(table: str, params: dict = None) -> pd.DataFrame:
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    resp = requests.get(url, headers=_headers(), params=params or {})
+    resp = requests.get(url, headers=_headers(), params=params or {}, timeout=30)
     resp.raise_for_status()
     return pd.DataFrame(resp.json())
 
