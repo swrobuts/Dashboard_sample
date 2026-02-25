@@ -30,13 +30,13 @@ docker run -d \
   --name phil \
   -p 8000:8000 \
   --env-file .env \
-  swrobuts/phil:latest
+  swrobutsdocker/phil:latest
 ```
 
 Open **http://localhost:8000** — done.
 
 To stop: `docker stop phil && docker rm phil`
-To update: `docker pull swrobuts/phil:latest && docker stop phil && docker rm phil` then re-run.
+To update: `docker pull swrobutsdocker/phil:latest && docker stop phil && docker rm phil` then re-run.
 
 ---
 
