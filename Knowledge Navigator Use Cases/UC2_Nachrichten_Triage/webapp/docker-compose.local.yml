@@ -1,0 +1,12 @@
+services:
+  kn-mail:
+    build: .
+    image: kn-mail
+    env_file: backend/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
