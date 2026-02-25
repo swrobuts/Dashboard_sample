@@ -13,7 +13,7 @@ from dash import Input, Output, callback, ctx, dcc, html
 
 from data_loader import (
     SUPABASE_KEY,
-    get_biomes,
+    get_classes,
     get_states,
     get_years,
     load_deforestation_data,
@@ -38,7 +38,7 @@ server = app.server
 # ── Data ─────────────────────────────────────────────────────────────────────
 df = load_deforestation_data()
 YEARS = get_years()
-BIOMES = get_biomes()
+CLASSES = get_classes()
 STATES = get_states()
 LATEST = max(YEARS)
 
@@ -67,10 +67,10 @@ CHART_LAYOUT = dict(
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def filter_df(year, biome, state):
+def filter_df(year, cls, state):
     d = df[df["year"] == year].copy()
-    if biome != "all":
-        d = d[d["biome_name"] == biome]
+    if cls != "all":
+        d = d[d["class_name"] == cls]
     if state != "all":
         d = d[d["state_name"] == state]
     return d
@@ -131,11 +131,11 @@ app.layout = html.Div(
                 ),
                 html.Div(
                     [
-                        html.Label("Biom"),
+                        html.Label("Klasse"),
                         dcc.Dropdown(
-                            id="filter-biome",
-                            options=[{"label": "Alle Biome", "value": "all"}]
-                            + [{"label": b, "value": b} for b in BIOMES],
+                            id="filter-class",
+                            options=[{"label": "Alle Klassen", "value": "all"}]
+                            + [{"label": c, "value": c} for c in CLASSES],
                             value="all",
                             clearable=False,
                         ),
@@ -239,12 +239,12 @@ app.layout = html.Div(
                     ],
                     className="chart-card",
                 ),
-                # Biom-Vergleich
+                # Klassen-Vergleich
                 html.Div(
                     [
-                        html.H3("Biom-Vergleich"),
-                        html.Div("Entwaldung nach Biom", className="chart-sub"),
-                        dcc.Graph(id="chart-biome", config={"displayModeBar": False}),
+                        html.H3("Klassen-Vergleich"),
+                        html.Div("Entwaldung nach Klasse", className="chart-sub"),
+                        dcc.Graph(id="chart-class", config={"displayModeBar": False}),
                     ],
                     className="chart-card",
                 ),
@@ -339,15 +339,15 @@ app.layout = html.Div(
     Output("kpi-worst-val", "children"),
     Output("kpi-worst-sub", "children"),
     Input("filter-year", "value"),
-    Input("filter-biome", "value"),
+    Input("filter-class", "value"),
     Input("filter-state", "value"),
 )
-def update_kpis(year, biome, state):
-    d = filter_df(year, biome, state)
+def update_kpis(year, cls, state):
+    d = filter_df(year, cls, state)
 
     # Gerodet aktuelles Jahr
     area_year = d["area_km2"].sum()
-    prev_d = filter_df(year - 1, biome, state) if year > min(YEARS) else None
+    prev_d = filter_df(year - 1, cls, state) if year > min(YEARS) else None
     prev = prev_d["area_km2"].sum() if prev_d is not None else None
     if prev is not None and prev > 0:
         pct = (area_year - prev) / prev * 100
@@ -358,8 +358,8 @@ def update_kpis(year, biome, state):
 
     # Kumuliert
     d_all = df.copy()
-    if biome != "all":
-        d_all = d_all[d_all["biome_name"] == biome]
+    if cls != "all":
+        d_all = d_all[d_all["class_name"] == cls]
     if state != "all":
         d_all = d_all[d_all["state_name"] == state]
     total = d_all[d_all["year"] <= year]["area_km2"].sum()
@@ -388,16 +388,16 @@ def update_kpis(year, biome, state):
     Output("chart-timeseries", "figure"),
     Output("chart-topflop", "figure"),
     Output("chart-topflop-sub", "children"),
-    Output("chart-biome", "figure"),
+    Output("chart-class", "figure"),
     Output("chart-cumulative", "figure"),
     Input("filter-year", "value"),
-    Input("filter-biome", "value"),
+    Input("filter-class", "value"),
     Input("filter-state", "value"),
 )
-def update_charts(year, biome, state):
+def update_charts(year, cls, state):
     d_all = df.copy()
-    if biome != "all":
-        d_all = d_all[d_all["biome_name"] == biome]
+    if cls != "all":
+        d_all = d_all[d_all["class_name"] == cls]
     if state != "all":
         d_all = d_all[d_all["state_name"] == state]
 
@@ -417,7 +417,7 @@ def update_charts(year, biome, state):
     fig_ts.update_layout(**CHART_LAYOUT, yaxis_title="km²", xaxis_title="Jahr")
 
     # Top 5 Staaten
-    d_year = filter_df(year, biome, state)
+    d_year = filter_df(year, cls, state)
     by_state = d_year.groupby("state_name")["area_km2"].sum().sort_values(ascending=False)
     top5 = by_state.head(5)
     fig_top = go.Figure(
@@ -431,19 +431,19 @@ def update_charts(year, biome, state):
     fig_top.update_layout(**CHART_LAYOUT, xaxis_title="km²")
     topflop_sub = f"Meiste Entwaldung · {year}"
 
-    # Biom-Vergleich
-    biome_data = d_year.groupby("biome_name")["area_km2"].sum().sort_values(ascending=False)
-    fig_biome = go.Figure(
+    # Klassen-Vergleich
+    class_data = d_year.groupby("class_name")["area_km2"].sum().sort_values(ascending=False)
+    fig_class = go.Figure(
         go.Bar(
-            x=biome_data.index, y=biome_data.values,
+            x=class_data.index, y=class_data.values,
             marker_color=GREEN_MED,
             hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
         )
     )
-    fig_biome.update_layout(**CHART_LAYOUT, yaxis_title="km²")
+    fig_class.update_layout(**CHART_LAYOUT, yaxis_title="km²")
 
     # Kumulativer Area-Chart
-    pivot = d_all.groupby(["year", "biome_name"])["area_km2"].sum().unstack(fill_value=0)
+    pivot = d_all.groupby(["year", "class_name"])["area_km2"].sum().unstack(fill_value=0)
     pivot_cumsum = pivot.cumsum()
     palette = [GREEN_DARK, GREEN_MED, GREEN_LIGHT, "#74c69d", "#b7e4c7", "#d8f3dc"]
     fig_cum = go.Figure()
@@ -465,7 +465,7 @@ def update_charts(year, biome, state):
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
 
-    return fig_ts, fig_top, topflop_sub, fig_biome, fig_cum
+    return fig_ts, fig_top, topflop_sub, fig_class, fig_cum
 
 
 # ── Map Callback ──────────────────────────────────────────────────────────────
@@ -509,15 +509,15 @@ def apply_preset(trend_clicks, paris_clicks, zero_clicks):
 @callback(
     Output("chart-simulation", "figure"),
     Output("sim-result-text", "children"),
-    Input("filter-biome", "value"),
+    Input("filter-class", "value"),
     Input("filter-state", "value"),
     Input("sim-rate", "value"),
     Input("sim-horizon", "value"),
 )
-def update_simulation(biome, state, rate_pct, horizon):
+def update_simulation(cls, state, rate_pct, horizon):
     d = df.copy()
-    if biome != "all":
-        d = d[d["biome_name"] == biome]
+    if cls != "all":
+        d = d[d["class_name"] == cls]
     if state != "all":
         d = d[d["state_name"] == state]
 

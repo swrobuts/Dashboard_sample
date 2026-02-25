@@ -38,19 +38,19 @@ def load_states() -> pd.DataFrame:
 
 
 @lru_cache(maxsize=1)
-def load_biomes() -> pd.DataFrame:
-    return _fetch("dim_biome")
+def load_classes() -> pd.DataFrame:
+    return _fetch("dim_class")
 
 
 @lru_cache(maxsize=1)
 def load_deforestation_data() -> pd.DataFrame:
     facts = _fetch("fact_deforestation", {"order": "year.asc"})
     states = load_states()
-    biomes = load_biomes()
+    classes = load_classes()
     df = (
         facts
         .merge(states[["state_id", "state_name", "region"]], on="state_id", how="left")
-        .merge(biomes[["biome_id", "biome_name"]], on="biome_id", how="left")
+        .merge(classes[["class_id", "class_name"]], on="class_id", how="left")
     )
     df["year"] = df["year"].astype(int)
     df["area_km2"] = df["area_km2"].astype(float)
@@ -62,8 +62,8 @@ def get_years() -> list:
     return sorted(load_deforestation_data()["year"].unique().tolist())
 
 
-def get_biomes() -> list:
-    return sorted(load_deforestation_data()["biome_name"].dropna().unique().tolist())
+def get_classes() -> list:
+    return sorted(load_deforestation_data()["class_name"].dropna().unique().tolist())
 
 
 def get_states() -> list:
@@ -72,5 +72,5 @@ def get_states() -> list:
 
 def clear_cache():
     load_states.cache_clear()
-    load_biomes.cache_clear()
+    load_classes.cache_clear()
     load_deforestation_data.cache_clear()
