@@ -1,0 +1,17 @@
+services:
+  rainforest:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rainforest.rule=Host(`rainforest.butscher.cloud`)"
+      - "traefik.http.routers.rainforest.entrypoints=websecure"
+      - "traefik.http.routers.rainforest.tls.certresolver=letsencrypt"
+      - "traefik.http.services.rainforest.loadbalancer.server.port=8050"
+    networks:
+      - traefik_default
+
+networks:
+  traefik_default:
+    external: true
