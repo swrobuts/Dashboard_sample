@@ -82,7 +82,7 @@ uvicorn backend.main:app --reload --port 8001
 cd frontend && npm run dev
 ```
 
-Open **http://localhost:5173** and log in with your Exchange/IMAP credentials (THWS, DHBW, or Microsoft 365).
+Open **http://localhost:5173** and log in with your Exchange/IMAP credentials (THWS or Microsoft 365).
 
 ---
 
@@ -115,7 +115,7 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `LOCAL_LLM_ENDPOINT` | LLM (local) | LM Studio URL, default `http://localhost:1234/v1` |
 | `LOCAL_LLM_MODEL` | LLM (local) | Model name in LM Studio |
 
-Exchange/IMAP credentials (THWS, DHBW, M365) are entered **in the app's login screen**, not in `.env`.
+Exchange/IMAP credentials (THWS, M365) are entered **in the app's login screen**, not in `.env`.
 
 ---
 

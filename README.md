@@ -1,101 +1,184 @@
-# World Happiness Report Dashboard
+# Phil – Knowledge Navigator
 
-Minimalistisches Dashboard zur Analyse der Lebensqualität weltweit (2015-2025).
+A local AI personal assistant for mail triage, calendar, tasks, and knowledge management.
+Inspired by Apple's 1987 Knowledge Navigator concept. Built with FastAPI + React + Claude.
 
-**Design-Prinzipien:** Tufte/Cleveland – hohe Data-Ink Ratio, keine unnötige Dekoration.
-
-## 🚀 Installation
-
-```bash
-# 1. Virtuelle Umgebung erstellen
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# oder: venv\Scripts\activate  # Windows
-
-# 2. Abhängigkeiten installieren
-pip install -r requirements.txt
-
-# 3. Dashboard starten
-python app.py
-```
-
-Das Dashboard ist dann unter **http://localhost:8050** erreichbar.
-
-## 📊 Features
-
-- **Weltkarte:** Choropleth-Visualisierung der Happiness Scores
-- **Ranking:** Top 15 Länder nach Jahr und Region filterbar
-- **Trends:** Zeitliche Entwicklung für ausgewählte Länder
-- **Faktoren:** Aufschlüsselung nach GDP, Soziale Unterstützung, etc.
-- **Scatter:** Korrelation GDP vs. Happiness mit Trendlinie
-- **Regionen:** Vergleich der regionalen Durchschnitte
-
-## ⚙️ Konfiguration
-
-Die Supabase-Verbindung ist in `.env` konfiguriert:
-
-```env
-SUPABASE_URL=https://supabase.butscher.cloud
-SUPABASE_KEY=eyJhbG...
-```
-
-**Wichtig:** Der `Accept-Profile: WorldHappiness` Header ist bereits im Code integriert.
-
-## 📁 Projektstruktur
-
-```
-whr_dashboard/
-├── app.py              # Hauptanwendung mit Callbacks
-├── data_loader.py      # Supabase API-Verbindung
-├── requirements.txt    # Python-Abhängigkeiten
-├── .env                # Konfiguration
-├── assets/
-│   └── style.css       # Minimalistisches CSS
-└── README.md
-```
-
-## 🎨 Design
-
-- **Typografie:** Source Serif Pro (Headlines), Source Sans Pro (Body)
-- **Farben:** Dezente Palette, Fokus auf Daten
-- **Layout:** Responsive Grid mit klaren Proportionen
-- **Charts:** Keine 3D-Effekte, dezente Gridlines, versteckte Toolbar
-
-## 🔧 Deployment (Produktion)
-
-```bash
-# Mit Gunicorn
-gunicorn app:server -b 0.0.0.0:8050 -w 4
-
-# Oder als Systemd-Service
-sudo nano /etc/systemd/system/whr-dashboard.service
-```
-
-Beispiel Systemd-Service:
-
-```ini
-[Unit]
-Description=World Happiness Dashboard
-After=network.target
-
-[Service]
-User=www-data
-WorkingDirectory=/path/to/whr_dashboard
-ExecStart=/path/to/venv/bin/gunicorn app:server -b 127.0.0.1:8050 -w 2
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## 📈 Datenbank-Schema
-
-Das Dashboard greift auf das `WorldHappiness` Schema in Supabase zu:
-
-- `dim_region` – 10 Regionen
-- `dim_country` – 167 Länder
-- `fact_happiness` – 1.509 Datensätze (2015-2025)
+**Full documentation:** [swrobuts.github.io/phil-website](https://swrobuts.github.io/phil-website/)
 
 ---
 
-Erstellt mit 💙 Plotly Dash | Daten: World Happiness Report
+## What Phil does
+
+- **Mail triage** — LLM-powered priority sorting and summarisation of your inbox
+- **Calendar** — Google Calendar integration (read + write) via the `gog` CLI
+- **Tasks** — Exchange/EWS task sync (THWS, Microsoft 365)
+- **Chat** — Streaming conversation with context from your mail, calendar, and knowledge graph
+- **Train connections** — Live DB departures via the HAFAS API, triggered by natural language
+- **RAG / Knowledge graph** — Semantic search over your emails via ChromaDB + RDFlib
+- **Memory** — Learns facts from your conversations via SQLite + ChromaDB
+- **Speech output** — Read briefings aloud via OpenAI TTS API
+
+---
+
+## Quickest start — Docker Hub (no Python / Node needed)
+
+```bash
+# 1. Get the example environment file
+curl -o backend.env https://raw.githubusercontent.com/swrobuts/phil-knowledge-navigator/main/Knowledge%20Navigator%20Use%20Cases/UC2_Nachrichten_Triage/webapp/backend/.env.example
+# Edit backend.env — fill in at minimum: ANTHROPIC_API_KEY and GOG_ACCOUNT
+
+# 2. Pull and run
+docker run -d \
+  --name phil \
+  -p 8000:8000 \
+  --env-file backend.env \
+  swrobutsdocker/phil:latest
+```
+
+Open **http://localhost:8000** — done.
+
+```bash
+# Stop
+docker stop phil && docker rm phil
+
+# Update to latest
+docker pull swrobutsdocker/phil:latest && docker stop phil && docker rm phil
+# then re-run the docker run command above
+```
+
+---
+
+## Prerequisites (dev mode only)
+
+| Tool | Minimum version | Check |
+|------|----------------|-------|
+| Python | 3.12 | `python3 --version` |
+| Node.js | 20 | `node --version` |
+| Git | any | `git --version` |
+| `gog` CLI | any | `gog version` (see below) |
+
+At least one LLM credential is required (Anthropic API key **or** a running LM Studio instance).
+
+---
+
+## Quick start (dev mode)
+
+```bash
+# 1. Clone
+git clone https://github.com/swrobuts/phil-knowledge-navigator.git
+cd "phil-knowledge-navigator/Knowledge Navigator Use Cases/UC2_Nachrichten_Triage/webapp"
+
+# 2. Python environment
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+
+# 3. Frontend dependencies
+cd frontend && npm install && cd ..
+
+# 4. Environment file
+cp backend/.env.example backend/.env
+# Open backend/.env and fill in at least ANTHROPIC_API_KEY and GOG_ACCOUNT
+```
+
+Then open **two terminals** (both inside the `webapp/` directory):
+
+```bash
+# Terminal 1 — backend (port 8001)
+uvicorn backend.main:app --reload --port 8001
+
+# Terminal 2 — frontend (port 5173)
+cd frontend && npm run dev
+```
+
+Open **http://localhost:5173** and log in with your Exchange/IMAP credentials (THWS or Microsoft 365).
+
+---
+
+## Docker (single container, no Python/Node needed)
+
+```bash
+cp backend/.env.example backend/.env
+# (edit backend/.env)
+
+# Local testing
+docker compose -f docker-compose.local.yml up --build
+```
+
+Open **http://localhost:8000**.
+
+For production with Traefik/HTTPS: `docker compose up` (see `docker-compose.yml`).
+
+---
+
+## Environment variables
+
+Copy `backend/.env.example` to `backend/.env` and fill in:
+
+| Variable | Required for | Description |
+|----------|-------------|-------------|
+| `ANTHROPIC_API_KEY` | LLM (cloud) | Claude API key — `sk-ant-...` |
+| `OPENAI_API_KEY` | Embeddings + TTS | OpenAI key — `sk-proj-...` |
+| `GOG_ACCOUNT` | Google Calendar | Your Gmail address |
+| `GOG_KEYRING_PASSWORD` | Docker + Google Cal | OAuth token password (see docs) |
+| `LOCAL_LLM_ENDPOINT` | LLM (local, recommended) | LM Studio URL, default `http://localhost:1234/v1` |
+| `LOCAL_LLM_MODEL` | LLM (local) | Model name in LM Studio |
+
+Exchange/IMAP credentials (THWS, M365) are entered **in the app's login screen**, not in `.env`.
+
+**LLM recommendation:** Local mode via LM Studio is recommended for DSGVO compliance and cost reasons.
+Anthropic's Claude API is supported as a quality reference / demo baseline.
+
+---
+
+## Setting up Google Calendar (`gog`)
+
+Phil uses the [`gog`](https://github.com/nicholasgasior/gog) CLI to read and write Google Calendar events.
+
+```bash
+# Install (macOS example)
+brew install nicholasgasior/tap/gog
+# or download binary from GitHub releases and place in ~/bin/gog
+
+# Authenticate (opens browser for Google OAuth)
+gog auth login
+
+# Verify
+gog calendar events --account your@gmail.com --max 5
+```
+
+After successful auth, set `GOG_ACCOUNT=your@gmail.com` in `backend/.env`.
+
+For Docker: run `gog auth login` on the host, then export the keyring password as `GOG_KEYRING_PASSWORD`.
+
+---
+
+## ChromaDB / knowledge base
+
+Phil stores email embeddings in ChromaDB at `/tmp/phil_chroma`.
+
+**Important:** This path must be on a local disk — not OneDrive, iCloud, Dropbox, or any network drive.
+Memory-mapped files (mmap) fail on network volumes.
+
+To pre-populate the knowledge base, triage your mails once via the Mail view ("Analysieren" button).
+Each triage run indexes the fetched emails.
+
+---
+
+## Project structure
+
+```
+Knowledge Navigator Use Cases/UC2_Nachrichten_Triage/webapp/
+  backend/        FastAPI app, LLM client, Exchange/IMAP helpers, RAG, memory
+  frontend/       React + TypeScript + Vite
+  static/         Built frontend (output of npm run build)
+  Dockerfile      Two-stage build: Node → Python
+  docker-compose.yml           Production (Traefik)
+  docker-compose.local.yml     Local testing
+  backend/.env.example
+```
+
+---
+
+## Licence
+
+MIT. Not affiliated with Apple Inc. Built at THWS as a teaching and research project.
