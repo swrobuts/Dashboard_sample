@@ -400,6 +400,31 @@ export function PhilPanel({ open, onClose }: Props) {
       })
     } finally {
       setStreaming(false)
+
+      // Parse [TRAIN_NAV:{...}] token — navigate to TrainView if present
+      const navMatch = philText.match(/\[TRAIN_NAV:(\{[\s\S]*?\})\]/)
+      if (navMatch) {
+        try {
+          const preset = JSON.parse(navMatch[1])
+          useStore.getState().setTrainPreset(preset)
+          useStore.getState().setView('trains')
+        } catch {
+          // malformed token — ignore
+        }
+      }
+      // Strip token from displayed text
+      const cleanText = philText.replace(/\[TRAIN_NAV:\{[\s\S]*?\}\]/g, '').trim()
+      if (cleanText !== philText) {
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last && last.role === 'phil') {
+            updated[updated.length - 1] = { ...last, text: cleanText }
+          }
+          return updated
+        })
+      }
+
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (!last || last.role !== 'phil') return prev
@@ -467,7 +492,7 @@ export function PhilPanel({ open, onClose }: Props) {
         {trainLocation && (
           <button
             className={`${styles.quickBtn} ${styles.quickBtnTrain}`}
-            onClick={() => { setTrainPreset({ to: trainLocation }); setView('trains'); onClose() }}
+            onClick={() => { setTrainPreset({ from_id: '', from_name: '', to_id: '', to_name: trainLocation, when: null }); setView('trains'); onClose() }}
             title={`Zugverbindung nach ${trainLocation} suchen`}
           >
             🚄 Zug nach {trainLocation.split(',')[0]}
