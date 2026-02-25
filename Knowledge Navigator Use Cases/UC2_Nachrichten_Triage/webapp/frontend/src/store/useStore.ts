@@ -77,7 +77,7 @@ export const useStore = create<AppState>((set) => ({
   removeTask: (id) => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
 
   view: 'dashboard',
-  setView: (view) => set({ view }),
+  setView: (view) => set({ view, selection: null }),
   mailFilter: 'all',
   setMailFilter: (mailFilter) => set({ mailFilter }),
   selection: null,

@@ -77,7 +77,7 @@ export function TrainView() {
       }).catch(() => {})
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [trainPreset])
 
   async function fetchSuggestions(query: string, which: 'from' | 'to') {
     if (query.length < 2) return

@@ -5,4 +5,10 @@ body { background: var(--content-bg); color: var(--text-primary); height: 100%; 
 #root { height: 100%; overflow: hidden; }
 button { cursor: pointer; border: none; background: none; font: inherit; }
 input, textarea, select { font: inherit; outline: none; }
+/* Dark mode — neon green input text for readability */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  color: #39FF14;
+}
 a { color: inherit; text-decoration: none; }

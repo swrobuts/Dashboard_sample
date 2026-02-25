@@ -384,6 +384,15 @@ export function PhilPanel({ open, onClose }: Props) {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+        // Named SSE events arrive as \x00EVENT\x00data (5-char prefix) — never add to text
+        if (value.startsWith('\x00nav\x00')) {
+          try {
+            const preset = JSON.parse(value.slice(5))
+            useStore.getState().setTrainPreset(preset)
+            useStore.getState().setView('trains')
+          } catch { /* malformed nav payload — ignore */ }
+          continue
+        }
         philText += value
         setMessages((prev) => {
           const updated = [...prev]
@@ -400,30 +409,6 @@ export function PhilPanel({ open, onClose }: Props) {
       })
     } finally {
       setStreaming(false)
-
-      // Parse [TRAIN_NAV:{...}] token — navigate to TrainView if present
-      const navMatch = philText.match(/\[TRAIN_NAV:(\{[\s\S]*?\})\]/)
-      if (navMatch) {
-        try {
-          const preset = JSON.parse(navMatch[1])
-          useStore.getState().setTrainPreset(preset)
-          useStore.getState().setView('trains')
-        } catch {
-          // malformed token — ignore
-        }
-      }
-      // Strip token from displayed text
-      const cleanText = philText.replace(/\[TRAIN_NAV:\{[\s\S]*?\}\]/g, '').trim()
-      if (cleanText !== philText) {
-        setMessages((prev) => {
-          const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last && last.role === 'phil') {
-            updated[updated.length - 1] = { ...last, text: cleanText }
-          }
-          return updated
-        })
-      }
 
       setMessages((prev) => {
         const last = prev[prev.length - 1]

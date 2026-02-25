@@ -154,15 +154,22 @@ export const api = {
           }
           const reader = r.body.getReader()
           const dec = new TextDecoder()
+          let pendingEvent = ''
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
             const chunk = dec.decode(value)
             for (const line of chunk.split('\n')) {
-              if (line.startsWith('data: ')) {
+              if (line.startsWith('event: ')) {
+                pendingEvent = line.slice(7).trim()
+              } else if (line.startsWith('data: ')) {
                 const data = line.slice(6)
                 if (data === '[DONE]') { controller.close(); return }
-                controller.enqueue(data)
+                // Named SSE events (e.g. "nav") are prefixed with \x00EVENT\x00
+                controller.enqueue(pendingEvent ? `\x00${pendingEvent}\x00${data}` : data)
+                pendingEvent = ''
+              } else if (line === '') {
+                pendingEvent = ''
               }
             }
           }

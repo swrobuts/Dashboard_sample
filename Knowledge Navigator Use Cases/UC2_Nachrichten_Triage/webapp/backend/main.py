@@ -27,9 +27,10 @@ from backend.llm_client import get_llm_client
 from backend.memory_store import MemoryStore
 from backend.web_search import WEB_SEARCH_TRIGGER_RE, build_web_context
 TRAIN_TRIGGER_RE = re.compile(
-    r'\b(zug|züge|bahn|verbindung|fahrplan|fahren nach|reisen nach|bahnhof|'
-    r'ICE|IC\b|regional|db\.de|bahn\.de|abfahrt|ankunft|umsteigen|gleis|'
-    r'wann fährt|welche verbindung|nächster zug)\b',
+    # No strict word-boundary (\b) — German compounds like "Zugverbindung" must also match
+    r'(?:zug|züge|bahn|verbindung|fahrplan|bahnhof|'
+    r'ICE|IC\b|RE\b|RB\b|regional|db\.de|bahn\.de|abfahrt|ankunft|umsteigen|gleis|'
+    r'fahren\s+nach|reisen\s+nach|wann\s+fährt|nächster\s+zug)',
     re.IGNORECASE,
 )
 
@@ -1100,14 +1101,21 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
     # ── LLM-Client für diese Session ──────────────────────────────────
     llm = _get_llm(session)
 
-    # Train: detect and embed NAV token for frontend navigation
+    # Train: detect and build NAV token — injected directly into SSE stream (not via LLM)
+    _train_nav: str | None = None
     if TRAIN_TRIGGER_RE.search(req.message):
         try:
             _train_nav = _build_train_nav(req.message, llm)
             if _train_nav:
-                user_msg += (
-                    f"\n\n[Systeminformation: Zugverbindung wurde abgerufen. "
-                    f"Füge am Ende deiner Antwort diesen Token exakt ein (ohne Änderungen): {_train_nav}]"
+                _nav_data = json.loads(_train_nav[len("[TRAIN_NAV:"):-1])
+                _from = _nav_data.get("from_name", "Abfahrtsort")
+                _to   = _nav_data.get("to_name",   "Zielort")
+                # Prepend authoritative hint so the LLM sees it before user request
+                user_msg = (
+                    f"[SYSTEM: PyHafas-Verbindungssuche erfolgreich ausgeführt: {_from} → {_to}. "
+                    f"Die Reiseplanung öffnet sich automatisch. Antworte in 1-2 Sätzen, "
+                    f"dass die Verbindung {_from} → {_to} aufgerufen wird. "
+                    f"Keine Fahrplan-Details, keine eigenen Zeitangaben.]\n\n" + user_msg
                 )
         except Exception as exc:
             logging.warning(f"[Train] NAV fehlgeschlagen: {exc}")
@@ -1134,6 +1142,11 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                     yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
             else:
                 yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
+        # Inject NAV via named SSE event (never enters chat text)
+        if _full_response and _train_nav:
+            # Strip [TRAIN_NAV:...] wrapper — send raw JSON as event: nav
+            nav_json = _train_nav[len("[TRAIN_NAV:"):-1]
+            yield f"event: nav\ndata: {nav_json}\n\n"
         # Async fact extraction after response is complete (skip if LLM errored out)
         if _full_response:
             _extract_and_store_facts(req.message, "".join(_full_response), req.message_id)
@@ -1477,10 +1490,11 @@ def train_journeys(
     _get_session(session_id)
     origin = HafasStation(id=from_id, name="")
     destination = HafasStation(id=to_id, name="")
-    dep_dt = None
+    from datetime import datetime as _dt
     if when:
-        from datetime import datetime as _dt
         dep_dt = _dt.fromisoformat(when).replace(tzinfo=_tz.utc)
+    else:
+        dep_dt = _dt.now(_tz.utc)  # pyhafas requires a datetime, not None
     try:
         raw = _hafas.journeys(
             origin=origin,
