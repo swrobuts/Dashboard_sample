@@ -234,20 +234,31 @@
 .msgBubbleMd { white-space: normal; }
 .msgBubbleMd :global(p) { margin: 0 0 .5em; line-height: 1.6; }
 .msgBubbleMd :global(p:last-child) { margin-bottom: 0; }
-.msgBubbleMd :global(h1),
-.msgBubbleMd :global(h2),
+.msgBubbleMd :global(h1) {
+  font-weight: 700; line-height: 1.3; margin: .75em 0 .35em;
+  font-size: var(--text-base); color: var(--text-primary);
+  border-bottom: 1px solid var(--content-border); padding-bottom: .2em;
+}
+.msgBubbleMd :global(h2) {
+  font-weight: 700; line-height: 1.3; margin: .75em 0 .25em;
+  font-size: var(--text-sm); color: var(--amber-dark);
+}
 .msgBubbleMd :global(h3) {
-  font-weight: 700; line-height: 1.3; margin: .65em 0 .3em;
-  font-size: var(--text-sm); color: var(--text-primary);
+  font-weight: 700; line-height: 1.3; margin: .6em 0 .2em;
+  font-size: var(--text-sm); color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .03em;
 }
 .msgBubbleMd :global(h1:first-child),
 .msgBubbleMd :global(h2:first-child),
 .msgBubbleMd :global(h3:first-child) { margin-top: 0; }
 .msgBubbleMd :global(ul),
-.msgBubbleMd :global(ol) { padding-left: 1.2em; margin: .35em 0 .5em; line-height: 1.6; }
-.msgBubbleMd :global(li) { margin-bottom: .2em; }
+.msgBubbleMd :global(ol) { padding-left: 1.2em; margin: .25em 0 .65em; line-height: 1.6; }
+.msgBubbleMd :global(li) { margin-bottom: .25em; }
 .msgBubbleMd :global(ul) { list-style: disc; }
 .msgBubbleMd :global(ol) { list-style: decimal; }
+/* Bold section headers (e.g. **📅 Heute**) — paragraph immediately followed by a list */
+.msgBubbleMd :global(p:has(> strong:only-child) + ul),
+.msgBubbleMd :global(p:has(> strong:only-child) + ol) { margin-top: .1em; }
 .msgBubbleMd :global(strong) { font-weight: 700; color: var(--text-primary); }
 .msgBubbleMd :global(em) { font-style: italic; }
 .msgBubbleMd :global(code) {
