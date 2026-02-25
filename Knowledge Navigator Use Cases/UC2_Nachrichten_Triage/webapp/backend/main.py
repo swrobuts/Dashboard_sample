@@ -542,9 +542,9 @@ def auth_login(req: ConnectRequest, request: Request):
                 "llm_mode": req.llm_mode,
             }
     except Exception as e:
-        import traceback; traceback.print_exc()
+        logging.warning(f"[Login] Verbindung fehlgeschlagen für {req.username}: {type(e).__name__}: {e}")
         _record_failure(ip)
-        raise HTTPException(status_code=401, detail=f"Verbindung fehlgeschlagen: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=401, detail="Verbindung fehlgeschlagen. Benutzername, Passwort oder E-Mail prüfen.")
     _reset_lockout(ip)
     session_id = str(uuid.uuid4())
     _sessions[session_id] = session_data

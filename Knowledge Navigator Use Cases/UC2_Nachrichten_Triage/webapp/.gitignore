@@ -1,3 +1,8 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
 # Runtime data (ChromaDB + RDF ontology)
 data/
 
