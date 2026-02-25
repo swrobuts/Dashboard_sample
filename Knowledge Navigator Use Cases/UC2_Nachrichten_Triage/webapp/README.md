@@ -18,7 +18,29 @@ Inspired by Apple's 1987 Knowledge Navigator concept. Built with FastAPI + React
 
 ---
 
-## Prerequisites
+## Quickest start — Docker Hub (no Python / Node needed)
+
+```bash
+# 1. Create backend/.env with your credentials
+curl -o .env https://raw.githubusercontent.com/swrobuts/phil-knowledge-navigator/main/backend/.env.example
+# Edit .env — fill in ANTHROPIC_API_KEY and GOG_ACCOUNT at minimum
+
+# 2. Pull and run
+docker run -d \
+  --name phil \
+  -p 8000:8000 \
+  --env-file .env \
+  swrobuts/phil:latest
+```
+
+Open **http://localhost:8000** — done.
+
+To stop: `docker stop phil && docker rm phil`
+To update: `docker pull swrobuts/phil:latest && docker stop phil && docker rm phil` then re-run.
+
+---
+
+## Prerequisites (dev mode only)
 
 | Tool | Minimum version | Check |
 |------|----------------|-------|
