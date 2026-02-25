@@ -6,8 +6,6 @@ THWS: zwei Protokolle parallel
   - EWS   Port 443 HTTPS → Kalender + Aufgaben (exchangelib)
   Server: webmail.thws.de
 
-DHBW: nur EWS (autodiscover)
-
 Sicherheitsprinzip:
     Credentials werden NIEMALS gespeichert — nur im RAM der laufenden Session.
     Diese Datei enthält keine Passwörter, Keys oder sensible Daten.
@@ -85,12 +83,6 @@ INSTITUTIONS: dict[str, dict] = {
         # EWS — Kalender + Aufgaben (manuell konfiguriert, kein autodiscover)
         "ews_host": "webmail.thws.de",
         "ews_url": "https://webmail.thws.de/EWS/Exchange.asmx",
-    },
-    "DHBW": {
-        "display": "DHBW",
-        "username_hint": "vollständige E-Mail  (z.B. name@dhbw-xyz.de)",
-        "protocol": "ews",
-        "ews_url": None,   # autodiscover
     },
 }
 
@@ -339,7 +331,6 @@ def connect_to_exchange(username: str, password: str, institution: str) -> Accou
     """
     Baut eine EWS-Verbindung auf.
     THWS → connect_to_exchange_thws (manueller Endpoint + Username-Fallback)
-    DHBW → NTLM + autodiscover
     """
     if institution not in INSTITUTIONS:
         raise ValueError(
@@ -350,7 +341,7 @@ def connect_to_exchange(username: str, password: str, institution: str) -> Accou
     if institution == "THWS":
         return connect_to_exchange_thws(username, password)
 
-    # DHBW und andere EWS-Institutionen
+    # andere EWS-Institutionen (generic fallback)
     inst = INSTITUTIONS[institution]
     if inst.get("protocol") != "ews":
         raise ValueError(f"Institution '{institution}' nutzt nicht EWS.")

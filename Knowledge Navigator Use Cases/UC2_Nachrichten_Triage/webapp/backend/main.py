@@ -842,7 +842,7 @@ Nutze IMMER Markdown-Abschnitte mit `##` und Bullet-Listen. Kein Fließtext.
 EXAKTES Beispiel-Format für „Was steht heute an?":
 
 ## 📅 Heute
-- 09:00 DHBW-Block KI — ganztägig → Präsentation prüfen, Beamer
+- 09:00 THWS-Block KI — ganztägig → Präsentation prüfen, Beamer
 
 ## ✅ Überfällig
 - BA Stahl korrigieren (fällig 23.02.) — 4 Tage drüber, höchste Prio!
