@@ -35,13 +35,44 @@ export function TrainView() {
     }
   }, [])
 
-  // Apply preset from Phil (calendar event location)
+  // Apply preset from Phil (chat NAV token or calendar event location)
   useEffect(() => {
-    if (trainPreset) {
-      setToQuery(trainPreset.to)
+    if (!trainPreset) return
+
+    // Full preset from chat: has non-empty from_id + to_id — fill all fields and directly search
+    if (trainPreset.from_id && trainPreset.to_id) {
+      const snap = trainPreset  // capture before setTrainPreset(null) clears it
+      setFromStation({ id: snap.from_id, name: snap.from_name })
+      setFromQuery(snap.from_name)
+      setToStation({ id: snap.to_id, name: snap.to_name })
+      setToQuery(snap.to_name)
+      if (snap.when) {
+        setDeparture(snap.when.slice(0, 16))  // datetime-local expects "YYYY-MM-DDTHH:MM"
+      }
       setTrainPreset(null)
-      // Auto-search station name
-      api.trainStations(trainPreset.to).then(({ stations }) => {
+      // Directly call HAFAS API with known IDs (avoids state-async issue)
+      setLoading(true)
+      setError(null)
+      const whenIso = snap.when ? new Date(snap.when).toISOString() : undefined
+      api.trainJourneys(snap.from_id, snap.to_id, whenIso)
+        .then(({ journeys: results }) => {
+          setJourneys(results)
+          if (results.length === 0) setError('Keine Verbindungen gefunden.')
+        })
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : 'Verbindungsfehler'
+          setError(`API nicht erreichbar: ${msg}`)
+        })
+        .finally(() => setLoading(false))
+      return
+    }
+
+    // Legacy preset from calendar event: to_name is the place name, no station IDs
+    if (trainPreset.to_name) {
+      const toName = trainPreset.to_name
+      setToQuery(toName)
+      setTrainPreset(null)
+      api.trainStations(toName).then(({ stations }) => {
         if (stations.length > 0) { setToStation(stations[0]); setToQuery(stations[0].name) }
       }).catch(() => {})
     }
