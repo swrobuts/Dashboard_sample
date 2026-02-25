@@ -26,6 +26,12 @@ from backend.attachment_extractor import extract_text as extract_attachment_text
 from backend.llm_client import get_llm_client
 from backend.memory_store import MemoryStore
 from backend.web_search import WEB_SEARCH_TRIGGER_RE, build_web_context
+TRAIN_TRIGGER_RE = re.compile(
+    r'\b(zug|züge|bahn|verbindung|fahrplan|fahren nach|reisen nach|bahnhof|'
+    r'ICE|IC\b|regional|db\.de|bahn\.de|abfahrt|ankunft|umsteigen|gleis|'
+    r'wann fährt|welche verbindung|nächster zug)\b',
+    re.IGNORECASE,
+)
 
 try:
     # ChromaDB uses memory-mapped HNSW files — must NOT live in OneDrive (causes SIGBUS).
@@ -1094,6 +1100,18 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
     # ── LLM-Client für diese Session ──────────────────────────────────
     llm = _get_llm(session)
 
+    # Train: detect and embed NAV token for frontend navigation
+    if TRAIN_TRIGGER_RE.search(req.message):
+        try:
+            _train_nav = _build_train_nav(req.message, llm)
+            if _train_nav:
+                user_msg += (
+                    f"\n\n[Systeminformation: Zugverbindung wurde abgerufen. "
+                    f"Füge am Ende deiner Antwort diesen Token exakt ein (ohne Änderungen): {_train_nav}]"
+                )
+        except Exception as exc:
+            logging.warning(f"[Train] NAV fehlgeschlagen: {exc}")
+
     # Capture full Phil response for async fact extraction
     _full_response: list[str] = []
 
@@ -1352,6 +1370,72 @@ Text:
         "nodes": [{"id": "center", "label": req.subject[:30], "type": "center"}],
         "edges": [],
     }
+
+
+# ── Train chat integration ─────────────────────────────────────────────────
+
+_DEFAULT_FROM_NAME = "Nürnberg Hbf"
+
+_TRAIN_EXTRACT_SYSTEM = (
+    "Du bist ein Parameterextraktor. Antworte NUR mit einem JSON-Objekt, "
+    "kein Text davor oder danach, keine Markdown-Fences. "
+    "Extrahiere Abfahrtsort, Zielort und Abfahrtszeit aus der Nachricht. "
+    f"Wenn kein Abfahrtsort genannt wird, setze from_name: \"{_DEFAULT_FROM_NAME}\". "
+    "Wenn keine Zeit erkennbar ist, setze when: null. "
+    "Heutiges Datum: {today}. "
+    'Format: {{"from_name": "...", "to_name": "...", "when": "YYYY-MM-DDTHH:MM oder null"}}'
+)
+
+
+def _extract_train_params(message: str, llm) -> dict | None:
+    """Kurzer LLM-Call um from_name, to_name, when aus der Nachricht zu extrahieren."""
+    import json as _json
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    system = _TRAIN_EXTRACT_SYSTEM.format(today=today)
+    try:
+        raw = llm.create(task="train_extract", prompt=message, max_tokens=80, system=system)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+            raw = raw.strip()
+        params = _json.loads(raw)
+        if not isinstance(params.get("to_name"), str) or not params["to_name"].strip():
+            return None
+        if not isinstance(params.get("from_name"), str) or not params["from_name"].strip():
+            params["from_name"] = _DEFAULT_FROM_NAME
+        return params
+    except Exception as exc:
+        logging.warning(f"[Train] Parameterextraktion fehlgeschlagen: {exc}")
+        return None
+
+
+def _build_train_nav(message: str, llm) -> str | None:
+    """Extrahiert Route, löst Bahnhofsnamen via HAFAS auf, gibt [TRAIN_NAV:{...}] zurück."""
+    import json as _json
+    params = _extract_train_params(message, llm)
+    if not params:
+        return None
+    try:
+        from_stations = _hafas.locations(params["from_name"])
+        to_stations = _hafas.locations(params["to_name"])
+    except Exception as exc:
+        logging.warning(f"[Train] HAFAS locations fehlgeschlagen: {exc}")
+        return None
+    if not from_stations or not to_stations:
+        logging.warning(f"[Train] Bahnhof nicht gefunden: {params}")
+        return None
+    from_s = from_stations[0]
+    to_s = to_stations[0]
+    nav = {
+        "from_id": from_s.id,
+        "from_name": from_s.name,
+        "to_id": to_s.id,
+        "to_name": to_s.name,
+        "when": params.get("when"),
+    }
+    return f"[TRAIN_NAV:{_json.dumps(nav, ensure_ascii=False)}]"
 
 
 # ── DB HAFAS Train Planner (via pyHafas + NVV profile) ──────────────────────

@@ -26,10 +26,10 @@ LOCAL_LLM_ENDPOINT = os.getenv("LOCAL_LLM_ENDPOINT", "http://localhost:1234/v1")
 LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-32b-instruct")
 CLOUD_MODEL = "claude-opus-4-6"
 
-TaskKind = Literal["triage", "attachment_summary", "entities", "chat", "graph"]
+TaskKind = Literal["triage", "attachment_summary", "entities", "chat", "graph", "train_extract"]
 
 # Tasks die im Hybrid-Modus lokal laufen (schnell, einfache Struktur)
-_LOCAL_TASKS: set[TaskKind] = {"triage", "attachment_summary"}
+_LOCAL_TASKS: set[TaskKind] = {"triage", "attachment_summary", "train_extract"}
 
 # Tasks die im Hybrid-Modus in der Cloud laufen (komplex, zuverlässiger)
 _CLOUD_TASKS: set[TaskKind] = {"chat", "graph", "entities"}
