@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { User, TriagedMail, CalendarItem, Task, Category } from '../api/types'
+import type { User, TriagedMail, CalendarItem, Task, Category, TrainPreset } from '../api/types'
 
 export type View = 'dashboard' | 'mails' | 'calendar' | 'tasks' | 'trains' | 'memory'
 export type Selection =
@@ -37,8 +37,8 @@ interface AppState {
   setPhilOpen: (b: boolean) => void
   sentimentMode: boolean
   setSentimentMode: (b: boolean) => void
-  trainPreset: { to: string } | null
-  setTrainPreset: (p: { to: string } | null) => void
+  trainPreset: TrainPreset | null
+  setTrainPreset: (p: TrainPreset | null) => void
   dashDateStr: string
   setDashDateStr: (s: string) => void
 

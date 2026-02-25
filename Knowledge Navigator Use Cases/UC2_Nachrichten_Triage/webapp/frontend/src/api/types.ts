@@ -55,6 +55,14 @@ export interface Task {
   body: string
 }
 
+export interface TrainPreset {
+  from_id: string
+  from_name: string
+  to_id: string
+  to_name: string
+  when?: string | null   // ISO datetime string, optional
+}
+
 export interface TrainStation {
   id: string
   name: string
