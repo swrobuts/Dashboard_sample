@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useDataLoader } from '../../hooks/useDataLoader'
 import { Calendar, dateFnsLocalizer, Navigate } from 'react-big-calendar'
 import type { View, SlotInfo, ToolbarProps } from 'react-big-calendar'
@@ -97,6 +97,9 @@ export function CalendarView() {
   const [search, setSearch] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Prevents onSelectSlot from resetting edit mode when a double-click on an
+  // event fires both onDoubleClickEvent and onSelectSlot in the same tick.
+  const justDoubleClickedEvent = useRef(false)
 
   // Fetch more data when switching to year view
   useEffect(() => {
@@ -204,6 +207,7 @@ export function CalendarView() {
 
   // ── react-big-calendar callbacks ─────────────────────────────────────────────
   const handleSelectSlot = useCallback((slot: SlotInfo) => {
+    if (justDoubleClickedEvent.current) { justDoubleClickedEvent.current = false; return }
     openForm(slot.start, slot.end)
   }, [])
 
@@ -213,7 +217,8 @@ export function CalendarView() {
   }, [setSelection])
 
   const handleDoubleClickEvent = useCallback((ev: RbcEvent) => {
-    // Double click: open edit form
+    // Double click: open edit form (set flag so onSelectSlot doesn't reset edit mode)
+    justDoubleClickedEvent.current = true
     setSelection({ type: 'calendar', item: ev.resource })
     const { location, zoom_link } = splitLocation(ev.resource.location ?? '')
     setForm({
