@@ -359,12 +359,55 @@ function SentimentPanel({ mails }: { mails: TriagedMail[] }) {
   )
 }
 
+// ── First-Steps Banner ────────────────────────────────────────────────────────
+const STEPS = [
+  { icon: '📬', label: 'Mails triagieren', desc: 'Gehe zu "Mails" und klicke Analysieren — Phil kategorisiert und priorisiert deine Inbox.' },
+  { icon: '📅', label: 'Kalender prüfen', desc: 'Dein Stundenplan und Exchange-Termine erscheinen automatisch. Google Calendar erfordert die gog-CLI.' },
+  { icon: '💬', label: 'Phil fragen', desc: 'Tippe rechts in das Chat-Feld. Phil kennt deine Mails, Termine und Aufgaben.' },
+]
+
+function FirstStepsBanner({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className={styles.firstSteps}>
+      <div className={styles.firstStepsHeader}>
+        <span className={styles.firstStepsTitle}>Erste Schritte</span>
+        <button className={styles.firstStepsDismiss} onClick={onDismiss} title="Ausblenden">✕</button>
+      </div>
+      <div className={styles.firstStepsList}>
+        {STEPS.map((s, i) => (
+          <div key={i} className={styles.firstStepsItem}>
+            <span className={styles.firstStepsNum}>{i + 1}</span>
+            <span className={styles.firstStepsIcon}>{s.icon}</span>
+            <div className={styles.firstStepsText}>
+              <strong>{s.label}</strong>
+              <span>{s.desc}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className={styles.firstStepsHint}>
+        Vollständige Anleitung: <a href="https://swrobuts.github.io/phil-website/setup/" target="_blank" rel="noopener noreferrer">swrobuts.github.io/phil-website/setup</a>
+      </p>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function Dashboard() {
   const { mails, calendar, tasks, user, loadingMails, setView, setMailFilter, removeTask, setDashDateStr } = useStore()
   const [completing, setCompleting] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [taskError, setTaskError] = useState<string | null>(null)
+  const [showFirstSteps, setShowFirstSteps] = useState(
+    () => !localStorage.getItem('phil_first_steps_done')
+  )
+
+  function dismissFirstSteps() {
+    localStorage.setItem('phil_first_steps_done', '1')
+    setShowFirstSteps(false)
+  }
+
+  const isVirgin = !loadingMails && mails.length === 0 && calendar.length === 0
   const [taskGroup, setTaskGroup] = useState<TaskGroup>('none')
   const [selectedEvent, setSelectedEvent] = useState<CalendarItem | null>(null)
 
@@ -454,6 +497,11 @@ export function Dashboard() {
       <header className={styles.header}>
         <h1 className={styles.greeting}>Guten {greeting}, {displayName}!</h1>
       </header>
+
+      {/* First-steps banner — shown only on fresh install until dismissed */}
+      {showFirstSteps && isVirgin && (
+        <FirstStepsBanner onDismiss={dismissFirstSteps} />
+      )}
 
       {/* Mail tiles */}
       <section className={styles.section}>

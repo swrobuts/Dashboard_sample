@@ -13,6 +13,54 @@
   color: var(--text-primary); line-height: 1.1;
 }
 
+/* ── First-steps banner ────────────────────────────────────────────────────── */
+.firstSteps {
+  background: var(--card-bg);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  flex-shrink: 0;
+}
+.firstStepsHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: .75rem;
+}
+.firstStepsTitle {
+  font-size: var(--text-sm); font-weight: 700;
+  color: var(--amber); text-transform: uppercase; letter-spacing: .05em;
+}
+.firstStepsDismiss {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-tertiary); font-size: .9rem; padding: 0 2px;
+  line-height: 1;
+}
+.firstStepsDismiss:hover { color: var(--text-primary); }
+.firstStepsList {
+  display: flex; flex-direction: column; gap: .6rem;
+}
+.firstStepsItem {
+  display: flex; align-items: flex-start; gap: .6rem;
+}
+.firstStepsNum {
+  width: 1.3rem; height: 1.3rem;
+  background: var(--amber); color: #fff;
+  border-radius: 50%;
+  font-size: .65rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.firstStepsIcon { font-size: .95rem; flex-shrink: 0; margin-top: 1px; }
+.firstStepsText { display: flex; flex-direction: column; gap: 1px; }
+.firstStepsText strong { font-size: var(--text-sm); color: var(--text-primary); }
+.firstStepsText span { font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.45; }
+.firstStepsHint {
+  margin: .75rem 0 0;
+  font-size: var(--text-xs); color: var(--text-tertiary);
+}
+.firstStepsHint a { color: var(--amber); text-decoration: none; }
+.firstStepsHint a:hover { text-decoration: underline; }
+
 /* ── Section label ────────────────────────────────────────────────────────── */
 .section { margin-bottom: 1rem; flex-shrink: 0; }
 .empty { color: var(--text-tertiary); font-size: var(--text-sm); }

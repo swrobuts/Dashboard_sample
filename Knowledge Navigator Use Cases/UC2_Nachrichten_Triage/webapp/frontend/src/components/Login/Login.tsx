@@ -125,6 +125,40 @@ export function Login({ onLogin }: Props) {
           </button>
         </form>
         <p className={styles.notice}>Passwort wird nicht gespeichert.</p>
+
+        <details className={styles.helpDetails}>
+          <summary className={styles.helpSummary}>Was brauche ich zum Anmelden?</summary>
+          <div className={styles.helpBody}>
+            <div className={styles.helpRow}>
+              <span className={styles.helpIcon}>👤</span>
+              <div>
+                <strong>Benutzername</strong>
+                <p>Dein THWS-RZ-Kürzel (z.&nbsp;B. <code>rbutscher</code> oder <code>max.mustermann</code>)</p>
+              </div>
+            </div>
+            <div className={styles.helpRow}>
+              <span className={styles.helpIcon}>🔑</span>
+              <div>
+                <strong>Passwort</strong>
+                <p>Dein THWS-Passwort — wird <em>nur im RAM</em> gehalten, nie gespeichert.</p>
+              </div>
+            </div>
+            <div className={styles.helpRow}>
+              <span className={styles.helpIcon}>📧</span>
+              <div>
+                <strong>Exchange-E-Mail (optional)</strong>
+                <p>Deine vollständige THWS-Adresse (z.&nbsp;B. <code>robert.butscher@fhws.de</code>) — wird für den Exchange-Kalender benötigt. Ohne diese Angabe wird die Adresse automatisch ermittelt.</p>
+              </div>
+            </div>
+            <div className={styles.helpRow}>
+              <span className={styles.helpIcon}>📅</span>
+              <div>
+                <strong>Google Calendar</strong>
+                <p>Erfordert das <code>gog</code>-CLI (separates Setup). <a href="https://swrobuts.github.io/phil-website/setup/#6b-google-calendar-gog-cli" target="_blank" rel="noopener noreferrer" className={styles.helpLink}>Anleitung →</a></p>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   )

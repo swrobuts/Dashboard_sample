@@ -118,3 +118,46 @@
 }
 .llmChipActive:hover { background: var(--amber-dark); border-color: var(--amber-dark); color: #fff; }
 .llmChipIcon { font-size: 1rem; line-height: 1; }
+
+/* ── Login help accordion ── */
+.helpDetails {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.helpSummary {
+  padding: 9px 14px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.helpSummary::before { content: '?'; font-weight: 700; color: var(--amber); margin-right: .15rem; }
+.helpSummary::-webkit-details-marker { display: none; }
+.helpDetails[open] .helpSummary { border-bottom: 1px solid var(--border); }
+.helpBody {
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--content-bg);
+}
+.helpRow {
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.helpIcon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.helpRow strong { font-size: var(--text-sm); color: var(--text-primary); display: block; margin-bottom: 2px; }
+.helpRow p { font-size: var(--text-xs); color: var(--text-secondary); margin: 0; line-height: 1.5; }
+.helpRow code {
+  font-family: var(--font-mono, monospace);
+  font-size: .78rem;
+  background: var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+.helpLink { color: var(--amber); text-decoration: none; }
+.helpLink:hover { text-decoration: underline; }
