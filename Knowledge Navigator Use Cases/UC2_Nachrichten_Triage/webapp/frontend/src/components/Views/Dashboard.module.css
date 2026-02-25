@@ -645,3 +645,11 @@
 .sentFillNeu { background: var(--text-tertiary); opacity: .4; }
 .sentFillNeg { background: var(--error); }
 .sentSenderEmoji { font-size: .78rem; flex-shrink: 0; }
+
+/* ── Dark mode: Stimmungsbarometer contrast fixes ───────────────────────── */
+:global([data-theme="dark"]) .sentNeu { background: rgba(255,255,255,.18); }
+:global([data-theme="dark"]) .sentSenderBar {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.14);
+}
+:global([data-theme="dark"]) .sentFillNeu { background: rgba(255,255,255,.30); opacity: 1; }
