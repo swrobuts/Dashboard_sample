@@ -825,6 +825,12 @@ def delete_calendar_endpoint(
 
 # ── Phil Chat (SSE Streaming) ──────────────────────────────────────────────
 
+def _sse(text: str) -> str:
+    """Encode a text chunk for SSE. Newlines are escaped as \\n so the
+    client's line-splitting parser doesn't silently drop them."""
+    return f"data: {text.replace(chr(10), chr(92) + 'n')}\n\n"
+
+
 PHIL_SYSTEM = """\
 Du bist PHIL — der smarte, proaktive persönliche Assistent von Prof. Dr. Butscher.
 Du bist neugierig, direkt und denkst einen Schritt voraus.
@@ -1147,7 +1153,7 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
         try:
             for text in llm.stream(**stream_kwargs):
                 _full_response.append(text)
-                yield f"data: {text}\n\n"
+                yield _sse(text)
         except Exception as exc:
             logging.warning(f"[Chat] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
             if getattr(llm, 'mode', 'cloud') != 'cloud':
@@ -1155,12 +1161,12 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                 try:
                     for text in get_llm_client("cloud").stream(**stream_kwargs):
                         _full_response.append(text)
-                        yield f"data: {text}\n\n"
+                        yield _sse(text)
                 except Exception as exc2:
                     logging.warning(f"[Chat] Cloud-Fallback fehlgeschlagen: {exc2}")
-                    yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
+                    yield _sse(f"[Fehler: LLM nicht erreichbar ({type(exc2).__name__})]")
             else:
-                yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
+                yield _sse(f"[Fehler: LLM nicht erreichbar ({type(exc).__name__})]")
         # Inject NAV via named SSE event (never enters chat text)
         if _full_response and _train_nav:
             # Strip [TRAIN_NAV:...] wrapper — send raw JSON as event: nav
@@ -1269,19 +1275,19 @@ def briefing(req: BriefingRequest, session_id: str | None = Cookie(default=None)
         stream_kwargs = dict(task="chat", prompt=user_prompt, max_tokens=512, system=BRIEFING_SYSTEM)
         try:
             for text in llm.stream(**stream_kwargs):
-                yield f"data: {text}\n\n"
+                yield _sse(text)
         except Exception as exc:
             logging.warning(f"[Briefing] LLM '{getattr(llm, 'mode', '?')}' fehlgeschlagen: {exc}")
             if getattr(llm, "mode", "cloud") != "cloud":
                 logging.warning("[Briefing] Fallback auf Cloud-LLM")
                 try:
                     for text in get_llm_client("cloud").stream(**stream_kwargs):
-                        yield f"data: {text}\n\n"
+                        yield _sse(text)
                 except Exception as exc2:
                     logging.warning(f"[Briefing] Cloud-Fallback fehlgeschlagen: {exc2}")
-                    yield f"data: [Fehler: LLM nicht erreichbar ({type(exc2).__name__})]\n\n"
+                    yield _sse(f"[Fehler: LLM nicht erreichbar ({type(exc2).__name__})]")
             else:
-                yield f"data: [Fehler: LLM nicht erreichbar ({type(exc).__name__})]\n\n"
+                yield _sse(f"[Fehler: LLM nicht erreichbar ({type(exc).__name__})]")
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

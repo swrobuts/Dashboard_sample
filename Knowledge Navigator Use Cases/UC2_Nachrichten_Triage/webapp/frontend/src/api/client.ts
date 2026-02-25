@@ -163,7 +163,8 @@ export const api = {
               if (line.startsWith('event: ')) {
                 pendingEvent = line.slice(7).trim()
               } else if (line.startsWith('data: ')) {
-                const data = line.slice(6)
+                // Unescape \n (backslash-n) back to real newlines (encoded by backend _sse())
+                const data = line.slice(6).replace(/\\n/g, '\n')
                 if (data === '[DONE]') { controller.close(); return }
                 // Named SSE events (e.g. "nav") are prefixed with \x00EVENT\x00
                 controller.enqueue(pendingEvent ? `\x00${pendingEvent}\x00${data}` : data)
@@ -219,7 +220,7 @@ export const api = {
             const chunk = dec.decode(value)
             for (const line of chunk.split('\n')) {
               if (line.startsWith('data: ')) {
-                const data = line.slice(6)
+                const data = line.slice(6).replace(/\\n/g, '\n')
                 if (data === '[DONE]') { controller.close(); return }
                 controller.enqueue(data)
               }
