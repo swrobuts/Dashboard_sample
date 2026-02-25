@@ -109,3 +109,9 @@
   white-space: pre-wrap; word-break: break-word;
   margin: 0;
 }
+
+/* Dark mode: --ignorieren-badge (#64748B) is too dark as text; use secondary */
+:global([data-theme="dark"]) .date,
+:global([data-theme="dark"]) .spinner { color: var(--text-secondary); }
+:global([data-theme="dark"]) .detailDate,
+:global([data-theme="dark"]) .detailClose { color: var(--text-secondary); }

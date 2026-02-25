@@ -114,7 +114,7 @@
 }
 .th:hover { color: var(--amber); }
 .thSubject { min-width: 260px; }
-.sortNeutral { color: var(--border); margin-left: .25rem; }
+.sortNeutral { color: var(--text-tertiary); margin-left: .25rem; }
 .sortActive { color: var(--amber); margin-left: .25rem; }
 
 .tr {

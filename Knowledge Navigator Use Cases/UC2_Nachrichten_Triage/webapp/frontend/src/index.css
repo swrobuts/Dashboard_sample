@@ -11,4 +11,10 @@ input, textarea, select { font: inherit; outline: none; }
 [data-theme="dark"] select {
   color: #39FF14;
 }
+/* Dark mode — dimmer placeholder so it's distinct from entered text */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #6B7890;
+  opacity: 1;
+}
 a { color: inherit; text-decoration: none; }

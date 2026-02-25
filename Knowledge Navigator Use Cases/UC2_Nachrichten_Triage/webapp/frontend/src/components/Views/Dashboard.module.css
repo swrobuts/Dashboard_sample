@@ -568,7 +568,7 @@
 .gesprachMailSender { font-size: .62rem; color: var(--text-secondary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gesprachMailSubject { font-size: var(--text-xs); color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gesprachMailSummary { font-size: .62rem; color: var(--text-tertiary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.gesprachNoMails { font-size: var(--text-xs); color: var(--border); font-style: italic; }
+.gesprachNoMails { font-size: var(--text-xs); color: var(--text-tertiary); font-style: italic; }
 
 /* ── Sentiment Panel ─────────────────────────────────────────────────────── */
 .sentPanel {
