@@ -552,8 +552,7 @@ def delete_task(account: Account, task_id: str, changekey: str) -> bool:
         if task is None:
             return True  # Bereits gelöscht oder nicht mehr vorhanden
     try:
-        # MoveToDeletedItems statt HardDelete — funktioniert auch ohne Admin-Rechte
-        task.delete(delete_type='MoveToDeletedItems')
+        task.delete()
         return True
     except Exception as exc:
         _logger.error(f"[EWS-Tasks] Löschen fehlgeschlagen für {task_id}: {type(exc).__name__}: {exc}")

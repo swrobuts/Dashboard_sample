@@ -731,7 +731,7 @@ class CompleteTaskRequest(BaseModel):
     changekey: str
 
 
-@app.post("/api/tasks/{task_id}/complete")
+@app.post("/api/tasks/{task_id:path}/complete")
 def post_complete_task(
     task_id: str,
     req: CompleteTaskRequest,
@@ -746,7 +746,7 @@ class DeleteTaskRequest(BaseModel):
     changekey: str
 
 
-@app.delete("/api/tasks/{task_id}")
+@app.delete("/api/tasks/{task_id:path}")
 def post_delete_task(
     task_id: str,
     req: DeleteTaskRequest,

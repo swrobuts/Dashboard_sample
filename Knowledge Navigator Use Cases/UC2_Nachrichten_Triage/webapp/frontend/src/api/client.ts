@@ -93,9 +93,9 @@ export const api = {
   createTask: (subject: string, due_date?: string, body?: string, priority?: string) =>
     post<{ id: string; subject: string }>('/api/tasks/create', { subject, due_date, body, priority }),
   completeTask: (task_id: string, changekey: string) =>
-    post<{ status: string }>(`/api/tasks/${task_id}/complete`, { changekey }),
+    post<{ status: string }>(`/api/tasks/${encodeURIComponent(task_id)}/complete`, { changekey }),
   deleteTask: (task_id: string, changekey: string) =>
-    del<{ status: string }>(`/api/tasks/${task_id}`, { changekey }),
+    del<{ status: string }>(`/api/tasks/${encodeURIComponent(task_id)}`, { changekey }),
   deleteMail: (mail_uid: string) =>
     del<{ status: string }>(`/api/mails/${encodeURIComponent(mail_uid)}`, {}),
 
