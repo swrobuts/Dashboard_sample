@@ -35,6 +35,8 @@ _LOCAL_TASKS: set[TaskKind] = {"triage", "attachment_summary", "train_extract"}
 _CLOUD_TASKS: set[TaskKind] = {"chat", "graph", "entities"}
 
 # Tasks die JSON-Output brauchen (für response_format bei lokalen Modellen)
+# Note: "train_extract" is intentionally omitted — the system prompt already
+# enforces JSON output and _extract_train_params handles fence stripping itself.
 _JSON_TASKS: set[TaskKind] = {"triage", "entities", "graph"}
 
 

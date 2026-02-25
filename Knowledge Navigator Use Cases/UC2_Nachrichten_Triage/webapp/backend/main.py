@@ -1372,6 +1372,15 @@ Text:
     }
 
 
+# DB HAFAS imports + singleton — must appear before train chat integration helpers
+from pyhafas import HafasClient
+from pyhafas.profile import NVVProfile
+from pyhafas.types.fptf import Station as HafasStation
+from datetime import datetime, timedelta, timezone
+_tz = timezone  # backwards-compat alias used in train helpers
+
+_hafas = HafasClient(NVVProfile())
+
 # ── Train chat integration ─────────────────────────────────────────────────
 
 _DEFAULT_FROM_NAME = "Nürnberg Hbf"
@@ -1439,14 +1448,6 @@ def _build_train_nav(message: str, llm) -> str | None:
 
 
 # ── DB HAFAS Train Planner (via pyHafas + NVV profile) ──────────────────────
-
-from pyhafas import HafasClient
-from pyhafas.profile import NVVProfile
-from pyhafas.types.fptf import Station as HafasStation
-from datetime import datetime, timedelta, timezone
-_tz = timezone  # backwards-compat alias used in train helpers
-
-_hafas = HafasClient(NVVProfile())
 
 
 @app.get("/api/trains/stations")
