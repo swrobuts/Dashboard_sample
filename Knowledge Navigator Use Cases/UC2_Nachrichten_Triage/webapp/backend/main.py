@@ -26,6 +26,7 @@ from backend.attachment_extractor import extract_text as extract_attachment_text
 from backend.llm_client import get_llm_client
 from backend.memory_store import MemoryStore
 from backend.web_search import WEB_SEARCH_TRIGGER_RE, build_web_context
+from backend.rainforest_store import fetch_rainforest_with_tool, is_rainforest_query
 TRAIN_TRIGGER_RE = re.compile(
     # No strict word-boundary (\b) — German compounds like "Zugverbindung" must also match
     r'(?:zug|züge|bahn|verbindung|fahrplan|bahnhof|'
@@ -1120,6 +1121,15 @@ def chat(req: ChatRequest, session_id: str | None = Cookie(default=None)):
                     )
         except Exception as exc:
             logging.warning(f"[Memory] Web-Suche fehlgeschlagen: {exc}")
+
+    # Rainforest: tool_use query for deforestation data
+    if is_rainforest_query(req.message):
+        try:
+            rf_str = fetch_rainforest_with_tool(req.message)
+            if rf_str:
+                context_str += rf_str
+        except Exception as exc:
+            logging.warning(f"[Rainforest] Tool query fehlgeschlagen: {exc}")
 
     user_msg = (context_str + "\n\n" + req.message) if context_str else req.message
 
