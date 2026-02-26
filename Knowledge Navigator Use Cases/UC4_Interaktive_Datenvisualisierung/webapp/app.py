@@ -9,7 +9,14 @@ import requests
 import dash
 import numpy as np
 import plotly.graph_objects as go
-from dash import Input, Output, callback, ctx, dcc, html
+from dash import Input, Output, State, callback, clientside_callback, ctx, dcc, html
+
+try:
+    import anthropic as _anthropic
+    _HAS_ANTHROPIC = True
+except ImportError:
+    _HAS_ANTHROPIC = False
+    _anthropic = None
 
 from data_loader import (
     SUPABASE_KEY,
@@ -41,6 +48,28 @@ YEARS = get_years()
 CLASSES = get_classes()
 STATES = get_states()
 LATEST = max(YEARS)
+
+
+def _compute_year_notes(dataframe) -> dict:
+    """Derive factual annotations from actual data values (no invented context)."""
+    ts = dataframe.groupby("year")["area_km2"].sum().sort_index()
+    notes: dict[int, str] = {}
+    if ts.empty:
+        return notes
+    peak_yr = int(ts.idxmax())
+    min_yr = int(ts.idxmin())
+    notes[peak_yr] = "Höchster Messwert im Datensatz"
+    if min_yr != peak_yr:
+        notes[min_yr] = "Niedrigster Messwert im Datensatz"
+    pct = ts.pct_change()
+    if len(pct) > 1:
+        drop_yr = int(pct.idxmin())
+        if drop_yr not in notes:
+            notes[drop_yr] = f"Stärkster Rückgang im Vorjahresvergleich ({pct.min():.0%})"
+        rise_yr = int(pct.idxmax())
+        if rise_yr not in notes:
+            notes[rise_yr] = f"Stärkster Anstieg im Vorjahresvergleich (+{pct.max():.0%})"
+    return notes
 
 # ── GeoJSON assets ────────────────────────────────────────────────────────────
 _assets = os.path.join(os.path.dirname(__file__), "assets")
@@ -209,13 +238,129 @@ AMAZON_LOSS_PREDATA  = 700_000    # approximate cumulative loss before data star
 GERMANY_AREA_KM2     = 357_114             # Germany total area for KPI comparison
 
 # Hover annotations for notable deforestation years
-YEAR_NOTES = {
-    2019: "Bolsonaro-Ära: Umweltschutz geschwächt",
-    2020: "Politische Deregulierung — Entwaldung auf 12-Jahres-Hoch",
-    2021: "Höhepunkt unter Bolsonaro — höchster Wert seit 2006",
-    2022: "Lula gewählt (Amtsantritt Jan 2023)",
-    2023: "Rückkehr des Umweltschutzes — Rückgang −50 %",
+# NOTE: these are computed at runtime from actual data — see update_charts()
+YEAR_NOTES: dict[int, str] = _compute_year_notes(df)
+
+FOOTBALL_FIELD_KM2 = 0.00714   # 105 m × 68 m (FIFA-Standard)
+
+# ── Lesehilfe (reading guides) ────────────────────────────────────────────────
+LESEHILFE_FALLBACK = {
+    "expand-ts": """#### Was zeigt dieses Chart?
+Die Zeitreihe zeigt die jährlich gemessene Entwaldungsfläche (km²) im brasilianischen Amazonas.
+Datenquelle: INPE/PRODES (Programm zur Schätzung der Entwaldung in der brasilianischen Amazonasregion,
+Satelliten-Monitoring seit 1988). Das PRODES-Messjahr läuft von August bis Juli des Folgejahres.
+
+#### Kernbotschaft
+Die Bolsonaro-Regierung (1. Jan. 2019 – 31. Dez. 2022) markierte die höchsten Entwaldungsraten seit 2006.
+Mit dem Amtsantritt von Lula da Silva am 1. Jan. 2023 sank die gemessene Rate deutlich – ein klarer Beweis,
+dass politischer Wille direkte Messwirkung hat.
+
+#### Hintergrund
+Ca. 91 % der Entwaldungsakte im brasilianischen Amazonas galten 2023/24 als illegal (Quelle: ICV-Studie, 2025).
+Brasilien unterzeichnete am 2. Nov. 2021 (COP26, Glasgow) die Glasgow Leaders' Declaration on Forests,
+die bis 2030 den Stopp illegaler Entwaldung vorsieht. Der Amazonas speichert ca. 123 Mrd. Tonnen Kohlenstoff
+(über- und unterirdisch, Quelle: NOAA) und beherbergt ca. 10 % der globalen Artenvielfalt.""",
+
+    "expand-map": """#### Was zeigt dieses Chart?
+Die animierte Karte zeigt den kumulierten Waldverlust je Bundesstaat von 2010 bis zum gewählten Jahr.
+Dunklere Rotfärbung = höherer Gesamtverlust. Jeder Animationsframe addiert ein weiteres Jahr.
+
+#### Kernbotschaft
+Pará und Mato Grosso dominieren als größte Verlierer – beide sind Agrarbusiness-Zentren (Soja, Viehzucht).
+Der sogenannte „Arc of Deforestation" – ein Halbmond von Rondônia über Pará bis Mato Grosso – ist klar erkennbar.
+
+#### Hintergrund
+Neue Infrastrukturprojekte (z.B. BR-163, Ferrogrão) öffnen bisher unzugängliche Waldgebiete und treiben
+die Entwaldungsfront voran. Rondônia hat relativ zur Gesamtfläche bereits über 30 % seines ursprünglichen
+Waldes verloren – eines der am stärksten betroffenen Bundesstaaten.""",
+
+    "expand-top": """#### Was zeigt dieses Chart?
+Das horizontale Ranking zeigt die 5 Bundesstaaten mit der höchsten Entwaldung im ausgewählten Jahr.
+
+#### Kernbotschaft
+Pará und Mato Grosso führen mit großem Abstand, da sie die größten amazoni­schen Bundesstaaten sind
+und gleichzeitig intensive Landwirtschaft betreiben. Die jährlichen Verschiebungen im Ranking spiegeln
+lokale Faktoren wie Niederschlag, Polizeipräsenz und Rohstoffpreise wider.
+
+#### Hintergrund
+Über 90 % der Entwaldung in Brasilien gilt als illegal – entlang von Straßen und Flüssen, oft durch organisierte
+Landnahme („grilagem"). Die Entwaldungshotspots korrelieren stark mit globalen Sojaexporten und der
+Rindfleischproduktion. Gezielter Druck auf wenige Bundesstaaten hätte daher große Hebelwirkung.""",
+
+    "expand-donut": """#### Was zeigt dieses Chart?
+Das Kreisdiagramm zeigt die prozentuale Verteilung der Entwaldung auf die Bundesstaaten für das gewählte Jahr.
+Die Zahl in der Mitte gibt die Gesamtfläche des Jahres an.
+
+#### Kernbotschaft
+Pará und Mato Grosso machen regelmäßig über 50 % der Jahresentwaldung aus. Diese Konzentration ermöglicht
+gezielte Maßnahmen mit maximaler Wirkung.
+
+#### Hintergrund
+Das PRODES-Monitoring (INPE) basiert auf Landsat/Sentinel-Satellitendaten (30 m Auflösung) und erfasst
+Kahlschläge ≥ 6,25 ha. Kleinere Degradierungen durch selektiven Holzeinschlag oder Feuer werden separat
+durch das DETER-System erfasst – die tatsächliche Walddegradierung übertrifft die PRODES-Zahlen um
+den Faktor 2–3.""",
+
+    "expand-cum": """#### Was zeigt dieses Chart?
+Das gestapelte Säulendiagramm zeigt das verbleibende Waldkapital im Zeitverlauf. Grün = verbleibender Wald;
+dunkelbraun = geschätzter historischer Verlust vor Datenbeginn; rot = gemessener Verlust im Datensatz.
+
+#### Kernbotschaft
+In Kombination mit dem historischen Vorverlust nähert sich der Gesamtschwund dem kritischen Schwellenwert.
+Lovejoy & Nobre (Science Advances, 2018) warnen: Beim aktuellen Erwärmungsniveau droht ab ca. 20–25 %
+Gesamtverlust ein irreversibler „Dieback"-Effekt.
+
+#### Hintergrund
+Beim Dieback verliert der Wald die Fähigkeit, eigene Niederschläge zu produzieren, trocknet aus und
+verwandelt sich in Savanne – auch ohne weitere Abholzung. Carlos Nobre (INPE) schätzt, dass der Amazonas
+bereits 15–17 % seiner Originalfläche verloren hat. Ein Durchbrechen der 20–25 %-Schwelle würde massive,
+nicht umkehrbare CO₂-Freisetzung auslösen (Quelle: Lovejoy & Nobre, *Science Advances*, 2018,
+DOI: 10.1126/sciadv.aat2340).""",
+
+    "expand-sim": """#### Was zeigt dieses Chart?
+Die Simulation projiziert die Entwaldungsrate auf Basis des letzten Messwerts mit der eingestellten
+jährlichen Änderungsrate linear in die Zukunft.
+
+#### Presets erklärt
+**Paris-kompatibel (−10 %/Jahr):** Entspricht grob dem Tempo, das notwendig ist, um Brasiliens Zusage
+aus der Glasgow Leaders' Declaration (COP26, 2. Nov. 2021) – Stopp illegaler Entwaldung bis 2030 –
+annähernd zu erfüllen. Die Declaration wurde von über 140 Ländern unterzeichnet.
+**Null 2030 (−30 %/Jahr):** Zeigt das rechnerisch notwendige Maximum für dieses Ziel.
+
+#### Hintergrund
+Lula da Silva (im Amt seit 1. Jan. 2023) hat Strafverfolgung und Monitoring reaktiviert.
+Ca. 91 % der Entwaldung gilt als illegal (ICV, 2025) – wirksame Kontrolle hätte daher maximale Hebelwirkung.
+Der Amazonas speichert ca. 123 Mrd. Tonnen Kohlenstoff (NOAA) – sein Schutz ist eine der
+kosteneffizientesten Klimamaßnahmen weltweit.""",
 }
+
+
+def _gen_lesehilfe(key: str, context: str) -> str:
+    """Generate Lesehilfe text via Claude API, fallback to static text."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key or not _HAS_ANTHROPIC:
+        return LESEHILFE_FALLBACK.get(key, "Keine Lesehilfe verfügbar.")
+    try:
+        client = _anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Du bist Autor eines Amazon-Entwaldungs-Dashboards für einen Universitätskurs.\n"
+                    f"Schreibe eine prägnante Lesehilfe auf Deutsch (~200 Wörter) für: **{context}**\n\n"
+                    "Gliedere in Markdown:\n#### Was zeigt dieses Chart?\n(1-2 Sätze)\n\n"
+                    "#### Kernbotschaft\n(2-3 Sätze)\n\n#### Hintergrund\n(3-4 Sätze, konkrete Fakten)\n\n"
+                    "Sachlich, präzise, Bezug zu Amazonas/Klimapolitik/Brasilien."
+                ),
+            }],
+        )
+        return msg.content[0].text
+    except Exception as exc:
+        print(f"Warning: Lesehilfe API call failed for {key}: {exc}")
+        return LESEHILFE_FALLBACK.get(key, "Keine Lesehilfe verfügbar.")
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def filter_df(year, cls, state):
@@ -241,6 +386,9 @@ def make_kpi_card(title, value_id, subtitle_id):
 # ── Layout ───────────────────────────────────────────────────────────────────
 app.layout = html.Div(
     [
+        # Hidden stores
+        dcc.Store(id="modal-active-chart"),
+        dcc.Store(id="map-ctrl-dummy"),
         # Header
         html.Header(
             [
@@ -332,8 +480,9 @@ app.layout = html.Div(
                     ],
                     className="kpi-card",
                 ),
-                make_kpi_card(f"Fläche (kumuliert) seit {min(YEARS)}", "kpi-total-val", "kpi-total-sub"),
+                make_kpi_card(f"Kumuliert seit {min(YEARS)}", "kpi-total-val", "kpi-total-sub"),
                 make_kpi_card("Staat mit höchster Rodung", "kpi-worst-val", "kpi-worst-sub"),
+                make_kpi_card("Verlust-Tempo", "kpi-tempo-val", "kpi-tempo-sub"),
             ],
             className="kpi-row",
         ),
@@ -343,8 +492,9 @@ app.layout = html.Div(
                 # Zeitreihe
                 html.Div(
                     [
+                        html.Button("⤢", id="expand-ts", className="expand-btn", title="Vergrößern"),
                         html.H3("Jährliche Entwaldung"),
-                        html.Div("km² pro Jahr", className="chart-sub"),
+                        html.Div("Entwaldete Fläche km² pro Jahr · INPE PRODES", className="chart-sub"),
                         dcc.Graph(id="chart-timeseries", config={"displayModeBar": False}),
                     ],
                     className="chart-card",
@@ -352,8 +502,19 @@ app.layout = html.Div(
                 # Choropleth map (Plotly Mapbox)
                 html.Div(
                     [
+                        html.Button("⤢", id="expand-map", className="expand-btn", title="Vergrößern"),
                         html.H3("Entwaldung nach Bundesstaat"),
-                        html.Div(f"Kumulativer Waldverlust {min(YEARS)}–{max(YEARS)} · Farbe = Gesamtverlust bis zum jeweiligen Jahr", className="chart-sub"),
+                        html.Div(
+                            f"Kumulativer Waldverlust {min(YEARS)}–{max(YEARS)} · Farbe = Gesamtverlust bis zum jeweiligen Jahr",
+                            className="chart-sub",
+                        ),
+                        html.Div(
+                            [
+                                html.Button("▶ Play", id="map-play-btn", className="map-ctrl-btn"),
+                                html.Button("⏸ Pause", id="map-pause-btn", className="map-ctrl-btn"),
+                            ],
+                            className="map-controls",
+                        ),
                         dcc.Graph(
                             id="chart-map",
                             config={"displayModeBar": False, "scrollZoom": True},
@@ -364,6 +525,7 @@ app.layout = html.Div(
                 # Top 5 Staaten
                 html.Div(
                     [
+                        html.Button("⤢", id="expand-top", className="expand-btn", title="Vergrößern"),
                         html.H3("Top 5 Staaten"),
                         html.Div(id="chart-topflop-sub", className="chart-sub"),
                         dcc.Graph(id="chart-topflop", config={"displayModeBar": False}),
@@ -373,6 +535,7 @@ app.layout = html.Div(
                 # Staatsanteil Donut
                 html.Div(
                     [
+                        html.Button("⤢", id="expand-donut", className="expand-btn", title="Vergrößern"),
                         html.H3("Staatsanteil"),
                         html.Div(id="chart-donut-sub", className="chart-sub"),
                         dcc.Graph(id="chart-donut", config={"displayModeBar": False}),
@@ -382,8 +545,12 @@ app.layout = html.Div(
                 # Kumulativer Area-Chart (full width)
                 html.Div(
                     [
-                        html.H3("Kumulativer Verlust"),
-                        html.Div(f"Verbleibend vs. vernichtet seit {min(YEARS)} · Gesamtfläche Amazonas: 4,1 Mio. km²", className="chart-sub"),
+                        html.Button("⤢", id="expand-cum", className="expand-btn", title="Vergrößern"),
+                        html.H3("Kumulativer Waldverlust"),
+                        html.Div(
+                            f"Verbleibend vs. vernichtet · Gesamtfläche Amazonas: 4,1 Mio. km²",
+                            className="chart-sub",
+                        ),
                         dcc.Graph(id="chart-cumulative", config={"displayModeBar": False}),
                     ],
                     className="chart-card full-width",
@@ -443,8 +610,22 @@ app.layout = html.Div(
                         html.Button("Trend (letzte 5 J.)", id="preset-trend", n_clicks=0),
                         html.Button("Paris-kompatibel", id="preset-paris", n_clicks=0),
                         html.Button("Null 2030", id="preset-zero", n_clicks=0),
+                        html.Button("⤢ Vergrößern", id="expand-sim", className="expand-btn",
+                                    style={"position": "static", "padding": "5px 12px",
+                                           "width": "auto", "height": "auto"}),
                     ],
                     className="sim-presets",
+                ),
+                html.Div(
+                    [
+                        html.Strong("Pariser Klimaziele: "),
+                        'Brasilien hat "null illegale Entwaldung bis 2030" zugesagt (Glasgow COP26, 2021). ',
+                        html.Strong("Paris-kompatibel (−10 %/Jahr)"),
+                        " entspricht dem notwendigen Mindesttempo für dieses Ziel. ",
+                        html.Strong("Null 2030 (−30 %/Jahr)"),
+                        " zeigt das rechnerische Maximum.",
+                    ],
+                    className="sim-context",
                 ),
                 html.Div(id="sim-result-text", className="sim-result"),
                 dcc.Graph(id="chart-simulation", config={"displayModeBar": False}),
@@ -453,12 +634,171 @@ app.layout = html.Div(
         ),
         # Footer
         html.Footer(
-            "Daten: INPE PRODES via TerraBrasilis · IBGE (Staatsgrenzen)",
+            "Daten: INPE PRODES via TerraBrasilis · IBGE (Staatsgrenzen) · "
+            "Lovejoy & Nobre (Science Advances, 2018) · ICV (2025)",
             className="footer",
+        ),
+        # Modal overlay — expands any chart with Lesehilfe
+        html.Div(
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.H3("", id="modal-title"),
+                            html.Button(
+                                "✕ Schließen",
+                                id="modal-close-btn",
+                                className="modal-close-btn",
+                                n_clicks=0,
+                            ),
+                        ],
+                        className="modal-header",
+                    ),
+                    html.Div(
+                        [
+                            html.Div(
+                                dcc.Graph(
+                                    id="modal-graph",
+                                    config={"displayModeBar": False},
+                                    style={"height": "520px"},
+                                ),
+                                className="modal-chart",
+                            ),
+                            html.Div(
+                                id="modal-lesehilfe-content",
+                                className="modal-lesehilfe",
+                            ),
+                        ],
+                        className="modal-body",
+                    ),
+                ],
+                className="modal-box",
+            ),
+            id="modal-overlay",
+            className="modal-overlay",
+            style={"display": "none"},
         ),
     ],
     className="dashboard",
 )
+
+
+# ── Generate Lesehilfe texts at startup ───────────────────────────────────────
+_LESEHILFE_CTX = {
+    "expand-ts":    f"Jährliche Entwaldung — Zeitreihe km²/Jahr {min(YEARS)}–{max(YEARS)}, INPE PRODES",
+    "expand-map":   f"Entwaldung nach Bundesstaat — Kumulierte animierte Choropleth-Karte {min(YEARS)}–{max(YEARS)}",
+    "expand-top":   "Top 5 Bundesstaaten — Ranking nach jährlicher Entwaldungsfläche",
+    "expand-donut": "Staatsanteil — Kreisdiagramm Jahresverteilung je Bundesstaat",
+    "expand-cum":   f"Kumulativer Waldverlust — Gesamtfläche Amazon 4,1 Mio. km², {min(YEARS)}–{max(YEARS)}",
+    "expand-sim":   "Simulation & Hochrechnung — Projektion mit Pariser Klimazielen (Glasgow-Deklaration 2021)",
+}
+print("Generating Lesehilfe texts...")
+LESEHILFE: dict[str, str] = {k: _gen_lesehilfe(k, v) for k, v in _LESEHILFE_CTX.items()}
+print("✓ Lesehilfe ready")
+
+
+# ── Clientside callbacks ───────────────────────────────────────────────────────
+
+# Map play / pause via HTML buttons (cleaner than Plotly updatemenus)
+clientside_callback(
+    """
+    function(play_n, pause_n) {
+        const ctx = window.dash_clientside.callback_context;
+        if (!ctx.triggered.length) return window.dash_clientside.no_update;
+        const btn_id = ctx.triggered[0].prop_id.split('.')[0];
+        try {
+            if (btn_id === 'map-play-btn') {
+                Plotly.animate('chart-map', null, {
+                    frame: {duration: 800, redraw: true},
+                    fromcurrent: true,
+                    transition: {duration: 200}
+                });
+            } else {
+                Plotly.animate('chart-map', [null], {
+                    frame: {duration: 0, redraw: false},
+                    mode: 'immediate'
+                });
+            }
+        } catch(e) {}
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("map-ctrl-dummy", "data"),
+    Input("map-play-btn", "n_clicks"),
+    Input("map-pause-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+# Modal: open on expand button click, close on close button
+clientside_callback(
+    """
+    function(ts_n, map_n, top_n, donut_n, cum_n, sim_n, close_n,
+             ts_fig, map_fig, top_fig, donut_fig, cum_fig, sim_fig) {
+        const ctx = window.dash_clientside.callback_context;
+        if (!ctx.triggered.length) return [window.dash_clientside.no_update,
+                                           {display:'none'}, ''];
+        const btn_id = ctx.triggered[0].prop_id.split('.')[0];
+        if (btn_id === 'modal-close-btn') {
+            return [window.dash_clientside.no_update, {display:'none'}, ''];
+        }
+        const lookup = {
+            'expand-ts':    ts_fig,
+            'expand-map':   map_fig,
+            'expand-top':   top_fig,
+            'expand-donut': donut_fig,
+            'expand-cum':   cum_fig,
+            'expand-sim':   sim_fig,
+        };
+        let fig = lookup[btn_id];
+        if (!fig) return [window.dash_clientside.no_update, {display:'none'}, ''];
+        // Strip animation controls for map so modal shows cleanly
+        if (btn_id === 'expand-map') {
+            fig = JSON.parse(JSON.stringify(fig));
+            if (fig.layout) { fig.layout.sliders = []; fig.layout.updatemenus = []; }
+        }
+        return [fig, {display:'flex'}, btn_id];
+    }
+    """,
+    Output("modal-graph", "figure"),
+    Output("modal-overlay", "style"),
+    Output("modal-active-chart", "data"),
+    Input("expand-ts", "n_clicks"),
+    Input("expand-map", "n_clicks"),
+    Input("expand-top", "n_clicks"),
+    Input("expand-donut", "n_clicks"),
+    Input("expand-cum", "n_clicks"),
+    Input("expand-sim", "n_clicks"),
+    Input("modal-close-btn", "n_clicks"),
+    State("chart-timeseries", "figure"),
+    State("chart-map", "figure"),
+    State("chart-topflop", "figure"),
+    State("chart-donut", "figure"),
+    State("chart-cumulative", "figure"),
+    State("chart-simulation", "figure"),
+    prevent_initial_call=True,
+)
+
+
+@callback(
+    Output("modal-lesehilfe-content", "children"),
+    Output("modal-title", "children"),
+    Input("modal-active-chart", "data"),
+    prevent_initial_call=True,
+)
+def update_modal_lesehilfe(chart_id):
+    if not chart_id:
+        return "", ""
+    titles = {
+        "expand-ts":    "Jährliche Entwaldung",
+        "expand-map":   "Entwaldung nach Bundesstaat",
+        "expand-top":   "Top 5 Staaten",
+        "expand-donut": "Staatsanteil",
+        "expand-cum":   "Kumulativer Waldverlust",
+        "expand-sim":   "Simulation & Hochrechnung",
+    }
+    text = LESEHILFE.get(chart_id, "")
+    title = titles.get(chart_id, "")
+    return dcc.Markdown(text), title
 
 
 # ── KPI Callback ─────────────────────────────────────────────────────────────
@@ -470,6 +810,8 @@ app.layout = html.Div(
     Output("kpi-total-sub", "children"),
     Output("kpi-worst-val", "children"),
     Output("kpi-worst-sub", "children"),
+    Output("kpi-tempo-val", "children"),
+    Output("kpi-tempo-sub", "children"),
     Input("filter-year", "value"),
     Input("filter-class", "value"),
     Input("filter-state", "value"),
@@ -524,7 +866,16 @@ def update_kpis(year, cls, state, lang):
         kpi_worst_val = "—"
         kpi_worst_sub = ""
 
-    return kpi_year_title, kpi_year_val, delta, kpi_total_val, kpi_total_sub, kpi_worst_val, kpi_worst_sub
+    # Verlust-Tempo: football fields per minute at current year's rate
+    if area_year > 0:
+        fields_per_min = (area_year / 365.25 / 24 / 60) / FOOTBALL_FIELD_KM2
+        kpi_tempo_val = f"~{fields_per_min:.1f}"
+    else:
+        kpi_tempo_val = "—"
+    kpi_tempo_sub = "Fußballfelder / Minute"
+
+    return (kpi_year_title, kpi_year_val, delta, kpi_total_val, kpi_total_sub,
+            kpi_worst_val, kpi_worst_sub, kpi_tempo_val, kpi_tempo_sub)
 
 
 # ── Map Callback — animated Zeitraffer choropleth ─────────────────────────────
@@ -597,36 +948,6 @@ def update_map(cls):
     fig = go.Figure(data=[make_trace(last_year)], frames=frames)
     fig.update_layout(
         annotations=[year_annotation(last_year)],
-        updatemenus=[{
-            "type": "buttons",
-            "showactive": False,
-            "direction": "right",
-            "y": 0.0, "x": 0.0, "xanchor": "left", "yanchor": "bottom",
-            "bgcolor": "rgba(255,255,255,0.90)",
-            "bordercolor": "#ccc", "borderwidth": 1,
-            "pad": {"r": 6, "t": 6, "b": 6, "l": 6},
-            "font": {"family": "Inter", "size": 16, "color": "#2d6a4f"},
-            "buttons": [
-                {
-                    "label": "▶",
-                    "method": "animate",
-                    "args": [
-                        None,
-                        {"frame": {"duration": 800, "redraw": True},
-                         "fromcurrent": True,
-                         "transition": {"duration": 200}},
-                    ],
-                },
-                {
-                    "label": "⏹",
-                    "method": "animate",
-                    "args": [
-                        [None],
-                        {"frame": {"duration": 0, "redraw": True}, "mode": "immediate"},
-                    ],
-                },
-            ],
-        }],
         sliders=[{
             "active": len(all_years) - 1,
             "steps": [
@@ -637,12 +958,10 @@ def update_map(cls):
                 }
                 for yr in all_years
             ],
-            "currentvalue": {
-                "visible": False,   # suppressed — big annotation on map takes over
-            },
-            "pad": {"b": 8, "t": 40},
+            "currentvalue": {"visible": False},
+            "pad": {"b": 8, "t": 32},
             "font": {"family": "Inter", "size": 10, "color": "#999"},
-            "len": 0.82, "x": 0.18,
+            "len": 1.0, "x": 0.0,
             "bgcolor": "rgba(255,255,255,0)",
             "bordercolor": "#ddd",
         }],
@@ -712,18 +1031,10 @@ def update_charts(year, cls, state, lang):
         )
     )
     fig_ts.update_layout(
-        **CHART_LAYOUT,
+        **{**CHART_LAYOUT, "margin": dict(l=12, r=20, t=12, b=44)},
         xaxis_title="Jahr",
         xaxis=dict(tickfont=dict(size=12), dtick=1, tickangle=-45),
-        yaxis=dict(
-            tickformat=",d",
-            tickfont=dict(size=11),
-            gridcolor="#eeeeea",
-            gridwidth=1,
-            title="km²",
-            titlefont=dict(size=11, color="#aaa"),
-        ),
-        yaxis_range=[0, max_val * 1.18],
+        yaxis=dict(visible=False, range=[0, max_val * 1.22]),
         bargap=0.10,
     )
 
@@ -812,7 +1123,7 @@ def update_charts(year, cls, state, lang):
         x=cum_loss_our.index,
         y=[AMAZON_LOSS_PREDATA] * len(cum_loss_our),
         name="Verlust vor 2010",
-        marker=dict(color="rgba(180,60,60,0.52)", line=dict(width=0)),
+        marker=dict(color="rgba(100,50,20,0.78)", line=dict(width=0)),
         hovertemplate="<b>%{x}</b><br>Verlust vor 2010: ~700.000 km²<extra></extra>",
     ))
     fig_cum.add_trace(go.Bar(
@@ -918,8 +1229,9 @@ def update_simulation(cls, state, rate_pct, horizon, lang):
         **{**CHART_LAYOUT, "showlegend": True},
         yaxis_title="km²/Jahr",
         xaxis=dict(tickfont=dict(size=12)),
-        yaxis=dict(tickfont=dict(size=12)),
+        yaxis=dict(tickfont=dict(size=12), gridcolor="#eeeeea"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=13)),
+        transition=dict(duration=600, easing="cubic-in-out"),
     )
 
     if proj_vals:
