@@ -605,6 +605,33 @@ app.layout = html.Div(
                     ],
                     className="sim-controls",
                 ),
+                # Live projection KPIs — update as slider moves
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Div("", id="sim-kpi-rate-label", className="sim-kpi-label"),
+                                html.Div("—", id="sim-kpi-rate-val", className="sim-kpi-val"),
+                            ],
+                            className="sim-kpi-card",
+                        ),
+                        html.Div(
+                            [
+                                html.Div("Projektion kumuliert", className="sim-kpi-label"),
+                                html.Div("—", id="sim-kpi-total-val", className="sim-kpi-val"),
+                            ],
+                            className="sim-kpi-card",
+                        ),
+                        html.Div(
+                            [
+                                html.Div("Wald verbleibend", className="sim-kpi-label"),
+                                html.Div("—", id="sim-kpi-remaining-val", className="sim-kpi-val"),
+                            ],
+                            className="sim-kpi-card",
+                        ),
+                    ],
+                    className="sim-kpi-row",
+                ),
                 html.Div(
                     [
                         html.Button("Trend (letzte 5 J.)", id="preset-trend", n_clicks=0),
@@ -706,20 +733,24 @@ clientside_callback(
         const ctx = window.dash_clientside.callback_context;
         if (!ctx.triggered.length) return window.dash_clientside.no_update;
         const btn_id = ctx.triggered[0].prop_id.split('.')[0];
-        try {
-            if (btn_id === 'map-play-btn') {
-                Plotly.animate('chart-map', null, {
+        const el = document.getElementById('chart-map');
+        if (!el) return window.dash_clientside.no_update;
+        if (btn_id === 'map-play-btn') {
+            el._mapPlaying = true;
+            (function loop() {
+                if (!el._mapPlaying) return;
+                Plotly.animate(el, null, {
                     frame: {duration: 800, redraw: true},
-                    fromcurrent: true,
-                    transition: {duration: 200}
+                    transition: {duration: 200},
+                    mode: 'afterall'
+                }).then(function() {
+                    if (el._mapPlaying) setTimeout(loop, 500);
                 });
-            } else {
-                Plotly.animate('chart-map', [null], {
-                    frame: {duration: 0, redraw: false},
-                    mode: 'immediate'
-                });
-            }
-        } catch(e) {}
+            })();
+        } else {
+            el._mapPlaying = false;
+            try { Plotly.animate(el, [], {frame: {duration: 0}, mode: 'immediate'}); } catch(e) {}
+        }
         return window.dash_clientside.no_update;
     }
     """,
@@ -751,10 +782,10 @@ clientside_callback(
         };
         let fig = lookup[btn_id];
         if (!fig) return [window.dash_clientside.no_update, {display:'none'}, ''];
-        // Strip animation controls for map so modal shows cleanly
+        // Keep sliders for map animation; only strip updatemenus (HTML buttons handle play/pause)
         if (btn_id === 'expand-map') {
             fig = JSON.parse(JSON.stringify(fig));
-            if (fig.layout) { fig.layout.sliders = []; fig.layout.updatemenus = []; }
+            if (fig.layout) { fig.layout.updatemenus = []; }
         }
         return [fig, {display:'flex'}, btn_id];
     }
@@ -872,7 +903,7 @@ def update_kpis(year, cls, state, lang):
         kpi_tempo_val = f"~{fields_per_min:.1f}"
     else:
         kpi_tempo_val = "—"
-    kpi_tempo_sub = "Fußballfelder / Minute"
+    kpi_tempo_sub = "Fußballfelder / Minute · 105 × 68 m"
 
     return (kpi_year_title, kpi_year_val, delta, kpi_total_val, kpi_total_sub,
             kpi_worst_val, kpi_worst_sub, kpi_tempo_val, kpi_tempo_sub)
@@ -1012,29 +1043,24 @@ def update_charts(year, cls, state, lang):
         base = f"<b>{int(row['year'])}</b>  {row['area_km2']:,.0f} km²"
         hover_texts.append(base + (f"<br><i>{note}</i>" if note else ""))
 
-    # Only label first year, peak year, and last year — avoid clutter
-    key_years = {int(ts["year"].iloc[0]), int(ts.loc[ts["area_km2"].idxmax(), "year"]), int(ts["year"].iloc[-1])}
-    bar_text = [
-        f"{int(v):,}" if int(yr) in key_years else ""
-        for v, yr in zip(ts["area_km2"], ts["year"])
-    ]
+    bar_text = [f"{int(v):,}" for v in ts["area_km2"]]
     fig_ts = go.Figure(
         go.Bar(
             x=ts["year"], y=ts["area_km2"],
             marker_color=bar_colors,
             text=bar_text,
             textposition="outside",
-            textfont=dict(size=12, color="#444"),
+            textfont=dict(size=11, color="#444"),
             hovertext=hover_texts,
             hoverinfo="text",
-            width=0.75,
+            width=0.88,
         )
     )
     fig_ts.update_layout(
         **{**CHART_LAYOUT, "margin": dict(l=12, r=20, t=12, b=44)},
         xaxis_title="Jahr",
         xaxis=dict(tickfont=dict(size=12), dtick=1, tickangle=-45),
-        yaxis=dict(visible=False, range=[0, max_val * 1.22]),
+        yaxis=dict(visible=False, range=[0, max_val * 1.28]),
         bargap=0.10,
     )
 
@@ -1123,7 +1149,7 @@ def update_charts(year, cls, state, lang):
         x=cum_loss_our.index,
         y=[AMAZON_LOSS_PREDATA] * len(cum_loss_our),
         name="Verlust vor 2010",
-        marker=dict(color="rgba(100,50,20,0.78)", line=dict(width=0)),
+        marker=dict(color="rgba(140,20,20,0.88)", line=dict(width=0)),
         hovertemplate="<b>%{x}</b><br>Verlust vor 2010: ~700.000 km²<extra></extra>",
     ))
     fig_cum.add_trace(go.Bar(
@@ -1184,6 +1210,10 @@ def apply_preset(trend_clicks, paris_clicks, zero_clicks):
 @callback(
     Output("chart-simulation", "figure"),
     Output("sim-result-text", "children"),
+    Output("sim-kpi-rate-val", "children"),
+    Output("sim-kpi-total-val", "children"),
+    Output("sim-kpi-remaining-val", "children"),
+    Output("sim-kpi-rate-label", "children"),
     Input("filter-class", "value"),
     Input("filter-state", "value"),
     Input("sim-rate", "value"),
@@ -1245,10 +1275,27 @@ def update_simulation(cls, state, rate_pct, horizon, lang):
             f"Gesamtverlust seit {min(hist_years)} = {fmt(total_all, lang)} "
             f"(≈ {fmt_mult(total_all / GERMANY_AREA_KM2, lang)} Deutschland)"
         )
+        # Simulation KPI values
+        kpi_rate = fmt(max(0.0, proj_vals[-1]), lang)
+        kpi_total = fmt(total_proj, lang)
+        # Remaining Amazon forest — always from full unfiltered data for ecological meaning
+        full_ts = df.groupby("year")["area_km2"].sum().sort_index()
+        full_proj = project_deforestation(
+            full_ts.index.tolist(), full_ts.values.tolist(), rate_pct, horizon
+        )
+        remaining_km2 = (
+            AMAZON_FOREST_KM2 - AMAZON_LOSS_PREDATA - float(full_ts.sum()) - sum(full_proj)
+        )
+        remaining_pct = max(0.0, remaining_km2 / AMAZON_FOREST_KM2 * 100)
+        kpi_remaining = f"{remaining_pct:.1f} %"
     else:
         text = "Keine Projektion verfügbar."
+        kpi_rate = "—"
+        kpi_total = "—"
+        kpi_remaining = "—"
 
-    return fig, text
+    kpi_rate_label = f"Rate {horizon}"
+    return fig, text, kpi_rate, kpi_total, kpi_remaining, kpi_rate_label
 
 
 if __name__ == "__main__":

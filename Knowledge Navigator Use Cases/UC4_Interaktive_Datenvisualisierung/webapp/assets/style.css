@@ -292,12 +292,41 @@ body {
     color: #aaa;
 }
 
+/* ── Simulation projected KPIs ────────────────────────────────────────────── */
+.sim-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.sim-kpi-card {
+    background: #f4f8f5;
+    border: 1px solid #c8ddd0;
+    border-radius: 4px;
+    padding: 14px 18px;
+}
+.sim-kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 6px;
+}
+.sim-kpi-val {
+    font-size: 22px;
+    font-weight: 300;
+    color: #1a3a2a;
+    letter-spacing: -0.3px;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 960px) {
     .kpi-row     { grid-template-columns: repeat(2, 1fr); }
     .charts-grid { grid-template-columns: 1fr; }
     .chart-card.full-width { grid-column: 1; }
     .sim-controls { flex-direction: column; }
+    .sim-kpi-row  { grid-template-columns: 1fr; }
     .modal-body { flex-direction: column; }
     .modal-lesehilfe {
         max-width: 100%;
