@@ -643,7 +643,7 @@ app.layout = html.Div(
                         html.Button("⤢", id="expand-cum", className="expand-btn", title="Vergrößern"),
                         html.H3("Kumulativer Waldverlust"),
                         html.Div(
-                            f"Verbleibend vs. vernichtet · Gesamtfläche Amazonas: 4,1 Mio. km²",
+                            "Verbleibend vs. vernichtet · Gesamtfläche Amazonas: 4,1 Mio. km² · Datenlabel = kumulierter Gesamtverlust in %",
                             className="chart-sub",
                         ),
                         dcc.Graph(id="chart-cumulative", config={"displayModeBar": False}),
@@ -1277,11 +1277,14 @@ def update_charts(year, cls, state, lang):
         y=cum_loss_our.values,
         name="Verlust 2010–heute",
         marker=dict(color="rgba(204,96,96,0.45)", line=dict(width=0)),
+        text=[f"{v:.1f}%" for v in loss_pct.values],
+        textposition="outside",
+        textfont=dict(size=10, color="#666"),
         hovertemplate="<b>%{x}</b><br>Verlust 2010–%{x}: %{y:,.0f} km²<br>%{customdata:.1f}% vernichtet<extra></extra>",
         customdata=loss_pct.values,
     ))
     fig_cum.update_layout(
-        **{**CHART_LAYOUT, "showlegend": True, "margin": dict(l=60, r=20, t=44, b=44)},
+        **{**CHART_LAYOUT, "showlegend": True, "margin": dict(l=60, r=20, t=52, b=44)},
         barmode="stack",
         xaxis_title="Jahr",
         yaxis_title="km²",
@@ -1377,6 +1380,21 @@ def update_simulation(cls, state, rate_pct, horizon, lang):
             )
         )
         fig.add_vline(x=max(hist_years), line_dash="dot", line_color="#999", line_width=1)
+        final_val = max(0.0, proj_vals[-1])
+        fig.add_annotation(
+            x=horizon,
+            y=final_val,
+            text=f"<b>{fmt(final_val, lang)}</b>",
+            showarrow=True,
+            arrowhead=2,
+            arrowcolor=RED_MED,
+            ax=44, ay=-28,
+            font=dict(size=12, color=RED_MED, family="Inter"),
+            bgcolor="rgba(255,255,255,0.88)",
+            bordercolor=RED_MED,
+            borderwidth=1,
+            borderpad=4,
+        )
 
     fig.update_layout(
         **{**CHART_LAYOUT, "showlegend": True},
