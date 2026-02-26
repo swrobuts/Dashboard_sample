@@ -225,7 +225,6 @@ body {
     padding: 4px 0 0 20px;
 }
 .modal-lesehilfe::before {
-    content: "ℹ  Lesehilfe";
     display: block;
     font-size: 10px;
     font-weight: 700;
@@ -234,6 +233,10 @@ body {
     color: #2d6a4f;
     margin-bottom: 16px;
 }
+body[data-lang="de"] .modal-lesehilfe::before { content: "ℹ  Lesehilfe"; }
+body[data-lang="en"] .modal-lesehilfe::before { content: "ℹ  Reading Guide"; }
+body[data-lang="pt"] .modal-lesehilfe::before { content: "ℹ  Guia de Leitura"; }
+body:not([data-lang]) .modal-lesehilfe::before { content: "ℹ  Lesehilfe"; }
 .modal-lesehilfe h4 {
     font-size: 11px;
     font-weight: 600;
@@ -258,7 +261,6 @@ body {
     color: #555;
 }
 .chart-lesehilfe::before {
-    content: "ℹ  Lesehilfe";
     display: block;
     font-size: 10px;
     font-weight: 700;
@@ -267,6 +269,10 @@ body {
     color: #2d6a4f;
     margin-bottom: 14px;
 }
+body[data-lang="de"] .chart-lesehilfe::before { content: "ℹ  Lesehilfe"; }
+body[data-lang="en"] .chart-lesehilfe::before { content: "ℹ  Reading Guide"; }
+body[data-lang="pt"] .chart-lesehilfe::before { content: "ℹ  Guia de Leitura"; }
+body:not([data-lang]) .chart-lesehilfe::before { content: "ℹ  Lesehilfe"; }
 .chart-lesehilfe h4 {
     font-size: 11px;
     font-weight: 600;

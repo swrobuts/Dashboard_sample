@@ -961,6 +961,7 @@ app.layout = html.Div(
         dcc.Store(id="colorblind-mode", data=False),
         dcc.Store(id="heatmap-metric", data="abs"),
         dcc.Store(id="treemap-anim-dummy"),
+        html.Div(id="lang-body-sync", style={"display": "none"}),
         # Header
         html.Header(
             [
@@ -1666,6 +1667,18 @@ print("✓ Lesehilfe ready")
 
 
 # ── Clientside callbacks ───────────────────────────────────────────────────────
+
+# Sync language to body[data-lang] so CSS ::before can switch label text
+clientside_callback(
+    """
+    function(lang) {
+        document.body.setAttribute('data-lang', lang || 'de');
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("lang-body-sync", "children"),
+    Input("lang-toggle", "value"),
+)
 
 # Map play / pause via HTML buttons (cleaner than Plotly updatemenus)
 clientside_callback(
