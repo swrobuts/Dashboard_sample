@@ -5,8 +5,8 @@ Datenquelle: INPE/PRODES via TerraBrasilis
 import json
 import os
 
+import requests
 import dash
-import dash_leaflet as dl
 import numpy as np
 import plotly.graph_objects as go
 from dash import Input, Output, callback, ctx, dcc, html
@@ -45,11 +45,114 @@ LATEST = max(YEARS)
 # ── GeoJSON assets ────────────────────────────────────────────────────────────
 _assets = os.path.join(os.path.dirname(__file__), "assets")
 
+# Amazon Legal states: 2-letter code → IBGE numeric geocode
+_CODE_TO_IBGE = {
+    "RO": "11", "AC": "12", "AM": "13", "RR": "14", "PA": "15",
+    "AP": "16", "TO": "17", "MA": "21", "MT": "51",
+}
+
+
+def _fetch_states_geojson():
+    """Fetch Amazon state boundaries from IBGE malhas API (one request per state)."""
+    features = []
+    base = "https://servicodados.ibge.gov.br/api/v3/malhas/estados"
+    for code, ibge in _CODE_TO_IBGE.items():
+        try:
+            resp = requests.get(
+                f"{base}/{ibge}?formato=application/vnd.geo+json", timeout=20
+            )
+            resp.raise_for_status()
+            geo = resp.json()
+            for feat in geo.get("features", []):
+                feat.setdefault("properties", {})["state_code"] = code
+                features.append(feat)
+        except Exception as exc:
+            print(f"Warning: Could not fetch {code} ({ibge}) from IBGE: {exc}")
+    print(f"✓ Loaded {len(features)} Amazon state boundaries from IBGE")
+    return {"type": "FeatureCollection", "features": features}
+
+
 with open(os.path.join(_assets, "prodes_states.geojson"), encoding="utf-8") as f:
     STATES_GEO = json.load(f)
 
-with open(os.path.join(_assets, "raisg_territories.geojson"), encoding="utf-8") as f:
-    RAISG_GEO = json.load(f)
+# If local file is empty (not yet generated), fetch live from IBGE
+if not STATES_GEO.get("features"):
+    STATES_GEO = _fetch_states_geojson()
+
+# ── State name mapping ────────────────────────────────────────────────────────
+STATE_NAME_MAP = {
+    "AC": "Acre",
+    "AM": "Amazonas",
+    "AP": "Amapá",
+    "MA": "Maranhão",
+    "MT": "Mato Grosso",
+    "PA": "Pará",
+    "RO": "Rondônia",
+    "RR": "Roraima",
+    "TO": "Tocantins",
+}
+
+
+def state_display(code):
+    return STATE_NAME_MAP.get(code, code)
+
+
+# ── German state area comparison ──────────────────────────────────────────────
+GERMAN_STATES_KM2 = {
+    "Bayern": 70_541,
+    "Niedersachsen": 47_618,
+    "Baden-Württemberg": 35_748,
+    "NRW": 34_098,
+    "Brandenburg": 29_654,
+    "M.-Vorpommern": 23_213,
+    "Hessen": 21_115,
+    "Sachsen-Anhalt": 20_452,
+    "Rheinland-Pfalz": 19_854,
+    "Sachsen": 18_416,
+    "Thüringen": 16_202,
+    "Schleswig-Holstein": 15_800,
+    "Saarland": 2_569,
+    "Berlin": 892,
+    "Hamburg": 755,
+    "Bremen": 419,
+}
+
+
+def german_comparison(val_km2, lang="en"):
+    """Return '<val> · ≈ Saarland' or '≈ 2.3× Bayern' comparison."""
+    if val_km2 <= 0:
+        return ""
+    closest = min(GERMAN_STATES_KM2, key=lambda k: abs(GERMAN_STATES_KM2[k] - val_km2))
+    area = GERMAN_STATES_KM2[closest]
+    ratio = val_km2 / area
+    ratio_s = fmt_mult(ratio, lang)
+    if 0.85 <= ratio <= 1.15:
+        return f"≈ {closest}"
+    return f"≈ {ratio_s} {closest}"
+
+
+# ── Number formatting ─────────────────────────────────────────────────────────
+def fmt(val, lang="en", suffix=" km²", dec=0):
+    """Format number with language-aware thousand/decimal separators."""
+    s = f"{val:,.{dec}f}"
+    if lang == "de":
+        s = s.replace(",", "THOU").replace(".", ",").replace("THOU", ".")
+    return s + suffix
+
+
+def fmt_pct(val, lang="en"):
+    s = f"{abs(val):.1f}"
+    if lang == "de":
+        s = s.replace(".", ",")
+    return s + "%"
+
+
+def fmt_mult(val, lang="en"):
+    s = f"{val:.1f}"
+    if lang == "de":
+        s = s.replace(".", ",")
+    return s + "×"
+
 
 # ── Color palette ─────────────────────────────────────────────────────────────
 GREEN_DARK  = "#1a3a2a"
@@ -58,13 +161,61 @@ GREEN_LIGHT = "#52b788"
 RED_MED     = "#ae2012"
 TEXT        = "#1a1a1a"
 
+# Base RGB for interpolation
+_C_GREEN = (82, 183, 136)   # #52B788 — muted forest green
+_C_RED   = (204, 96, 96)    # #CC6060 — muted brick red
+
+
+def val_color(val, vmin, vmax, alpha=0.82):
+    """Interpolate from muted green → muted dark red by relative value."""
+    ratio = max(0.0, min(1.0, (val - vmin) / (vmax - vmin) if vmax > vmin else 0.5))
+    r = int(_C_GREEN[0] + (_C_RED[0] - _C_GREEN[0]) * ratio)
+    g = int(_C_GREEN[1] + (_C_RED[1] - _C_GREEN[1]) * ratio)
+    b = int(_C_GREEN[2] + (_C_RED[2] - _C_GREEN[2]) * ratio)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 CHART_LAYOUT = dict(
     paper_bgcolor="white",
     plot_bgcolor="white",
-    font=dict(family="Inter", size=12, color=TEXT),
-    margin=dict(l=48, r=16, t=8, b=40),
+    font=dict(family="Inter", size=13, color=TEXT),
+    margin=dict(l=52, r=20, t=12, b=44),
     showlegend=False,
 )
+
+# Donut palette: muted forest green (#52B788) at descending opacity
+STATE_COLORS = [
+    "rgba(82,183,136,0.55)",
+    "rgba(82,183,136,0.44)",
+    "rgba(82,183,136,0.35)",
+    "rgba(82,183,136,0.27)",
+    "rgba(82,183,136,0.21)",
+    "rgba(82,183,136,0.16)",
+    "rgba(82,183,136,0.12)",
+    "rgba(82,183,136,0.09)",
+    "rgba(82,183,136,0.07)",
+]
+
+MAP_COLORSCALE = [
+    [0.0,  "#f0faf5"],   # near-white — no deforestation
+    [0.30, "#52b788"],   # muted green
+    [0.65, "#e09090"],   # soft pink-red
+    [1.0,  "#cc6060"],   # brick red — high deforestation
+]
+
+# Amazon reference areas (km²) for dramatic loss visualization
+AMAZON_FOREST_KM2    = 4_100_000   # approximate original Legal Amazon forest cover
+AMAZON_LOSS_PREDATA  = 700_000    # approximate cumulative loss before data start (INPE)
+GERMANY_AREA_KM2     = 357_114             # Germany total area for KPI comparison
+
+# Hover annotations for notable deforestation years
+YEAR_NOTES = {
+    2019: "Bolsonaro-Ära: Umweltschutz geschwächt",
+    2020: "Politische Deregulierung — Entwaldung auf 12-Jahres-Hoch",
+    2021: "Höhepunkt unter Bolsonaro — höchster Wert seit 2006",
+    2022: "Lula gewählt (Amtsantritt Jan 2023)",
+    2023: "Rückkehr des Umweltschutzes — Rückgang −50 %",
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def filter_df(year, cls, state):
@@ -96,20 +247,35 @@ app.layout = html.Div(
                 html.Div(
                     [
                         html.H1("Amazon Rainforest"),
-                        html.P("Deforestation Monitor · INPE/PRODES 2000–2024"),
+                        html.P(f"Deforestation Monitor · INPE/PRODES {min(YEARS)}–{max(YEARS)}"),
                     ],
                     className="header-text",
                 ),
                 html.Div(
                     [
-                        html.Span("Datenquelle: "),
-                        html.A(
-                            "TerraBrasilis / INPE",
-                            href="https://terrabrasilis.dpi.inpe.br",
-                            target="_blank",
+                        dcc.RadioItems(
+                            id="lang-toggle",
+                            options=[
+                                {"label": "EN", "value": "en"},
+                                {"label": "DE", "value": "de"},
+                            ],
+                            value="en",
+                            inline=True,
+                            className="lang-radio",
+                        ),
+                        html.Div(
+                            [
+                                html.Span("Datenquelle: "),
+                                html.A(
+                                    "TerraBrasilis / INPE",
+                                    href="https://terrabrasilis.dpi.inpe.br",
+                                    target="_blank",
+                                ),
+                            ],
+                            className="header-source",
                         ),
                     ],
-                    className="header-source",
+                    className="header-right",
                 ),
             ],
             className="header",
@@ -129,18 +295,14 @@ app.layout = html.Div(
                     ],
                     className="filter-item",
                 ),
-                html.Div(
-                    [
-                        html.Label("Klasse"),
-                        dcc.Dropdown(
-                            id="filter-class",
-                            options=[{"label": "Alle Klassen", "value": "all"}]
-                            + [{"label": c, "value": c} for c in CLASSES],
-                            value="all",
-                            clearable=False,
-                        ),
-                    ],
-                    className="filter-item",
+                # Klasse-Filter ausgeblendet — nur eine Klasse (Desmatamento) vorhanden
+                dcc.Dropdown(
+                    id="filter-class",
+                    options=[{"label": "Alle Klassen", "value": "all"}]
+                    + [{"label": c, "value": c} for c in CLASSES],
+                    value="all",
+                    clearable=False,
+                    style={"display": "none"},
                 ),
                 html.Div(
                     [
@@ -148,7 +310,7 @@ app.layout = html.Div(
                         dcc.Dropdown(
                             id="filter-state",
                             options=[{"label": "Alle Staaten", "value": "all"}]
-                            + [{"label": s, "value": s} for s in STATES],
+                            + [{"label": STATE_NAME_MAP.get(s, s), "value": s} for s in STATES],
                             value="all",
                             clearable=False,
                         ),
@@ -161,9 +323,17 @@ app.layout = html.Div(
         # KPI cards
         html.Div(
             [
-                make_kpi_card("Gerodet (Jahr)", "kpi-year-val", "kpi-year-sub"),
-                make_kpi_card("Kumuliert seit 2000", "kpi-total-val", "kpi-total-sub"),
-                make_kpi_card("Schlimmster Staat", "kpi-worst-val", "kpi-worst-sub"),
+                # Card 1: dynamic title (year inserted by callback)
+                html.Div(
+                    [
+                        html.Div("Gerodet (Jahr)", id="kpi-year-title", className="kpi-title"),
+                        html.Div("—", id="kpi-year-val", className="kpi-value"),
+                        html.Div("", id="kpi-year-sub", className="kpi-subtitle"),
+                    ],
+                    className="kpi-card",
+                ),
+                make_kpi_card(f"Fläche (kumuliert) seit {min(YEARS)}", "kpi-total-val", "kpi-total-sub"),
+                make_kpi_card("Staat mit höchster Rodung", "kpi-worst-val", "kpi-worst-sub"),
             ],
             className="kpi-row",
         ),
@@ -179,53 +349,14 @@ app.layout = html.Div(
                     ],
                     className="chart-card",
                 ),
-                # Leaflet map
+                # Choropleth map (Plotly Mapbox)
                 html.Div(
                     [
                         html.H3("Entwaldung nach Bundesstaat"),
-                        html.Div(
-                            [
-                                dcc.Checklist(
-                                    id="toggle-raisg",
-                                    options=[{"label": "  Indigene Territorien (RAISG)", "value": "show"}],
-                                    value=[],
-                                    style={"fontSize": "12px"},
-                                ),
-                            ],
-                            className="chart-sub",
-                        ),
-                        dl.Map(
-                            id="map",
-                            center=[-5, -55],
-                            zoom=4,
-                            style={"height": "360px", "borderRadius": "6px"},
-                            children=[
-                                dl.TileLayer(
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                                    attribution="© OpenStreetMap",
-                                ),
-                                dl.GeoJSON(
-                                    id="layer-states",
-                                    data=STATES_GEO,
-                                    options=dict(
-                                        style=dict(weight=1, color="#fff", fillOpacity=0.7, fillColor=GREEN_MED)
-                                    ),
-                                    hoverStyle=dict(weight=2, color="#333"),
-                                    zoomToBounds=True,
-                                ),
-                                dl.GeoJSON(
-                                    id="layer-raisg",
-                                    data={"type": "FeatureCollection", "features": []},
-                                    options=dict(
-                                        style=dict(
-                                            weight=1,
-                                            color="#e76f51",
-                                            fillColor="#e76f51",
-                                            fillOpacity=0.25,
-                                        )
-                                    ),
-                                ),
-                            ],
+                        html.Div(f"Zeitraffer {min(YEARS)}–{max(YEARS)} · Slider oder ▶ abspielen", className="chart-sub"),
+                        dcc.Graph(
+                            id="chart-map",
+                            config={"displayModeBar": False, "scrollZoom": True},
                         ),
                     ],
                     className="chart-card",
@@ -239,20 +370,20 @@ app.layout = html.Div(
                     ],
                     className="chart-card",
                 ),
-                # Klassen-Vergleich
+                # Staatsanteil Donut
                 html.Div(
                     [
-                        html.H3("Klassen-Vergleich"),
-                        html.Div("Entwaldung nach Klasse", className="chart-sub"),
-                        dcc.Graph(id="chart-class", config={"displayModeBar": False}),
+                        html.H3("Staatsanteil"),
+                        html.Div(id="chart-donut-sub", className="chart-sub"),
+                        dcc.Graph(id="chart-donut", config={"displayModeBar": False}),
                     ],
                     className="chart-card",
                 ),
-                # Kumulativer Area-Chart (volle Breite)
+                # Kumulativer Area-Chart (full width)
                 html.Div(
                     [
                         html.H3("Kumulativer Verlust"),
-                        html.Div("Aufgestapelt nach Biom, 2000 bis heute", className="chart-sub"),
+                        html.Div(f"Verbleibend vs. vernichtet seit {min(YEARS)} · Gesamtfläche Amazonas: 4,1 Mio. km²", className="chart-sub"),
                         dcc.Graph(id="chart-cumulative", config={"displayModeBar": False}),
                     ],
                     className="chart-card full-width",
@@ -322,7 +453,7 @@ app.layout = html.Div(
         ),
         # Footer
         html.Footer(
-            "Daten: INPE PRODES via TerraBrasilis · RAISG (indigene Territorien) · IBGE (Staatsgrenzen)",
+            "Daten: INPE PRODES via TerraBrasilis · IBGE (Staatsgrenzen)",
             className="footer",
         ),
     ],
@@ -332,6 +463,7 @@ app.layout = html.Div(
 
 # ── KPI Callback ─────────────────────────────────────────────────────────────
 @callback(
+    Output("kpi-year-title", "children"),
     Output("kpi-year-val", "children"),
     Output("kpi-year-sub", "children"),
     Output("kpi-total-val", "children"),
@@ -341,20 +473,30 @@ app.layout = html.Div(
     Input("filter-year", "value"),
     Input("filter-class", "value"),
     Input("filter-state", "value"),
+    Input("lang-toggle", "value"),
 )
-def update_kpis(year, cls, state):
+def update_kpis(year, cls, state, lang):
     d = filter_df(year, cls, state)
 
     # Gerodet aktuelles Jahr
+    kpi_year_title = f"Gerodet ({year})"
     area_year = d["area_km2"].sum()
     prev_d = filter_df(year - 1, cls, state) if year > min(YEARS) else None
     prev = prev_d["area_km2"].sum() if prev_d is not None else None
     if prev is not None and prev > 0:
         pct = (area_year - prev) / prev * 100
-        delta = f"{'↓' if pct < 0 else '↑'} {abs(pct):.1f}% zum Vorjahr"
+        is_good = pct < 0  # declining deforestation = good
+        color = "#40916c" if is_good else "#ae2012"
+        arrow = "▼" if is_good else "▲"
+        delta = html.Span(
+            [
+                html.Span(f"{arrow} ", style={"color": color, "fontWeight": "700", "fontSize": "14px"}),
+                f"{fmt_pct(pct, lang)} zum Vorjahr",
+            ]
+        )
     else:
         delta = ""
-    kpi_year_val = f"{area_year:,.0f} km²"
+    kpi_year_val = fmt(area_year, lang)
 
     # Kumuliert
     d_all = df.copy()
@@ -363,24 +505,151 @@ def update_kpis(year, cls, state):
     if state != "all":
         d_all = d_all[d_all["state_name"] == state]
     total = d_all[d_all["year"] <= year]["area_km2"].sum()
-    kpi_total_val = f"{total:,.0f} km²"
-    kpi_total_sub = f"≈ {total / 357_114:.1f}× Deutschland" if total > 0 else ""
+    kpi_total_val = fmt(total, lang)
+    kpi_total_sub = f"≈ {fmt_mult(total / GERMANY_AREA_KM2, lang)} Deutschland" if total > 0 else ""
 
-    # Schlimmster Staat
+    # Staat mit höchster Rodung
     if state == "all" and len(d) > 0:
-        by_state = d.groupby("state_name")["area_km2"].sum()
-        worst = by_state.idxmax()
-        worst_val = by_state.max()
-        kpi_worst_val = worst
-        kpi_worst_sub = f"{worst_val:,.0f} km²"
+        by_st = d.groupby("state_name")["area_km2"].sum()
+        worst = by_st.idxmax()
+        worst_val = by_st.max()
+        kpi_worst_val = state_display(worst)
+        cmp = german_comparison(worst_val, lang)
+        kpi_worst_sub = fmt(worst_val, lang) + (f" · {cmp}" if cmp else "")
     elif state != "all":
-        kpi_worst_val = state
-        kpi_worst_sub = f"{area_year:,.0f} km²"
+        kpi_worst_val = state_display(state)
+        cmp = german_comparison(area_year, lang)
+        kpi_worst_sub = fmt(area_year, lang) + (f" · {cmp}" if cmp else "")
     else:
         kpi_worst_val = "—"
         kpi_worst_sub = ""
 
-    return kpi_year_val, delta, kpi_total_val, kpi_total_sub, kpi_worst_val, kpi_worst_sub
+    return kpi_year_title, kpi_year_val, delta, kpi_total_val, kpi_total_sub, kpi_worst_val, kpi_worst_sub
+
+
+# ── Map Callback — animated Zeitraffer choropleth ─────────────────────────────
+@callback(
+    Output("chart-map", "figure"),
+    Input("filter-class", "value"),
+)
+def update_map(cls):
+    all_years = sorted(df["year"].unique())
+    # Fixed zmax for consistent color scale across all frames
+    zmax = df.groupby(["year", "state_name"])["area_km2"].sum().max()
+    codes = list(STATE_NAME_MAP.keys())
+
+    def make_trace(year):
+        d = df[df["year"] == year]
+        if cls != "all":
+            d = d[d["class_name"] == cls]
+        by_state = d.groupby("state_name")["area_km2"].sum()
+        z_values = [float(by_state.get(c, 0)) for c in codes]
+        hover_texts = [
+            f"<b>{STATE_NAME_MAP[c]}</b>  {v:,.0f} km²"
+            for c, v in zip(codes, z_values)
+        ]
+        return go.Choroplethmapbox(
+            geojson=STATES_GEO,
+            locations=codes,
+            z=z_values,
+            featureidkey="properties.state_code",
+            colorscale=MAP_COLORSCALE,
+            zmin=0, zmax=zmax,
+            colorbar=dict(
+                title="km²", thickness=10, len=0.55,
+                tickformat=",.0f", titleside="right",
+                titlefont=dict(size=12), tickfont=dict(size=11),
+            ),
+            hovertext=hover_texts,
+            hoverinfo="text",
+            marker_opacity=0.82,
+            marker_line_width=1,
+            marker_line_color="white",
+        )
+
+    def year_annotation(yr):
+        """Large Gapminder-style year watermark drawn on the map."""
+        return dict(
+            text=f"<b>{yr}</b>",
+            x=0.97, y=0.06,
+            xref="paper", yref="paper",
+            xanchor="right", yanchor="bottom",
+            font=dict(size=64, color="rgba(26,42,26,0.18)", family="Inter"),
+            showarrow=False,
+        )
+
+    last_year = all_years[-1]
+    # Each frame carries its own layout so the big year number updates
+    frames = [
+        go.Frame(
+            data=[make_trace(yr)],
+            name=str(yr),
+            layout=go.Layout(annotations=[year_annotation(yr)]),
+        )
+        for yr in all_years
+    ]
+
+    fig = go.Figure(data=[make_trace(last_year)], frames=frames)
+    fig.update_layout(
+        annotations=[year_annotation(last_year)],
+        updatemenus=[{
+            "type": "buttons",
+            "showactive": False,
+            "direction": "right",
+            "y": 0.0, "x": 0.0, "xanchor": "left", "yanchor": "bottom",
+            "bgcolor": "rgba(255,255,255,0.90)",
+            "bordercolor": "#ccc", "borderwidth": 1,
+            "pad": {"r": 6, "t": 6, "b": 6, "l": 6},
+            "font": {"family": "Inter", "size": 16, "color": "#2d6a4f"},
+            "buttons": [
+                {
+                    "label": "▶",
+                    "method": "animate",
+                    "args": [
+                        None,
+                        {"frame": {"duration": 800, "redraw": True},
+                         "fromcurrent": True,
+                         "transition": {"duration": 200}},
+                    ],
+                },
+                {
+                    "label": "⏹",
+                    "method": "animate",
+                    "args": [
+                        [None],
+                        {"frame": {"duration": 0, "redraw": True}, "mode": "immediate"},
+                    ],
+                },
+            ],
+        }],
+        sliders=[{
+            "active": len(all_years) - 1,
+            "steps": [
+                {
+                    "args": [[str(yr)], {"frame": {"duration": 800, "redraw": True}, "mode": "immediate"}],
+                    "label": str(yr),
+                    "method": "animate",
+                }
+                for yr in all_years
+            ],
+            "currentvalue": {
+                "visible": False,   # suppressed — big annotation on map takes over
+            },
+            "pad": {"b": 8, "t": 40},
+            "font": {"family": "Inter", "size": 10, "color": "#999"},
+            "len": 0.82, "x": 0.18,
+            "bgcolor": "rgba(255,255,255,0)",
+            "bordercolor": "#ddd",
+        }],
+        mapbox_style="open-street-map",
+        mapbox_center={"lat": -5, "lon": -58},
+        mapbox_zoom=3.2,
+        paper_bgcolor="white",
+        font=dict(family="Inter", size=13, color=TEXT),
+        margin=dict(l=0, r=0, t=0, b=76),
+        height=460,
+    )
+    return fig
 
 
 # ── Charts Callback ───────────────────────────────────────────────────────────
@@ -388,95 +657,186 @@ def update_kpis(year, cls, state):
     Output("chart-timeseries", "figure"),
     Output("chart-topflop", "figure"),
     Output("chart-topflop-sub", "children"),
-    Output("chart-class", "figure"),
+    Output("chart-donut", "figure"),
+    Output("chart-donut-sub", "children"),
     Output("chart-cumulative", "figure"),
     Input("filter-year", "value"),
     Input("filter-class", "value"),
     Input("filter-state", "value"),
+    Input("lang-toggle", "value"),
 )
-def update_charts(year, cls, state):
+def update_charts(year, cls, state, lang):
     d_all = df.copy()
     if cls != "all":
         d_all = d_all[d_all["class_name"] == cls]
     if state != "all":
         d_all = d_all[d_all["state_name"] == state]
 
-    # Zeitreihe
+    d_year = filter_df(year, cls, state)
+
+    # ── Zeitreihe — Säulendiagramm mit Datenlabel ─────────────────────────
     ts = d_all.groupby("year")["area_km2"].sum().reset_index()
+    max_val = ts["area_km2"].max()
+    # Muted green for all bars; peak gets brick red accent
+    bar_colors = [
+        "rgba(204,96,96,0.55)" if v == max_val else "rgba(82,183,136,0.45)"
+        for v in ts["area_km2"]
+    ]
+    hover_texts = []
+    for _, row in ts.iterrows():
+        note = YEAR_NOTES.get(int(row["year"]), "")
+        base = f"<b>{int(row['year'])}</b>  {row['area_km2']:,.0f} km²"
+        hover_texts.append(base + (f"<br><i>{note}</i>" if note else ""))
+
+    # Only label first year, peak year, and last year — avoid clutter
+    key_years = {int(ts["year"].iloc[0]), int(ts.loc[ts["area_km2"].idxmax(), "year"]), int(ts["year"].iloc[-1])}
+    bar_text = [
+        f"{int(v):,}" if int(yr) in key_years else ""
+        for v, yr in zip(ts["area_km2"], ts["year"])
+    ]
     fig_ts = go.Figure(
-        go.Scatter(
+        go.Bar(
             x=ts["year"], y=ts["area_km2"],
-            mode="lines+markers",
-            line=dict(color=GREEN_MED, width=2),
-            marker=dict(size=5),
-            fill="tozeroy",
-            fillcolor="rgba(82,183,136,0.15)",
-            hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+            marker_color=bar_colors,
+            text=bar_text,
+            textposition="outside",
+            textfont=dict(size=12, color="#444"),
+            hovertext=hover_texts,
+            hoverinfo="text",
+            width=0.75,
         )
     )
-    fig_ts.update_layout(**CHART_LAYOUT, yaxis_title="km²", xaxis_title="Jahr")
+    fig_ts.update_layout(
+        **CHART_LAYOUT,
+        xaxis_title="Jahr",
+        xaxis=dict(tickfont=dict(size=12), dtick=1, tickangle=-45),
+        yaxis=dict(
+            tickformat=",d",
+            tickfont=dict(size=11),
+            gridcolor="#eeeeea",
+            gridwidth=1,
+            title="km²",
+            titlefont=dict(size=11, color="#aaa"),
+        ),
+        yaxis_range=[0, max_val * 1.18],
+        bargap=0.10,
+    )
 
-    # Top 5 Staaten
-    d_year = filter_df(year, cls, state)
-    by_state = d_year.groupby("state_name")["area_km2"].sum().sort_values(ascending=False)
-    top5 = by_state.head(5)
+    # ── Top 5 Staaten — wertbasierte Farbe, Datenlabel ────────────────────
+    by_st = d_year.groupby("state_name")["area_km2"].sum().sort_values(ascending=False)
+    top5_desc = by_st.head(5)
+    top5 = top5_desc.sort_values(ascending=True)   # highest at top in horizontal bar
+    top5_labels = [state_display(s) for s in top5.index]
+    # Brick red for top-5; largest bar stronger accent
+    top5_colors = [
+        "rgba(204,96,96,0.55)" if v == top5.max() else "rgba(204,96,96,0.32)"
+        for v in top5.values
+    ]
     fig_top = go.Figure(
         go.Bar(
-            y=top5.index, x=top5.values,
+            y=top5_labels, x=top5.values,
             orientation="h",
-            marker_color=RED_MED,
+            marker_color=top5_colors,
+            text=[f"{int(v):,}" for v in top5.values],
+            textposition="outside",
+            textfont=dict(size=12),
+            width=0.55,
             hovertemplate="%{y}: %{x:,.0f} km²<extra></extra>",
         )
     )
-    fig_top.update_layout(**CHART_LAYOUT, xaxis_title="km²")
+    fig_top.update_layout(
+        **CHART_LAYOUT,
+        xaxis=dict(visible=False),
+        yaxis=dict(tickfont=dict(size=13)),
+        xaxis_range=[0, top5.max() * 1.42],
+        bargap=0.45,
+    )
     topflop_sub = f"Meiste Entwaldung · {year}"
 
-    # Klassen-Vergleich
-    class_data = d_year.groupby("class_name")["area_km2"].sum().sort_values(ascending=False)
-    fig_class = go.Figure(
-        go.Bar(
-            x=class_data.index, y=class_data.values,
-            marker_color=GREEN_MED,
-            hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
+    # ── Staatsanteil Donut — sortiert, Jahreswert in Mitte ────────────────
+    all_by_st = d_year.groupby("state_name")["area_km2"].sum().sort_values(ascending=False)
+    donut_labels = [state_display(s) for s in all_by_st.index]
+    total_year = all_by_st.sum()
+    center_text = f"<b>{fmt(total_year, lang, suffix='')}</b><br>km²<br>{year}"
+    fig_donut = go.Figure(
+        go.Pie(
+            labels=donut_labels,
+            values=all_by_st.values,
+            hole=0.5,
+            marker_colors=STATE_COLORS[: len(all_by_st)],
+            textposition="inside",
+            textfont=dict(size=12),
+            hovertemplate="%{label}: %{value:,.0f} km² (%{percent})<extra></extra>",
+            direction="clockwise",
         )
     )
-    fig_class.update_layout(**CHART_LAYOUT, yaxis_title="km²")
+    fig_donut.update_layout(
+        **{**CHART_LAYOUT, "showlegend": True, "margin": dict(l=8, r=100, t=8, b=8)},
+        legend=dict(
+            font=dict(size=13),
+            x=1.02, y=0.5, xanchor="left",
+            itemsizing="constant",
+            bordercolor="#e0e0dc",
+            borderwidth=1,
+        ),
+        annotations=[dict(
+            text=center_text,
+            x=0.5, y=0.5,
+            font=dict(size=13, family="Inter", color=TEXT),
+            showarrow=False,
+            align="center",
+        )],
+    )
+    donut_sub = f"Anteil je Staat · {year}"
 
-    # Kumulativer Area-Chart
-    pivot = d_all.groupby(["year", "class_name"])["area_km2"].sum().unstack(fill_value=0)
-    pivot_cumsum = pivot.cumsum()
-    palette = [GREEN_DARK, GREEN_MED, GREEN_LIGHT, "#74c69d", "#b7e4c7", "#d8f3dc"]
+    # ── Kumulativer Verlust — Vertikales Säulendiagramm (Zeit auf x-Achse) ─
+    cum_loss_our = d_all.groupby("year")["area_km2"].sum().cumsum()
+    total_loss = AMAZON_LOSS_PREDATA + cum_loss_our
+    remaining = AMAZON_FOREST_KM2 - total_loss
+    loss_pct = (total_loss / AMAZON_FOREST_KM2 * 100).round(1)
+
     fig_cum = go.Figure()
-    for i, col in enumerate(pivot_cumsum.columns):
-        fig_cum.add_trace(
-            go.Scatter(
-                x=pivot_cumsum.index, y=pivot_cumsum[col],
-                name=col, mode="lines",
-                stackgroup="one",
-                line=dict(color=palette[i % len(palette)], width=0.5),
-                fillcolor=palette[i % len(palette)],
-                hovertemplate=f"{col}: %{{y:,.0f}} km²<extra></extra>",
-            )
-        )
-    cum_layout = {**CHART_LAYOUT, "showlegend": True,
-                  "yaxis_title": "km² (kumuliert)", "xaxis_title": "Jahr"}
+    fig_cum.add_trace(go.Bar(
+        x=cum_loss_our.index,
+        y=remaining.values,
+        name="Verbleibend",
+        marker=dict(color="rgba(82,183,136,0.45)", line=dict(width=0)),
+        hovertemplate="<b>%{x}</b><br>Verbleibend: %{y:,.0f} km²<extra></extra>",
+    ))
+    fig_cum.add_trace(go.Bar(
+        x=cum_loss_our.index,
+        y=[AMAZON_LOSS_PREDATA] * len(cum_loss_our),
+        name="Verlust vor 2010",
+        marker=dict(color="rgba(180,60,60,0.52)", line=dict(width=0)),
+        hovertemplate="<b>%{x}</b><br>Verlust vor 2010: ~700.000 km²<extra></extra>",
+    ))
+    fig_cum.add_trace(go.Bar(
+        x=cum_loss_our.index,
+        y=cum_loss_our.values,
+        name="Verlust 2010–heute",
+        marker=dict(color="rgba(204,96,96,0.45)", line=dict(width=0)),
+        hovertemplate="<b>%{x}</b><br>Verlust 2010–%{x}: %{y:,.0f} km²<br>%{customdata:.1f}% vernichtet<extra></extra>",
+        customdata=loss_pct.values,
+    ))
     fig_cum.update_layout(
-        **cum_layout,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        **{**CHART_LAYOUT, "showlegend": True, "margin": dict(l=60, r=20, t=44, b=44)},
+        barmode="stack",
+        xaxis_title="Jahr",
+        yaxis_title="km²",
+        xaxis=dict(dtick=2, tickmode="linear", tickfont=dict(size=12)),
+        yaxis=dict(tickformat=",.0f", tickfont=dict(size=12)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=13)),
+        annotations=[dict(
+            x=0.5, y=1.10, xref="paper", yref="paper",
+            text=f"Gesamtfläche Amazon: {AMAZON_FOREST_KM2 / 1e6:.1f} Mio. km² · "
+                 f"Vernichtet gesamt: {loss_pct.iloc[-1]:.1f}%",
+            showarrow=False,
+            font=dict(size=11, color="#888"),
+            align="center",
+        )],
     )
 
-    return fig_ts, fig_top, topflop_sub, fig_class, fig_cum
-
-
-# ── Map Callback ──────────────────────────────────────────────────────────────
-@callback(
-    Output("layer-raisg", "data"),
-    Input("toggle-raisg", "value"),
-)
-def toggle_raisg(value):
-    if value and "show" in value:
-        return RAISG_GEO
-    return {"type": "FeatureCollection", "features": []}
+    return fig_ts, fig_top, topflop_sub, fig_donut, donut_sub, fig_cum
 
 
 # ── Simulation Callbacks ──────────────────────────────────────────────────────
@@ -493,7 +853,6 @@ def apply_preset(trend_clicks, paris_clicks, zero_clicks):
         return -10.0
     if triggered == "preset-zero":
         return -30.0
-    # Trend: mean rate of last 5 years
     ts = df.groupby("year")["area_km2"].sum().sort_index()
     if len(ts) >= 5:
         recent = ts.iloc[-5:].values
@@ -513,8 +872,9 @@ def apply_preset(trend_clicks, paris_clicks, zero_clicks):
     Input("filter-state", "value"),
     Input("sim-rate", "value"),
     Input("sim-horizon", "value"),
+    Input("lang-toggle", "value"),
 )
-def update_simulation(cls, state, rate_pct, horizon):
+def update_simulation(cls, state, rate_pct, horizon, lang):
     d = df.copy()
     if cls != "all":
         d = d[d["class_name"] == cls]
@@ -537,31 +897,36 @@ def update_simulation(cls, state, rate_pct, horizon):
         )
     )
     if proj_vals:
+        # Prepend last historical point to connect projection trace to history
+        proj_years_conn = [hist_years[-1]] + proj_years
+        proj_vals_conn = [hist_vals[-1]] + proj_vals
         fig.add_trace(
             go.Scatter(
-                x=proj_years, y=proj_vals, name="Projektion",
+                x=proj_years_conn, y=proj_vals_conn, name="Projektion",
                 line=dict(color=RED_MED, width=2, dash="dash"),
                 hovertemplate="%{x}: %{y:,.0f} km²<extra></extra>",
             )
         )
         fig.add_vline(x=max(hist_years), line_dash="dot", line_color="#999", line_width=1)
 
-    sim_layout = {**CHART_LAYOUT, "showlegend": True}
     fig.update_layout(
-        **sim_layout,
+        **{**CHART_LAYOUT, "showlegend": True},
         yaxis_title="km²/Jahr",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        xaxis=dict(tickfont=dict(size=12)),
+        yaxis=dict(tickfont=dict(size=12)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=13)),
     )
 
     if proj_vals:
         total_proj = sum(proj_vals)
         total_hist = sum(hist_vals)
         total_all = total_hist + total_proj
+        sign = "+" if rate_pct > 0 else "−"
         text = (
-            f"Bei {rate_pct:+.1f}%/Jahr: Verlust bis {horizon} = "
-            f"{total_proj:,.0f} km² (Projektion) · "
-            f"Gesamtverlust seit 2000 = {total_all:,.0f} km² "
-            f"(≈ {total_all / 357_114:.1f}× Deutschland)"
+            f"Bei {sign}{fmt_pct(abs(rate_pct), lang)}/Jahr: Verlust bis {horizon} = "
+            f"{fmt(total_proj, lang)} (Projektion) · "
+            f"Gesamtverlust seit {min(hist_years)} = {fmt(total_all, lang)} "
+            f"(≈ {fmt_mult(total_all / GERMANY_AREA_KM2, lang)} Deutschland)"
         )
     else:
         text = "Keine Projektion verfügbar."
