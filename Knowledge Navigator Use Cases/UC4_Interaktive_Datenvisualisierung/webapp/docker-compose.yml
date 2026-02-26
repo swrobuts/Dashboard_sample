@@ -1,17 +1,21 @@
 services:
   rainforest:
-    build: .
+    image: swrobutsdocker/rainforest:latest
     restart: unless-stopped
     env_file: .env
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
       - "traefik.http.routers.rainforest.rule=Host(`rainforest.butscher.cloud`)"
       - "traefik.http.routers.rainforest.entrypoints=websecure"
-      - "traefik.http.routers.rainforest.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.rainforest.tls=true"
+      - "traefik.http.routers.rainforest.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.rainforest.tls.domains[0].main=rainforest.butscher.cloud"
       - "traefik.http.services.rainforest.loadbalancer.server.port=8050"
     networks:
-      - traefik_default
+      - traefik_net
 
 networks:
-  traefik_default:
+  traefik_net:
     external: true
+    name: root_default
