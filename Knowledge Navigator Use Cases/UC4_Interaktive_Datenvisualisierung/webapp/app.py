@@ -242,6 +242,101 @@ GERMANY_AREA_KM2     = 357_114             # Germany total area for KPI comparis
 YEAR_NOTES: dict[int, str] = _compute_year_notes(df)
 
 FOOTBALL_FIELD_KM2 = 0.00714   # 105 m × 68 m (FIFA-Standard)
+CO2_PER_KM2 = 72_000            # tCO₂e/km² · SEEG 2022: 837 Mio. tCO₂e / 11.568 km² (INPE/MapBiomas)
+
+
+# ── Sankey: static deforestation-driver → market flow ────────────────────────
+def _make_sankey_figure():
+    """
+    Sankey based on verified research data, scaled to 10,000 km² (representative year).
+    Sources: MapBiomas Annual Report 2024 (drivers), ABIEC 2024 (beef exports),
+             Statista 2023 (soy exports), Our World in Data – Drivers of Deforestation.
+    Cattle export share assumption: Brazil exports ~25% of beef production.
+    """
+    node_labels = [
+        # Left — deforestation drivers (0–4)
+        "Rinderzucht",
+        "Kleinbauern",
+        "Sojaanbau",
+        "Holzeinschlag",
+        "Infrastruktur",
+        # Right — end markets (5–9)
+        "Brasilien Inland",
+        "China",
+        "USA",
+        "EU & Andere Märkte",
+        "Holzmarkt",
+    ]
+    node_colors = [
+        "rgba(160,45,35,0.88)",   # cattle — dark red
+        "rgba(195,125,45,0.88)",  # small farms — amber
+        "rgba(200,158,55,0.88)",  # soy — golden
+        "rgba(105,68,35,0.88)",   # logging — dark brown
+        "rgba(100,100,115,0.88)", # infra — cool gray
+        "rgba(45,106,79,0.82)",   # Brazil inland — brand forest green
+        "rgba(40,75,165,0.82)",   # China — deep blue
+        "rgba(25,105,195,0.82)",  # USA — blue
+        "rgba(75,130,200,0.82)",  # EU/Others — lighter blue
+        "rgba(80,55,32,0.82)",    # Holzmarkt — wood brown
+    ]
+    # (source_idx, target_idx, km2, hover_label)
+    links = [
+        # Cattle (7,500 km²) → inland 75%, export 25% (China 46%, USA 8%, Others 46%)
+        (0, 5, 5625, "Rindfleisch · Inlandsverbrauch"),
+        (0, 6,  863, "Rindfleischexport"),
+        (0, 7,  150, "Rindfleischexport"),
+        (0, 8,  862, "Rindfleischexport"),
+        # Small farms (1,700 km²) → subsistence / domestic
+        (1, 5, 1700, "Subsistenzlandwirtschaft"),
+        # Soy (500 km²) → China 73%, EU+Others 27%
+        (2, 6,  365, "Sojaexport"),
+        (2, 8,  135, "Sojaexport"),
+        # Logging (200 km²) → wood products
+        (3, 9,  200, "Holzprodukte"),
+        # Infrastructure (100 km²)
+        (4, 8,  100, "Infrastruktur / Erschließung"),
+    ]
+    link_colors = [
+        "rgba(160,45,35,0.16)", "rgba(160,45,35,0.16)",
+        "rgba(160,45,35,0.16)", "rgba(160,45,35,0.16)",
+        "rgba(195,125,45,0.16)",
+        "rgba(200,158,55,0.16)", "rgba(200,158,55,0.16)",
+        "rgba(105,68,35,0.16)",
+        "rgba(100,100,115,0.16)",
+    ]
+    fig = go.Figure(go.Sankey(
+        arrangement="snap",
+        node=dict(
+            label=node_labels,
+            color=node_colors,
+            pad=18,
+            thickness=22,
+            line=dict(color="rgba(255,255,255,0.3)", width=0.5),
+        ),
+        link=dict(
+            source=[l[0] for l in links],
+            target=[l[1] for l in links],
+            value=[l[2] for l in links],
+            label=[l[3] for l in links],
+            color=link_colors,
+            customdata=[round(l[2] * CO2_PER_KM2 / 1e6, 1) for l in links],
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "%{value:,} km²<br>"
+                "≈ %{customdata:.0f} Mio. t CO₂e<extra></extra>"
+            ),
+        ),
+    ))
+    fig.update_layout(
+        paper_bgcolor="white",
+        font=dict(family="Inter", size=12, color=TEXT),
+        margin=dict(l=8, r=8, t=8, b=8),
+        height=380,
+    )
+    return fig
+
+
+SANKEY_FIG = _make_sankey_figure()
 
 # ── Lesehilfe (reading guides) ────────────────────────────────────────────────
 LESEHILFE_FALLBACK = {
@@ -555,6 +650,24 @@ app.layout = html.Div(
                     ],
                     className="chart-card full-width",
                 ),
+                # Sankey: Entwaldungs-Treiber & globale Absatzmärkte
+                html.Div(
+                    [
+                        html.H3("Entwaldungs-Treiber & globale Absatzmärkte"),
+                        html.Div(
+                            "Wohin verschwindet der Wald? · Skaliert auf 10.000 km² (repräsentatives Jahr) · "
+                            "CO₂-Äquivalent: 72.000 t CO₂e/km² (SEEG/INPE 2022) · "
+                            "Quellen: MapBiomas 2024 · ABIEC 2024 · Statista 2023",
+                            className="chart-sub",
+                        ),
+                        dcc.Graph(
+                            id="chart-sankey",
+                            figure=SANKEY_FIG,
+                            config={"displayModeBar": False},
+                        ),
+                    ],
+                    className="chart-card full-width",
+                ),
             ],
             className="charts-grid",
         ),
@@ -733,8 +846,9 @@ clientside_callback(
         const ctx = window.dash_clientside.callback_context;
         if (!ctx.triggered.length) return window.dash_clientside.no_update;
         const btn_id = ctx.triggered[0].prop_id.split('.')[0];
-        const el = document.getElementById('chart-map');
-        if (!el) return window.dash_clientside.no_update;
+        const outer = document.getElementById('chart-map');
+        if (!outer) return window.dash_clientside.no_update;
+        const el = outer.querySelector('.js-plotly-plot') || outer;
         if (btn_id === 'map-play-btn') {
             el._mapPlaying = true;
             (function loop() {
@@ -1040,7 +1154,11 @@ def update_charts(year, cls, state, lang):
     hover_texts = []
     for _, row in ts.iterrows():
         note = YEAR_NOTES.get(int(row["year"]), "")
-        base = f"<b>{int(row['year'])}</b>  {row['area_km2']:,.0f} km²"
+        co2_mio = row["area_km2"] * CO2_PER_KM2 / 1e6
+        base = (
+            f"<b>{int(row['year'])}</b>  {row['area_km2']:,.0f} km²"
+            f"<br>≈ {co2_mio:.0f} Mio. t CO₂e"
+        )
         hover_texts.append(base + (f"<br><i>{note}</i>" if note else ""))
 
     bar_text = [f"{int(v):,}" for v in ts["area_km2"]]
@@ -1058,8 +1176,7 @@ def update_charts(year, cls, state, lang):
     )
     fig_ts.update_layout(
         **{**CHART_LAYOUT, "margin": dict(l=12, r=20, t=12, b=44)},
-        xaxis_title="Jahr",
-        xaxis=dict(tickfont=dict(size=12), dtick=1, tickangle=-45),
+        xaxis=dict(tickfont=dict(size=12), dtick=1, tickangle=0),
         yaxis=dict(visible=False, range=[0, max_val * 1.28]),
         bargap=0.10,
     )
@@ -1105,7 +1222,10 @@ def update_charts(year, cls, state, lang):
             labels=donut_labels,
             values=all_by_st.values,
             hole=0.5,
-            marker_colors=STATE_COLORS[: len(all_by_st)],
+            marker=dict(
+                colors=STATE_COLORS[: len(all_by_st)],
+                line=dict(color="white", width=2),
+            ),
             textposition="inside",
             textfont=dict(size=12),
             hovertemplate="%{label}: %{value:,.0f} km² (%{percent})<extra></extra>",
@@ -1170,8 +1290,11 @@ def update_charts(year, cls, state, lang):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=13)),
         annotations=[dict(
             x=0.5, y=1.10, xref="paper", yref="paper",
-            text=f"Gesamtfläche Amazon: {AMAZON_FOREST_KM2 / 1e6:.1f} Mio. km² · "
-                 f"Vernichtet gesamt: {loss_pct.iloc[-1]:.1f}%",
+            text=(
+                f"Gesamtfläche Amazon: {AMAZON_FOREST_KM2 / 1e6:.1f} Mio. km² · "
+                f"Vernichtet gesamt: {loss_pct.iloc[-1]:.1f}% · "
+                f"CO₂ seit {min(YEARS)}: ~{float(cum_loss_our.iloc[-1]) * CO2_PER_KM2 / 1e9:.1f} Mrd. t CO₂e"
+            ),
             showarrow=False,
             font=dict(size=11, color="#888"),
             align="center",
