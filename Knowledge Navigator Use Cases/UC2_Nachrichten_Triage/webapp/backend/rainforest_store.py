@@ -155,12 +155,13 @@ def fetch_rainforest_with_tool(user_message: str) -> str | None:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         logging.warning("[Rainforest] ANTHROPIC_API_KEY not set — skipping tool query")
+        return None
 
     client = anthropic.Anthropic(api_key=api_key)
     try:
         response = client.messages.create(
             model=_HAIKU_MODEL,
-            max_tokens=300,
+            max_tokens=512,
             system=_TOOL_SYSTEM,
             tools=[RAINFOREST_TOOL],
             messages=[{"role": "user", "content": user_message}],

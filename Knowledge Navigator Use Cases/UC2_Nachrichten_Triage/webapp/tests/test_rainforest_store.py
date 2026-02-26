@@ -112,6 +112,7 @@ def test_execute_query_http_error(monkeypatch):
 
 def test_fetch_rainforest_no_tool_use(monkeypatch):
     """If Claude doesn't call the tool, return None."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     from backend.rainforest_store import fetch_rainforest_with_tool
 
     mock_response = MagicMock()
@@ -128,6 +129,7 @@ def test_fetch_rainforest_no_tool_use(monkeypatch):
 
 def test_fetch_rainforest_with_tool_use(monkeypatch):
     """If Claude calls the tool, execute query and return context block."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     from backend.rainforest_store import fetch_rainforest_with_tool
 
     tool_block = MagicMock()
