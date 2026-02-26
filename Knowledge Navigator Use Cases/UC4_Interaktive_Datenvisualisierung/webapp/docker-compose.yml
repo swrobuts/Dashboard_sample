@@ -6,6 +6,13 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.rainforest-http.rule=Host(`rainforest.butscher.cloud`)"
+      - "traefik.http.routers.rainforest-http.entrypoints=web"
+      - "traefik.http.routers.rainforest-http.middlewares=rainforest-https-redirect"
+      - "traefik.http.middlewares.rainforest-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.rainforest-https-redirect.redirectscheme.permanent=true"
+      # HTTPS
       - "traefik.http.routers.rainforest.rule=Host(`rainforest.butscher.cloud`)"
       - "traefik.http.routers.rainforest.entrypoints=websecure"
       - "traefik.http.routers.rainforest.tls=true"
