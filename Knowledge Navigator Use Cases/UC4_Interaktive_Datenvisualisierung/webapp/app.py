@@ -353,7 +353,7 @@ app.layout = html.Div(
                 html.Div(
                     [
                         html.H3("Entwaldung nach Bundesstaat"),
-                        html.Div(f"Zeitraffer {min(YEARS)}–{max(YEARS)} · Slider oder ▶ abspielen", className="chart-sub"),
+                        html.Div(f"Kumulativer Waldverlust {min(YEARS)}–{max(YEARS)} · Farbe = Gesamtverlust bis zum jeweiligen Jahr", className="chart-sub"),
                         dcc.Graph(
                             id="chart-map",
                             config={"displayModeBar": False, "scrollZoom": True},
@@ -534,19 +534,25 @@ def update_kpis(year, cls, state, lang):
 )
 def update_map(cls):
     all_years = sorted(df["year"].unique())
-    # Fixed zmax for consistent color scale across all frames
-    zmax = df.groupby(["year", "state_name"])["area_km2"].sum().max()
+    last_year = all_years[-1]
     codes = list(STATE_NAME_MAP.keys())
 
+    # Pre-compute cumulative totals so zmax is the worst-case final value
+    d_all = df if cls == "all" else df[df["class_name"] == cls]
+    cum_by_state = d_all.groupby(["state_name", "year"])["area_km2"].sum().groupby("state_name").cumsum()
+    zmax = float(cum_by_state.max())
+
     def make_trace(year):
-        d = df[df["year"] == year]
-        if cls != "all":
-            d = d[d["class_name"] == cls]
+        # Cumulative loss per state UP TO this year — colors only ever get darker
+        d = d_all[d_all["year"] <= year]
         by_state = d.groupby("state_name")["area_km2"].sum()
         z_values = [float(by_state.get(c, 0)) for c in codes]
+        annual = d_all[d_all["year"] == year].groupby("state_name")["area_km2"].sum()
         hover_texts = [
-            f"<b>{STATE_NAME_MAP[c]}</b>  {v:,.0f} km²"
-            for c, v in zip(codes, z_values)
+            f"<b>{STATE_NAME_MAP[c]}</b><br>"
+            f"Kumulativ bis {year}: {by_state.get(c, 0):,.0f} km²<br>"
+            f"Davon {year}: {annual.get(c, 0):,.0f} km²"
+            for c in codes
         ]
         return go.Choroplethmapbox(
             geojson=STATES_GEO,
@@ -556,9 +562,9 @@ def update_map(cls):
             colorscale=MAP_COLORSCALE,
             zmin=0, zmax=zmax,
             colorbar=dict(
-                title="km²", thickness=10, len=0.55,
+                title="km² kum.", thickness=10, len=0.55,
                 tickformat=",.0f", titleside="right",
-                titlefont=dict(size=12), tickfont=dict(size=11),
+                titlefont=dict(size=11), tickfont=dict(size=11),
             ),
             hovertext=hover_texts,
             hoverinfo="text",
@@ -578,7 +584,6 @@ def update_map(cls):
             showarrow=False,
         )
 
-    last_year = all_years[-1]
     # Each frame carries its own layout so the big year number updates
     frames = [
         go.Frame(
