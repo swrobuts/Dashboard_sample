@@ -772,7 +772,18 @@ Neue Infrastrukturprojekte (z.B. BR-163, Ferrogrão) öffnen bisher unzugänglic
 die Entwaldungsfront voran. Rondônia hat relativ zur Gesamtfläche bereits über 30 % seines ursprünglichen
 Waldes verloren – eines der am stärksten betroffenen Bundesstaaten.""",
 
-    "expand-heatmap": "#### Heatmap\nShows annual deforestation per state as a color matrix.",
+    "expand-heatmap": """#### Was zeigt dieses Chart?
+Die Heatmap zeigt die jährliche Entwaldung je Bundesstaat als Farbmatrix.
+Jede Zelle steht für einen Staat in einem bestimmten Jahr; die Farbintensität codiert die entwaldete Fläche.
+
+#### Kernbotschaft
+Das Farbmuster macht Peaks und Hochdruckstaaten auf einen Blick sichtbar.
+Die Bolsonaro-Jahre (2019–2022) zeigen klar höhere Intensitäten in fast allen Staaten.
+
+#### Hintergrund
+Die vier Anzeigemodi ermöglichen Vergleiche nach absoluten Werten (km²), relativer Intensität
+(je 1.000 km²), Veränderung zum Vorjahr und Korrelation mit sozioökonomischen Indikatoren.
+Quelle: INPE PRODES · IBGE.""",
 
     "expand-donut": """#### Was zeigt dieses Chart?
 Das Kreisdiagramm zeigt die prozentuale Verteilung der Entwaldung auf die Bundesstaaten für das gewählte Jahr.
@@ -853,9 +864,43 @@ unabhängig vom Jahr — strukturelle Hotspots.
 Die Formen bleiben über alle Jahre konstant — nur die Farben ändern sich mit dem Rodungsdruck.
 Das trennt strukturelle Geografie (wer das Land hält) von dynamischem Druck
 (wer aktiv rodet). Quelle: IBGE · INPE PRODES.""",
-    "expand-slope":     "#### Slope Chart\nRanking shifts over 2010–2024. Rank 1 = most deforestation. Crossing lines reveal states gaining or losing relative intensity.",
-    "expand-scatter":   "#### Scatter\nDoes size determine total loss? Points above the trend line deforest disproportionately relative to their area.",
-    "expand-marimekko": "#### Marimekko\nBar width = Amazon area. Red height = share deforested since 2010. Small percentages hide large absolute losses.",
+
+    "expand-slope": """#### Was zeigt dieses Chart?
+Das Slope-Diagramm zeigt die Rangverschiebungen der Bundesstaaten nach Abholzungsfläche über 2010–2024.
+Rang 1 = höchste absolute Abholzung im Jahr. Kreuzende Linien zeigen Staaten, die relativ stärker oder schwächer werden.
+
+#### Kernbotschaft
+Staaten, die im Ranking aufsteigen, weisen wachsenden Druck auf; sinkende zeigen relative Verbesserung.
+Rondônia und Mato Grosso halten dauerhaft hohe Positionen – strukturelle Hotspots unabhängig vom Jahr.
+
+#### Hintergrund
+Das Ranking eliminiert den Einfluss der absoluten Staatsgröße und zeigt, welche Staaten
+ihr Rodungstempo beschleunigen oder verlangsamen. Quelle: INPE PRODES · IBGE.""",
+
+    "expand-scatter": """#### Was zeigt dieses Chart?
+Der Bubble-Chart vergleicht die Amazônia-Legal-Fläche jedes Staates mit der kumulierten Abholzung seit 2010.
+Die Blasengröße entspricht der Bevölkerung; auf der x-Achse liegt das Staats-BIP.
+
+#### Kernbotschaft
+Punkte oberhalb der Trendlinie roden überproportional zu ihrer Fläche oder Wirtschaftsleistung.
+Rondônia und Mato Grosso stechen als strukturelle Hochdruckstaaten hervor.
+
+#### Hintergrund
+Staaten mit höherem BIP je Einwohner zeigen tendenziell geringere relative Abholzung –
+ein Hinweis, dass wirtschaftliche Entwicklung in Kombination mit Governance
+die Walddegradierung reduzieren kann. Quelle: INPE PRODES · IBGE.""",
+
+    "expand-marimekko": """#### Was zeigt dieses Chart?
+Das Marimekko-Diagramm zeigt gleichzeitig die Amazônia-Legal-Fläche jedes Staates (Balkenbreite)
+und den bereits abgeholzten Anteil (rote Höhe). Absolutgröße und relative Intensität lassen sich kombiniert ablesen.
+
+#### Kernbotschaft
+Staaten mit breiten Balken und großem roten Anteil kombinieren hohe Fläche und hohe Zerstörungsrate.
+Kleine Prozentsätze können in großen Staaten wie Pará enorme absolute Verluste verbergen.
+
+#### Hintergrund
+Die Balkenbreite entspricht der Amazônia-Legal-Gesamtfläche; die rote Höhe zeigt den kumulierten
+Abholzungsanteil seit 2010. Quelle: INPE PRODES · IBGE.""",
 }
 
 
@@ -1325,7 +1370,18 @@ Infrastructure projects (BR-163, Ferrogrão) open previously inaccessible forest
 the deforestation frontier. Rondônia has already lost over 30% of its original forest —
 one of the most severely affected states.""",
 
-    "expand-heatmap": "#### Heatmap\nShows annual deforestation per state as a color matrix.",
+    "expand-heatmap": """#### What does this chart show?
+The heatmap displays annual deforestation per state as a color matrix.
+Each cell represents one state in one year; color intensity encodes the deforested area.
+
+#### Key message
+The color pattern makes peaks and high-pressure states visible at a glance.
+The Bolsonaro years (2019–2022) clearly show higher intensities across almost all states.
+
+#### Background
+Four display modes allow comparison by absolute values (km²), relative intensity
+(per 1,000 km²), year-on-year change, and correlation with socio-economic indicators.
+Source: INPE PRODES · IBGE.""",
 
     "expand-donut": """#### What does this chart show?
 The pie chart shows the distribution of deforestation across states for the selected year.
@@ -1399,9 +1455,43 @@ relative to their size — structural hotspots regardless of year.
 Shapes are constant across years — only colors change with deforestation pressure.
 This separates structural geography (who holds the land) from dynamic pressure
 (who is actively clearing it). Source: IBGE · INPE PRODES.""",
-    "expand-slope":     "#### Slope Chart\nRanking shifts over 2010–2024. Rank 1 = most deforestation. Crossing lines reveal states gaining or losing relative intensity.",
-    "expand-scatter":   "#### Scatter\nDoes size determine total loss? Points above the trend line deforest disproportionately relative to their area.",
-    "expand-marimekko": "#### Marimekko\nBar width = Amazon area. Red height = share deforested since 2010. Small percentages hide large absolute losses.",
+
+    "expand-slope": """#### What does this chart show?
+The slope chart shows ranking shifts of states by deforestation area over 2010–2024.
+Rank 1 = highest absolute deforestation that year. Crossing lines reveal states gaining or losing relative intensity.
+
+#### Key message
+States rising in the ranking show growing pressure; falling states show relative improvement.
+Rondônia and Mato Grosso hold consistently high positions — structural hotspots regardless of year.
+
+#### Background
+The ranking removes the effect of absolute state size and reveals which states are accelerating
+or decelerating their clearing pace over time. Source: INPE PRODES · IBGE.""",
+
+    "expand-scatter": """#### What does this chart show?
+The bubble chart compares each state's Amazônia Legal area against cumulative deforestation since 2010.
+Bubble size represents state population; the x-axis shows state GDP.
+
+#### Key message
+Points above the trend line deforest disproportionately relative to their area or economic output.
+Rondônia and Mato Grosso stand out as structural high-pressure states.
+
+#### Background
+States with higher GDP per capita tend to show lower relative deforestation —
+suggesting that economic development combined with effective governance
+can reduce forest degradation pressure. Source: INPE PRODES · IBGE.""",
+
+    "expand-marimekko": """#### What does this chart show?
+The Marimekko chart simultaneously shows each state's Amazônia Legal area (bar width)
+and the fraction already deforested (red height), combining absolute size and relative intensity.
+
+#### Key message
+States with wide bars and a large red fraction combine high area with high destruction rates.
+Small percentages can hide enormous absolute losses in large states like Pará.
+
+#### Background
+Bar width represents total Amazônia Legal area; red height shows cumulative deforestation
+share since 2010. Source: INPE PRODES · IBGE.""",
 }
 
 # ── Generate Lesehilfe texts at startup ───────────────────────────────────────
@@ -1417,6 +1507,161 @@ _LESEHILFE_CTX = {
 print("Generating Lesehilfe texts (DE)...")
 LESEHILFE: dict[str, str] = {k: _gen_lesehilfe(k, v) for k, v in _LESEHILFE_CTX.items()}
 LESEHILFE_EN: dict[str, str] = dict(LESEHILFE_FALLBACK_EN)
+
+# ── Portuguese Lesehilfe (static) ─────────────────────────────────────────────
+LESEHILFE_FALLBACK_PT: dict[str, str] = {
+    "expand-ts": """#### O que este gráfico mostra?
+A série temporal apresenta a área desmatada anualmente (km²) medida na Amazônia brasileira.
+Fonte: INPE/PRODES (monitoramento por satélite desde 1988). O ano PRODES vai de agosto a julho.
+
+#### Mensagem principal
+O governo Bolsonaro (2019–2022) registrou as maiores taxas desde 2006.
+Com a posse de Lula da Silva em jan. de 2023, a taxa caiu significativamente —
+prova clara de que a vontade política tem impacto mensurável direto.
+
+#### Contexto
+Cerca de 91% dos atos de desmatamento foram classificados como ilegais em 2023/24 (ICV, 2025).
+O Brasil assinou a [Declaração de Glasgow sobre Florestas](https://www.gov.uk/government/publications/glasgow-leaders-declaration-on-forests-and-land-use-2021-to-2030) (COP26, 2021),
+comprometendo-se a deter o desmatamento ilegal até 2030. A Amazônia armazena ~123 bilhões de toneladas
+de carbono (NOAA) e abriga ~10% da biodiversidade global.""",
+
+    "expand-map": """#### O que este gráfico mostra?
+O mapa animado exibe a perda florestal acumulada por estado de 2010 até o ano selecionado.
+Vermelho mais intenso = maior perda total. Cada quadro da animação acrescenta um ano.
+
+#### Mensagem principal
+Pará e Mato Grosso dominam — ambos são centros do agronegócio (soja, pecuária).
+O "Arco do Desmatamento" — de Rondônia passando pelo Pará até Mato Grosso — é claramente visível.
+
+#### Contexto
+Projetos de infraestrutura (BR-163, Ferrogrão) abrem áreas florestais antes inacessíveis e avançam
+a fronteira do desmatamento. Rondônia já perdeu mais de 30% de sua floresta original —
+um dos estados mais severamente afetados.""",
+
+    "expand-heatmap": """#### O que este gráfico mostra?
+O mapa de calor exibe o desmatamento anual por estado como uma matriz de cores.
+Cada célula representa um estado em um determinado ano; a intensidade da cor indica a área desmatada.
+
+#### Mensagem principal
+O padrão de cores revela anos de pico e estados de alta atividade de desmatamento simultaneamente.
+Os anos do governo Bolsonaro (2019–2022) mostram claramente maiores intensidades em quase todos os estados.
+
+#### Contexto
+Os quatro modos de visualização permitem comparar valores absolutos (km²), intensidade relativa
+(por 1.000 km²), variação ano a ano e correlação com indicadores socioeconômicos.
+Fonte: INPE PRODES · IBGE.""",
+
+    "expand-donut": """#### O que este gráfico mostra?
+O gráfico de rosca exibe a distribuição do desmatamento entre os estados para o ano selecionado.
+O número central indica a área total desmatada naquele ano.
+
+#### Mensagem principal
+Pará e Mato Grosso respondem regularmente por mais de 50% do desmatamento anual.
+Essa concentração permite intervenções direcionadas com impacto máximo.
+
+#### Contexto
+O [monitoramento PRODES (INPE)](https://terrabrasilis.dpi.inpe.br) utiliza dados Landsat/Sentinel (30m)
+e registra desmatamentos ≥ 6,25 ha. Degradações menores são registradas separadamente pelo DETER —
+a degradação florestal real supera os dados PRODES por um fator de 2–3.""",
+
+    "expand-cum": """#### O que este gráfico mostra?
+O gráfico de barras empilhadas mostra o capital florestal remanescente ao longo do tempo.
+Verde = floresta remanescente; vermelho escuro = perda histórica estimada; vermelho = perda medida.
+
+#### Mensagem principal
+Combinada com a perda histórica pré-dados, a destruição total se aproxima do limiar crítico.
+[Lovejoy & Nobre (Science Advances, 2018)](https://doi.org/10.1126/sciadv.aat2340) alertam:
+um "colapso" irreversível ameaça a partir de ~20–25% de perda total.
+
+#### Contexto
+No colapso, a floresta perde a capacidade de produzir suas próprias chuvas, seca e se transforma
+em savana — mesmo sem novos desmatamentos. Carlos Nobre (INPE) estima que a Amazônia já perdeu
+15–17% de sua área original. Ultrapassar os 20–25% desencadearia liberação irreversível de CO₂.""",
+
+    "expand-sankey": """#### O que este diagrama mostra?
+O diagrama Sankey visualiza as causas do desmatamento (esquerda) e para onde os produtos gerados fluem (direita).
+A largura de cada banda é proporcional à área desmatada — escalada para 10.000 km² como ano representativo.
+
+#### Mensagem principal
+A pecuária impulsiona ~75% do desmatamento — e a maior parte da carne bovina é consumida dentro do Brasil.
+O cultivo de soja (5%) flui predominantemente para a China. Os padrões de consumo global
+influenciam diretamente a perda florestal amazônica.
+
+#### Fontes e Contexto
+Participação dos vetores: [MapBiomas Annual Report 2024](https://mapbiomas.org/en/annual-deforestation-report) ·
+Exportações de carne: [ABIEC 2024](https://www.abiec.com.br/en/beef-report/) ·
+Exportações de soja: [ABIOVE/ANEC 2023](https://abiove.org.br) ·
+Coeficiente de CO₂: [SEEG 2022](https://seeg.eco.br) (837 Mi tCO₂e / 11.568 km² = 72.300 tCO₂e/km²).""",
+
+    "expand-sim": """#### O que este gráfico mostra?
+A projeção extrapola a taxa de desmatamento a partir da última medição,
+aplicando a taxa de variação anual de forma linear no futuro.
+
+#### Presets explicados
+**Compatível com Paris (−10%/ano):** O ritmo mínimo necessário para o compromisso do Brasil na
+[Declaração de Glasgow](https://www.gov.uk/government/publications/glasgow-leaders-declaration-on-forests-and-land-use-2021-to-2030) (COP26, 2021) — zero desmatamento ilegal até 2030.
+**Zero 2030 (−30%/ano):** O máximo matematicamente necessário para atingir essa meta.
+
+#### Contexto
+Lula da Silva (no cargo desde jan. de 2023) reativou a fiscalização e o monitoramento.
+~91% do desmatamento é ilegal (ICV, 2025) — o controle efetivo teria alavancagem máxima.
+A Amazônia armazena ~123 bilhões de toneladas de carbono (NOAA) — protegê-la é uma das
+intervenções climáticas mais custo-efetivas do mundo.""",
+
+    "expand-treemap": """#### O que este gráfico mostra?
+Hierarquia Região → Estado → Município. Tamanho do retângulo = área na Amazônia Legal em km².
+Cor = intensidade do desmatamento por 1.000 km² (nível estadual). Use o controle deslizante ou Play para animar.
+
+#### Mensagem principal
+Pará (PA) e Amazonas (AM) dominam pela área, mas a cor revela quais estados desmata
+desproporcionalmente. Rondônia (RO) e Mato Grosso (MT) mostram consistentemente alta intensidade
+em relação ao tamanho — pontos críticos estruturais, independentemente do ano.
+
+#### Contexto
+As formas são constantes ao longo dos anos — apenas as cores mudam com a pressão do desmatamento.
+Isso separa a geografia estrutural (quem possui a terra) da pressão dinâmica
+(quem está ativamente desmatando). Fonte: IBGE · INPE PRODES.""",
+
+    "expand-slope": """#### O que este gráfico mostra?
+O gráfico de inclinação exibe as mudanças no ranking de desmatamento dos estados ao longo de 2010–2024.
+Rank 1 = maior desmatamento absoluto no ano. As linhas cruzadas revelam estados que ganharam ou perderam intensidade relativa.
+
+#### Mensagem principal
+Estados que sobem no ranking indicam pressão crescente; os que descem mostram melhoria relativa.
+Rondônia e Mato Grosso mantêm posições altas de forma consistente — hotspots estruturais.
+
+#### Contexto
+O ranking remove o efeito do tamanho absoluto e permite identificar quais estados estão
+acelerando ou desacelerando seu ritmo de desmatamento ao longo do tempo.
+Fonte: INPE PRODES · IBGE.""",
+
+    "expand-scatter": """#### O que este gráfico mostra?
+O gráfico de dispersão compara a área total de cada estado na Amazônia Legal com o desmatamento acumulado desde 2010.
+O tamanho da bolha representa a população do estado; o eixo x mostra o PIB estadual.
+
+#### Mensagem principal
+Pontos acima da linha de tendência desmatam desproporcionalmente em relação à sua área ou produção econômica.
+Rondônia e Mato Grosso se destacam como estados de alta pressão estrutural.
+
+#### Contexto
+Estados com maior PIB per capita tendem a mostrar menor desmatamento relativo,
+sugerindo que o desenvolvimento econômico combinado com governança efetiva
+pode reduzir a pressão sobre a floresta. Fonte: INPE PRODES · IBGE.""",
+
+    "expand-marimekko": """#### O que este gráfico mostra?
+O gráfico Marimekko mostra simultaneamente a área total de cada estado na Amazônia Legal (largura da barra)
+e a fração já desmatada (altura vermelha), combinando tamanho absoluto e intensidade relativa.
+
+#### Mensagem principal
+Estados com barras largas e grande fração vermelha combinam área ampla e alta taxa de destruição.
+Percentuais pequenos podem ocultar perdas absolutas enormes em estados grandes como o Pará.
+
+#### Contexto
+A largura da barra representa a área total na Amazônia Legal; a parte vermelha indica o percentual
+desmatado acumulado desde 2010. Fonte: INPE PRODES · IBGE.""",
+}
+
+LESEHILFE_PT: dict[str, str] = dict(LESEHILFE_FALLBACK_PT)
 print("✓ Lesehilfe ready")
 
 
@@ -1563,7 +1808,7 @@ def update_modal_lesehilfe(chart_id, lang):
         text = LESEHILFE.get(chart_id, "")
         title = titles_de.get(chart_id, "")
     elif lang == "pt":
-        text = LESEHILFE_EN.get(chart_id, "")   # reuse EN texts for PT
+        text = LESEHILFE_PT.get(chart_id, "")
         title = titles_pt.get(chart_id, "")
     else:
         text = LESEHILFE_EN.get(chart_id, "")
@@ -1741,6 +1986,8 @@ def update_inline_lesehilfe(lang):
     for key in keys:
         if lang == "de":
             text = LESEHILFE.get(key, LESEHILFE_FALLBACK.get(key, ""))
+        elif lang == "pt":
+            text = LESEHILFE_PT.get(key, LESEHILFE_FALLBACK_PT.get(key, ""))
         else:
             text = LESEHILFE_EN.get(key, LESEHILFE_FALLBACK_EN.get(key, ""))
         result.append(dcc.Markdown(text, link_target="_blank"))
@@ -2674,10 +2921,10 @@ def update_treemap(lang, cb_mode):
     def _yr_annotation(yr):
         return dict(
             text=f"<b>{yr}</b>",
-            x=0.97, y=0.06,
+            x=0.99, y=1.01,
             xref="paper", yref="paper",
             xanchor="right", yanchor="bottom",
-            font=dict(size=64, color="rgba(26,42,26,0.18)", family="Inter"),
+            font=dict(size=22, color="#2d6a4f", family="Inter"),
             showarrow=False,
         )
 
@@ -2754,7 +3001,7 @@ def update_treemap(lang, cb_mode):
 
     fig = go.Figure(data=[init_trace], frames=frames)
     fig.update_layout(
-        **{**CHART_LAYOUT, "margin": dict(l=10, r=10, t=4, b=80), "height": 520},
+        **{**CHART_LAYOUT, "margin": dict(l=10, r=10, t=44, b=80), "height": 520},
         annotations=[_yr_annotation(init_yr)],
         sliders=[dict(
             active=len(years_sorted)-1,

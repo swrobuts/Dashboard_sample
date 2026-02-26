@@ -221,19 +221,64 @@ body {
     font-size: 13px;
     line-height: 1.65;
     color: #555;
-    border-left: 2px solid #e8e8e5;
-    padding-left: 24px;
+    border-left: 3px solid #2d6a4f;
+    padding: 4px 0 0 20px;
+}
+.modal-lesehilfe::before {
+    content: "ℹ  Lesehilfe";
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #2d6a4f;
+    margin-bottom: 16px;
 }
 .modal-lesehilfe h4 {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: #888;
+    color: #2d6a4f;
     margin: 16px 0 6px;
 }
 .modal-lesehilfe h4:first-child { margin-top: 0; }
 .modal-lesehilfe p { margin-bottom: 10px; }
+.modal-lesehilfe a { color: #2d6a4f; }
+
+/* ── Inline Lesehilfe (below each full-width chart) ─────────────────────── */
+.chart-lesehilfe {
+    margin-top: 20px;
+    padding: 16px 20px;
+    border-left: 3px solid #2d6a4f;
+    background: #f4f8f5;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+    line-height: 1.65;
+    color: #555;
+}
+.chart-lesehilfe::before {
+    content: "ℹ  Lesehilfe";
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #2d6a4f;
+    margin-bottom: 14px;
+}
+.chart-lesehilfe h4 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #2d6a4f;
+    margin: 14px 0 5px;
+}
+.chart-lesehilfe h4:first-child { margin-top: 0; }
+.chart-lesehilfe p { margin-bottom: 8px; }
+.chart-lesehilfe p:last-child { margin-bottom: 0; }
+.chart-lesehilfe a { color: #2d6a4f; }
 
 /* ── Simulation ──────────────────────────────────────────────────────────── */
 .simulation-section {
@@ -274,6 +319,13 @@ body {
     transition: background 0.15s, color 0.15s;
 }
 .sim-presets button:hover { background: #2d6a4f; color: #fff; }
+
+/* Active heatmap metric pill */
+.heatmap-pill-active,
+.sim-presets button.heatmap-pill-active {
+    background: #2d6a4f;
+    color: #fff;
+}
 .sim-result {
     background: #f4f8f5;
     border-radius: 4px;
@@ -331,9 +383,8 @@ body {
     .modal-lesehilfe {
         max-width: 100%;
         border-left: none;
-        padding-left: 0;
-        border-top: 2px solid #e8e8e5;
-        padding-top: 16px;
+        padding: 16px 0 0 0;
+        border-top: 3px solid #2d6a4f;
     }
 }
 @media (max-width: 540px) {
