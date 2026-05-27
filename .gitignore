@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*service_role*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# macOS
+.DS_Store
+
+# IDE (WebStorm/JetBrains, VS Code)
+.idea/
+.vscode/
