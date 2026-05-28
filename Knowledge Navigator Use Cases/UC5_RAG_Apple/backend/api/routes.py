@@ -1,10 +1,35 @@
-from fastapi import APIRouter
+from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import time
+from dataclasses import asdict
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from backend.api.schemas import (
+    IngestRequest,
+    QueryRequest,
+    QueryResponse,
+    SourcePayload,
+)
 from backend.config import get_settings
+from backend.data import repo
 from backend.data.pg import ping as pg_ping
+from backend.data.pg import session_scope
+from backend.data.wikipedia_loader import fetch_article
+from backend.ingest.ue1_simple import run_ue1_ingest
+from backend.llm.factory import get_chat_llm
+from backend.retrieval.base import RetrievalResult
+from backend.retrieval.simple import SimpleRAG
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
+
+# ── Health & metadata ─────────────────────────────────────────────────────
 
 @router.get("/health")
 def health() -> dict:
@@ -16,3 +41,187 @@ def health() -> dict:
         "local_llm_url": settings.local_llm_url,
         "wikipedia_url": settings.wikipedia_url,
     }
+
+
+@router.get("/snapshot")
+def snapshot() -> dict:
+    settings = get_settings()
+    with session_scope() as session:
+        snap = repo.latest_snapshot(session, settings.wikipedia_url)
+    if snap is None:
+        return {"snapshot": None}
+    # Make timestamps JSON-friendly.
+    snap["fetched_at"] = snap["fetched_at"].isoformat() if snap.get("fetched_at") else None
+    return {"snapshot": snap}
+
+
+@router.get("/strategies")
+def strategies() -> dict:
+    out = {}
+    for s in ("ue1", "ue2", "ue3"):
+        with session_scope() as session:
+            run = repo.latest_ingest_run(session, s)
+            if s == "ue1":
+                with session_scope() as inner:
+                    chunk_count = repo.ue1_chunk_count(inner)
+            else:
+                chunk_count = 0
+        if run and run.get("started_at"):
+            run["started_at"] = run["started_at"].isoformat()
+        if run and run.get("finished_at"):
+            run["finished_at"] = run["finished_at"].isoformat()
+        out[s] = {
+            "ingested": (run is not None and run.get("status") == "ok"),
+            "implemented": s == "ue1",
+            "chunk_count": chunk_count,
+            "last_run": run,
+        }
+    return {"strategies": out}
+
+
+# ── Ingest ─────────────────────────────────────────────────────────────────
+
+_ingest_lock = asyncio.Lock()
+
+
+def _run_ue1_with_record(run_id: int, snapshot_id: int, force: bool) -> None:
+    """Worker: run the UE1 ingest and update the meta.ingest_run row."""
+    try:
+        stats = run_ue1_ingest(force=force)
+        with session_scope() as session:
+            repo.finish_ingest_run(
+                session, run_id, status="ok",
+                stats={
+                    "snapshot_created": stats.snapshot_created,
+                    "document_id": stats.document_id,
+                    "sections": stats.sections,
+                    "chunks": stats.chunks,
+                    "duration_ms": stats.duration_ms,
+                },
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("UE1 ingest failed")
+        with session_scope() as session:
+            repo.finish_ingest_run(session, run_id, status="failed", error=str(exc))
+
+
+@router.post("/ingest")
+async def ingest(req: IngestRequest) -> dict:
+    if req.strategy != "ue1":
+        raise HTTPException(status_code=400, detail=f"Strategy {req.strategy} not implemented yet")
+    if _ingest_lock.locked():
+        raise HTTPException(status_code=409, detail="Another ingest is already running")
+
+    settings = get_settings()
+    # Synchronously fetch + create a snapshot row + start a run record so the
+    # caller gets a run_id immediately.
+    fetched = await asyncio.to_thread(fetch_article, settings.wikipedia_url)
+    with session_scope() as session:
+        snapshot_id, _ = repo.insert_or_get_snapshot(
+            session,
+            url=fetched.url,
+            html=fetched.html,
+            content_hash=fetched.content_hash,
+            revision_id=fetched.revision_id,
+            etag=fetched.etag,
+        )
+        run_id = repo.start_ingest_run(session, strategy="ue1", snapshot_id=snapshot_id)
+
+    async def _run_locked() -> None:
+        async with _ingest_lock:
+            await asyncio.to_thread(_run_ue1_with_record, run_id, snapshot_id, req.force)
+
+    asyncio.create_task(_run_locked())
+    return {"status": "started", "strategy": req.strategy, "run_id": run_id, "snapshot_id": snapshot_id}
+
+
+@router.get("/ingest/{run_id}")
+def ingest_status(run_id: int) -> dict:
+    with session_scope() as session:
+        row = repo.ingest_run(session, run_id)
+    if row is None:
+        raise HTTPException(404, "Run not found")
+    if row.get("started_at"):
+        row["started_at"] = row["started_at"].isoformat()
+    if row.get("finished_at"):
+        row["finished_at"] = row["finished_at"].isoformat()
+    return row
+
+
+# ── Query ──────────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = (
+    "Du bist ein präziser Assistent, der ausschließlich auf Basis der "
+    "bereitgestellten Auszüge aus dem deutschen Wikipedia-Artikel zu *Apple* "
+    "antwortet. Wenn die Auszüge die Frage nicht beantworten, sage das ehrlich. "
+    "Zitiere die Sektion in Klammern, z. B. (Geschichte > Gründung)."
+)
+
+
+def _build_user_prompt(query: str, result: RetrievalResult) -> str:
+    parts = ["# Frage", query, "", "# Auszüge"]
+    for i, ch in enumerate(result.chunks, start=1):
+        header = f"## Auszug {i}"
+        if ch.section_path:
+            header += f" — {ch.section_path}"
+        parts.append(header)
+        parts.append(ch.text.strip())
+        parts.append("")
+    parts.append("# Aufgabe")
+    parts.append(
+        "Beantworte die Frage knapp und korrekt. Stütze jede Aussage auf die "
+        "Auszüge oben und nenne in Klammern die Sektion."
+    )
+    return "\n".join(parts)
+
+
+def _get_strategy(name: str):
+    if name == "ue1":
+        return SimpleRAG()
+    raise HTTPException(400, f"Strategy {name!r} not implemented yet")
+
+
+@router.post("/query", response_model=QueryResponse)
+def query(req: QueryRequest) -> QueryResponse:
+    t0 = time.perf_counter()
+    strategy = _get_strategy(req.strategy)
+    result = strategy.retrieve(req.query, k=req.k or 8)
+
+    chat = get_chat_llm(req.llm)
+    user_prompt = _build_user_prompt(req.query, result)
+    answer, usage = chat.generate(SYSTEM_PROMPT, user_prompt)
+    latency_ms = (time.perf_counter() - t0) * 1000
+
+    return QueryResponse(
+        answer=answer,
+        sources=[SourcePayload(**asdict(s)) for s in result.sources],
+        trace={**result.trace, "token_usage": asdict(usage)},
+        llm=req.llm,
+        strategy=req.strategy,
+        latency_ms=round(latency_ms, 1),
+    )
+
+
+@router.post("/query/stream")
+def query_stream(req: QueryRequest):
+    strategy = _get_strategy(req.strategy)
+    result = strategy.retrieve(req.query, k=req.k or 8)
+    chat = get_chat_llm(req.llm)
+    user_prompt = _build_user_prompt(req.query, result)
+
+    def gen():
+        # First event: meta (sources + trace)
+        meta = {
+            "type": "meta",
+            "sources": [asdict(s) for s in result.sources],
+            "trace": result.trace,
+            "strategy": req.strategy,
+            "llm": req.llm,
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        # Token stream
+        for piece in chat.stream(SYSTEM_PROMPT, user_prompt):
+            yield f"data: {json.dumps({'type': 'token', 'text': piece}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")

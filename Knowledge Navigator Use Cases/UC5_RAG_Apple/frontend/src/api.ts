@@ -1,0 +1,105 @@
+export type Strategy = "ue1" | "ue2" | "ue3";
+export type LLMProvider = "gemini" | "local";
+
+export interface Source {
+  chunk_id: number | null;
+  section_path: string | null;
+  text: string;
+  distance: number | null;
+}
+
+export interface Health {
+  status: string;
+  db_ok: boolean;
+  gemini_configured: boolean;
+  local_llm_url: string;
+  wikipedia_url: string;
+}
+
+export interface StrategyInfo {
+  ingested: boolean;
+  implemented: boolean;
+  chunk_count: number;
+  last_run: null | {
+    id: number;
+    strategy: string;
+    snapshot_id: number;
+    started_at: string;
+    finished_at: string | null;
+    status: string;
+    stats: Record<string, unknown>;
+    error: string | null;
+  };
+}
+
+export interface SnapshotInfo {
+  snapshot: null | {
+    id: number;
+    url: string;
+    fetched_at: string;
+    revision_id: string | null;
+    content_hash: string;
+  };
+}
+
+const j = (r: Response) => {
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+};
+
+export const api = {
+  health: () => fetch("/api/health").then(j) as Promise<Health>,
+  snapshot: () => fetch("/api/snapshot").then(j) as Promise<SnapshotInfo>,
+  strategies: () => fetch("/api/strategies").then(j) as Promise<{ strategies: Record<Strategy, StrategyInfo> }>,
+  ingest: (strategy: Strategy, force = false) =>
+    fetch("/api/ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strategy, force }),
+    }).then(j) as Promise<{ status: string; strategy: Strategy; run_id: number; snapshot_id: number }>,
+  ingestStatus: (runId: number) => fetch(`/api/ingest/${runId}`).then(j),
+};
+
+export interface StreamHandlers {
+  onMeta: (meta: { sources: Source[]; trace: Record<string, unknown> }) => void;
+  onToken: (text: string) => void;
+  onDone: () => void;
+  onError: (err: unknown) => void;
+}
+
+export async function streamQuery(
+  body: { query: string; strategy: Strategy; llm: LLMProvider; k?: number },
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    const resp = await fetch("/api/query/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!resp.ok || !resp.body) throw new Error(`${resp.status} ${resp.statusText}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const events = buf.split("\n\n");
+      buf = events.pop() ?? "";
+      for (const ev of events) {
+        const line = ev.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        const payload = JSON.parse(line.slice(6));
+        if (payload.type === "meta") handlers.onMeta(payload);
+        else if (payload.type === "token") handlers.onToken(payload.text);
+        else if (payload.type === "done") handlers.onDone();
+      }
+    }
+  } catch (err) {
+    handlers.onError(err);
+  }
+}
