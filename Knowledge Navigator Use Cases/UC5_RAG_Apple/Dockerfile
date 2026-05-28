@@ -1,22 +1,31 @@
+# ── Stage 1: build the React frontend ────────────────────────────────────
+FROM node:20-alpine AS frontend
+WORKDIR /fe
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install --silent
+COPY frontend/ ./
+# Vite writes to ../backend/static by config; for an isolated stage, write to ./dist.
+RUN npx vite build --outDir dist
+
+# ── Stage 2: Python backend serving API + built frontend ─────────────────
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps (build essentials for some wheels, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# App code
 COPY backend /app/backend
 COPY data /app/data
+COPY --from=frontend /fe/dist /app/backend/static
 
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply migrations on every container start (idempotent), then serve.
+CMD ["sh", "-c", "python -m backend.data.migrate && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

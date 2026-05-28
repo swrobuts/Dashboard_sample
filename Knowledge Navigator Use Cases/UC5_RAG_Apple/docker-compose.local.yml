@@ -1,3 +1,6 @@
+# Local-development variant (no Traefik). Exposes the app on :8000 and
+# Postgres on :5432. The Dockerfile builds the React frontend in stage 1
+# and FastAPI serves it under /, so http://localhost:8000 gives you the UI.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -15,7 +18,7 @@ services:
       timeout: 3s
       retries: 10
 
-  backend:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
