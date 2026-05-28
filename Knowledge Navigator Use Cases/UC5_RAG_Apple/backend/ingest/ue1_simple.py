@@ -26,6 +26,7 @@ class UE1IngestStats:
 
 
 def _walk_sections(
+    session,
     sections: list[CleanSection],
     *,
     document_id: int,
@@ -33,29 +34,35 @@ def _walk_sections(
     order_counter: list[int],
     out_sections: list[tuple[int, str, str]],
 ) -> None:
-    """Persist sections, populate ``out_sections`` with (section_id, path, text)."""
-    with session_scope() as session:
-        for sec in sections:
-            section_id = repo.insert_section(
-                session,
-                document_id=document_id,
-                parent_id=parent_id,
-                level=sec.level,
-                heading=sec.heading,
-                path=sec.path,
-                order_idx=order_counter[0],
-                text_=sec.text,
-            )
-            order_counter[0] += 1
-            if sec.text.strip():
-                out_sections.append((section_id, sec.path, sec.text))
-            _walk_sections(
-                sec.children,
-                document_id=document_id,
-                parent_id=section_id,
-                order_counter=order_counter,
-                out_sections=out_sections,
-            )
+    """Persist sections recursively, populate ``out_sections`` with
+    (section_id, path, text). A single SQLAlchemy session must be reused for
+    the whole tree — otherwise child INSERTs reference parent rows that the
+    new session can't see yet (foreign-key violation under READ COMMITTED)."""
+    for sec in sections:
+        section_id = repo.insert_section(
+            session,
+            document_id=document_id,
+            parent_id=parent_id,
+            level=sec.level,
+            heading=sec.heading,
+            path=sec.path,
+            order_idx=order_counter[0],
+            text_=sec.text,
+        )
+        # Flush so the next INSERT (child) sees the parent within the same
+        # transaction even before commit.
+        session.flush()
+        order_counter[0] += 1
+        if sec.text.strip():
+            out_sections.append((section_id, sec.path, sec.text))
+        _walk_sections(
+            session,
+            sec.children,
+            document_id=document_id,
+            parent_id=section_id,
+            order_counter=order_counter,
+            out_sections=out_sections,
+        )
 
 
 def run_ue1_ingest(force: bool = False) -> UE1IngestStats:
@@ -108,13 +115,15 @@ def run_ue1_ingest(force: bool = False) -> UE1IngestStats:
         )
 
     flat_sections: list[tuple[int, str, str]] = []
-    _walk_sections(
-        clean.sections,
-        document_id=document_id,
-        parent_id=None,
-        order_counter=[0],
-        out_sections=flat_sections,
-    )
+    with session_scope() as session:
+        _walk_sections(
+            session,
+            clean.sections,
+            document_id=document_id,
+            parent_id=None,
+            order_counter=[0],
+            out_sections=flat_sections,
+        )
     log.info("UE1 ingest: persisted %d sections", len(flat_sections))
 
     # ── ue1.chunk ──
