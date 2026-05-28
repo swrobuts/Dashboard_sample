@@ -1,6 +1,7 @@
 """Gemini chat + embedding via the official ``google-genai`` SDK."""
 from __future__ import annotations
 
+import math
 from typing import Iterator
 
 from google import genai
@@ -50,6 +51,13 @@ class GeminiChat:
                 yield chunk.text
 
 
+def _l2_normalize(vec: list[float]) -> list[float]:
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm == 0.0:
+        return vec
+    return [x / norm for x in vec]
+
+
 class GeminiEmbedder:
     name = "gemini"
 
@@ -64,9 +72,17 @@ class GeminiEmbedder:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        # The SDK accepts a list under ``contents``.
         resp = self._client.models.embed_content(
             model=self._model,
             contents=texts,
         )
-        return [list(e.values) for e in resp.embeddings]
+        # gemini-embedding-001 returns 3072 dims by default. We use Matryoshka
+        # truncation down to ``self.dim`` (768) and re-normalise so cosine
+        # similarity remains meaningful — Google explicitly recommends
+        # normalising after truncation.
+        out: list[list[float]] = []
+        for e in resp.embeddings:
+            full = list(e.values)
+            truncated = full[: self.dim] if len(full) > self.dim else full
+            out.append(_l2_normalize(truncated))
+        return out

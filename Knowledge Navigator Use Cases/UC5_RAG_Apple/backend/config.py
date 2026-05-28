@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # LLM — Gemini
     gemini_api_key: str = ""
     gemini_chat_model: str = "gemini-2.5-flash"
-    gemini_embedding_model: str = "text-embedding-004"
+    gemini_embedding_model: str = "gemini-embedding-001"
     gemini_embedding_dim: int = 768
 
     # LLM — local (LM Studio, OpenAI-compatible)
