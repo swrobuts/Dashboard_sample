@@ -32,5 +32,28 @@ export PYTHONPATH=$(pwd)
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Status der Implementation: Scaffolding + `/api/health`. Migrationen, Ingest und
-Frontend folgen in den nächsten Schritten — siehe Spec.
+## End-to-End-Lauf (UE1)
+
+1. Postgres starten und Schemata anlegen:
+   ```bash
+   docker compose -f docker-compose.local.yml up -d db
+   source .venv/bin/activate
+   PYTHONPATH=. python -m backend.data.migrate
+   ```
+2. Backend starten:
+   ```bash
+   PYTHONPATH=. uvicorn backend.main:app --reload --port 8000
+   ```
+3. Frontend starten (zweites Terminal):
+   ```bash
+   cd frontend && npm install && npm run dev
+   ```
+4. Browser auf `http://localhost:5173`, Admin-Tab öffnen, **Ingest** für UE1 starten.
+   Der Job läuft im Hintergrund, der Lauf-Status erscheint nach ein paar Sekunden.
+5. Zurück zum Chat-Tab und Fragen stellen.
+
+## Status
+
+- **UE1 — Simple RAG:** ✅ vollständig (Daten, Ingest, Retrieval, API, UI, Tests).
+- **UE2 — + PageIndex:** geplant.
+- **UE3 — + GraphRAG:** geplant.
