@@ -196,7 +196,7 @@ def _build_user_prompt(query: str, result: RetrievalResult) -> str:
 
 def _get_strategy(name: str, llm: str):
     if name == "ue1":
-        return SimpleRAG()
+        return SimpleRAG(llm_provider=llm)
     if name == "ue2":
         return PageIndexRAG(llm_provider=llm)
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")

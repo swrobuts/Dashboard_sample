@@ -149,33 +149,59 @@ class RetrievedChunk:
     section_id: int | None
     section_path: str | None
     text: str
-    distance: float
+    distance: float        # smaller is better for dense; for BM25 we negate ts_rank so order stays consistent
     order_idx: int
+    embedding: list[float] | None = None   # filled when caller asks for it (MMR)
 
 
-def topk_ue1(session: Session, query_embedding: Sequence[float], k: int) -> list[RetrievedChunk]:
+def topk_ue1(
+    session: Session,
+    query_embedding: Sequence[float],
+    k: int,
+    *,
+    with_embedding: bool = False,
+) -> list[RetrievedChunk]:
+    extra = ", c.embedding" if with_embedding else ""
     rows = session.execute(
         text(
-            "SELECT c.id, c.section_id, s.path AS section_path, c.text, "
-            "       c.order_idx, "
-            "       c.embedding <=> CAST(:q AS vector) AS distance "
-            "FROM ue1.chunk c "
-            "LEFT JOIN clean.section s ON s.id = c.section_id "
-            "ORDER BY distance ASC LIMIT :k"
+            f"SELECT c.id, c.section_id, s.path AS section_path, c.text, "
+            f"       c.order_idx, "
+            f"       c.embedding <=> CAST(:q AS vector) AS distance "
+            f"       {extra} "
+            f"FROM ue1.chunk c "
+            f"LEFT JOIN clean.section s ON s.id = c.section_id "
+            f"ORDER BY distance ASC LIMIT :k"
         ),
         {"q": str(list(query_embedding)), "k": k},
     ).mappings().all()
-    return [
-        RetrievedChunk(
-            chunk_id=int(r["id"]),
-            section_id=int(r["section_id"]) if r["section_id"] is not None else None,
-            section_path=r["section_path"],
-            text=r["text"],
-            distance=float(r["distance"]),
-            order_idx=int(r["order_idx"]),
-        )
-        for r in rows
-    ]
+    return [_row_to_retrieved_chunk(r, with_embedding) for r in rows]
+
+
+def topk_ue1_bm25(
+    session: Session,
+    query: str,
+    k: int,
+    *,
+    with_embedding: bool = False,
+) -> list[RetrievedChunk]:
+    """Postgres FTS top-k with German stemming. The score is ts_rank_cd; we
+    store its negation as ``distance`` so the consumer sees a smaller-is-better
+    number across both retrievers."""
+    extra = ", c.embedding" if with_embedding else ""
+    rows = session.execute(
+        text(
+            f"SELECT c.id, c.section_id, s.path AS section_path, c.text, "
+            f"       c.order_idx, "
+            f"       -ts_rank_cd(c.tsv, plainto_tsquery('german', :q)) AS distance "
+            f"       {extra} "
+            f"FROM ue1.chunk c "
+            f"LEFT JOIN clean.section s ON s.id = c.section_id "
+            f"WHERE c.tsv @@ plainto_tsquery('german', :q) "
+            f"ORDER BY distance ASC LIMIT :k"
+        ),
+        {"q": query, "k": k},
+    ).mappings().all()
+    return [_row_to_retrieved_chunk(r, with_embedding) for r in rows]
 
 
 def ue1_chunk_count(session: Session, document_id: int | None = None) -> int:
@@ -190,49 +216,93 @@ def ue1_chunk_count(session: Session, document_id: int | None = None) -> int:
     )
 
 
+def _subtree_where_clause(section_paths: Sequence[str], params: dict) -> str:
+    parts = []
+    for i, p in enumerate(section_paths):
+        parts.append(f"s.path = :p{i} OR s.path LIKE :pp{i}")
+        params[f"p{i}"] = p
+        params[f"pp{i}"] = p + " > %"
+    return "(" + " OR ".join(parts) + ")"
+
+
 def topk_ue1_in_subtree(
     session: Session,
     query_embedding: Sequence[float],
     k: int,
     section_paths: Sequence[str],
+    *,
+    with_embedding: bool = False,
 ) -> list[RetrievedChunk]:
-    """Top-k cosine search restricted to chunks whose section.path is at or
-    below any of the given ``section_paths`` (PageIndex pre-filter for UE2).
-    """
+    """Dense top-k restricted to chunks below any of ``section_paths``."""
     if not section_paths:
         return []
-    # Build OR-of-prefix-match conditions; the trailing space-or-end of path
-    # is anchored to ensure "Geschichte" doesn't match "Geschichten".
-    clauses = " OR ".join(
-        f"s.path = :p{i} OR s.path LIKE :pp{i}" for i in range(len(section_paths))
-    )
+    extra = ", c.embedding" if with_embedding else ""
     params: dict[str, object] = {"q": str(list(query_embedding)), "k": k}
-    for i, p in enumerate(section_paths):
-        params[f"p{i}"] = p
-        params[f"pp{i}"] = p + " > %"
+    where = _subtree_where_clause(section_paths, params)
     rows = session.execute(
         text(
             f"SELECT c.id, c.section_id, s.path AS section_path, c.text, "
             f"       c.order_idx, "
             f"       c.embedding <=> CAST(:q AS vector) AS distance "
+            f"       {extra} "
             f"FROM ue1.chunk c "
             f"JOIN clean.section s ON s.id = c.section_id "
-            f"WHERE {clauses} "
+            f"WHERE {where} "
             f"ORDER BY distance ASC LIMIT :k"
         ),
         params,
     ).mappings().all()
-    return [
-        RetrievedChunk(
-            chunk_id=int(r["id"]),
-            section_id=int(r["section_id"]) if r["section_id"] is not None else None,
-            section_path=r["section_path"],
-            text=r["text"],
-            distance=float(r["distance"]),
-            order_idx=int(r["order_idx"]),
-        )
-        for r in rows
-    ]
+    return [_row_to_retrieved_chunk(r, with_embedding) for r in rows]
+
+
+def topk_ue1_bm25_in_subtree(
+    session: Session,
+    query: str,
+    k: int,
+    section_paths: Sequence[str],
+    *,
+    with_embedding: bool = False,
+) -> list[RetrievedChunk]:
+    """BM25 top-k restricted to chunks below any of ``section_paths``."""
+    if not section_paths:
+        return []
+    extra = ", c.embedding" if with_embedding else ""
+    params: dict[str, object] = {"q": query, "k": k}
+    where = _subtree_where_clause(section_paths, params)
+    rows = session.execute(
+        text(
+            f"SELECT c.id, c.section_id, s.path AS section_path, c.text, "
+            f"       c.order_idx, "
+            f"       -ts_rank_cd(c.tsv, plainto_tsquery('german', :q)) AS distance "
+            f"       {extra} "
+            f"FROM ue1.chunk c "
+            f"JOIN clean.section s ON s.id = c.section_id "
+            f"WHERE c.tsv @@ plainto_tsquery('german', :q) AND {where} "
+            f"ORDER BY distance ASC LIMIT :k"
+        ),
+        params,
+    ).mappings().all()
+    return [_row_to_retrieved_chunk(r, with_embedding) for r in rows]
+
+
+def _row_to_retrieved_chunk(r, with_embedding: bool) -> RetrievedChunk:
+    emb = None
+    if with_embedding and r.get("embedding") is not None:
+        raw = r["embedding"]
+        if isinstance(raw, str):
+            # pgvector returns "[v1,v2,...]" as string when no type adapter is set
+            emb = [float(x) for x in raw.strip("[]").split(",") if x.strip()]
+        else:
+            emb = [float(x) for x in raw]
+    return RetrievedChunk(
+        chunk_id=int(r["id"]),
+        section_id=int(r["section_id"]) if r["section_id"] is not None else None,
+        section_path=r["section_path"],
+        text=r["text"],
+        distance=float(r["distance"]),
+        order_idx=int(r["order_idx"]),
+        embedding=emb,
+    )
 
 
 # ── ue2: tree-node ─────────────────────────────────────────────────────────

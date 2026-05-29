@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ue2_nodes_per_level: int = Field(default=4)
     ue2_top_k: int = Field(default=8)
 
+    # Retrieval pipeline (shared by UE1 & UE2)
+    pipeline_initial_k: int = Field(default=30)   # dense+bm25 top-K before fusion
+    pipeline_rrf_k: int = Field(default=60)        # RRF constant (Cormack et al. default)
+    pipeline_rerank_enabled: bool = Field(default=True)
+    pipeline_rerank_top_n: int = Field(default=15) # how many to send to the reranker
+    pipeline_mmr_enabled: bool = Field(default=True)
+    pipeline_mmr_lambda: float = Field(default=0.7)  # 1.0 = relevance only, 0.0 = diversity only
+
 
 @lru_cache
 def get_settings() -> Settings:

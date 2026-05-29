@@ -24,8 +24,9 @@ import time
 from backend.config import get_settings
 from backend.data import repo
 from backend.data.pg import session_scope
-from backend.llm.factory import get_chat_llm, get_embedding_llm
+from backend.llm.factory import get_chat_llm
 from backend.retrieval.base import Chunk, RetrievalResult, SourceRef
+from backend.retrieval.pipeline import hybrid_retrieve
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ class PageIndexRAG:
 
     def __init__(self, llm_provider: str = "gemini") -> None:
         self._chat = get_chat_llm(llm_provider)
-        self._embedder = get_embedding_llm()
         self._llm_provider = llm_provider
 
     # ── public ─────────────────────────────────────────────────────────────
@@ -119,21 +119,21 @@ class PageIndexRAG:
                     terminal_nodes.append(n)
         section_paths = [n.path for n in terminal_nodes]
 
-        # ── Phase 2: vector top-k constrained to those subtrees ──
-        t0 = time.perf_counter()
-        query_emb = self._embedder.embed([query])[0]
-        with session_scope() as session:
-            rows = repo.topk_ue1_in_subtree(session, query_emb, k, section_paths)
-        vector_ms = (time.perf_counter() - t0) * 1000
-
+        # ── Phase 2: shared hybrid pipeline restricted to those subtrees ──
+        pipeline_result = hybrid_retrieve(
+            query=query,
+            k_final=k,
+            section_paths=section_paths,
+            llm_provider=self._llm_provider,
+        )
         chunks = [
             Chunk(text=r.text, section_path=r.section_path, chunk_id=r.chunk_id)
-            for r in rows
+            for r in pipeline_result.chunks
         ]
         sources = [
             SourceRef(chunk_id=r.chunk_id, section_path=r.section_path,
                       text=r.text, distance=r.distance)
-            for r in rows
+            for r in pipeline_result.chunks
         ]
 
         trace = {
@@ -142,11 +142,10 @@ class PageIndexRAG:
             "navigation": navigation_steps,
             "selected_subtree_paths": section_paths,
             "k": k,
-            "topk_chunks": len(rows),
+            "topk_chunks": len(pipeline_result.chunks),
             "llm_calls_nav": llm_calls_nav,
             "navigation_ms": round(navigation_ms, 1),
-            "vector_ms": round(vector_ms, 1),
-            "distances": [round(r.distance, 4) for r in rows],
+            **pipeline_result.trace,
         }
         return RetrievalResult(chunks=chunks, sources=sources, trace=trace)
 

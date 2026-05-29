@@ -64,12 +64,19 @@ def run_ue1_ingest(force: bool = False) -> UE1IngestStats:
         chunk_idx += len(chunks)
     log.info("UE1 ingest: produced %d chunks, embedding via Gemini", len(all_chunks))
 
+    # Embed (section path + chunk text) instead of bare chunk text. The
+    # embedding model gets crucial context — same chunk wording can mean very
+    # different things under "Geschichte > Gründung" vs "Produkte > iPhone".
+    # Costs nothing extra; gains a substantial chunk of retrieval quality.
     embedder = get_embedding_llm()
     BATCH = 100
     embeddings: list[list[float]] = []
     for i in range(0, len(all_chunks), BATCH):
-        batch = [c.text for _, c in all_chunks[i:i + BATCH]]
-        embeddings.extend(embedder.embed(batch))
+        batch_texts: list[str] = []
+        for _section_id, chunk in all_chunks[i:i + BATCH]:
+            prefix = f"Sektion: {chunk.section_path}\n\n" if chunk.section_path else ""
+            batch_texts.append(prefix + chunk.text)
+        embeddings.extend(embedder.embed(batch_texts))
 
     with session_scope() as session:
         for (section_id, chunk), embedding in zip(all_chunks, embeddings):
