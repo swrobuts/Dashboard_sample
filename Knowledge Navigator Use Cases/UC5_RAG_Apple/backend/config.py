@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     ue1_chunk_overlap: int = Field(default=50)
     ue1_top_k: int = Field(default=8)
 
+    # UE2 — PageIndex + classical RAG hybrid
+    ue2_max_depth: int = Field(default=3)
+    ue2_nodes_per_level: int = Field(default=4)
+    ue2_top_k: int = Field(default=8)
+
 
 @lru_cache
 def get_settings() -> Settings:

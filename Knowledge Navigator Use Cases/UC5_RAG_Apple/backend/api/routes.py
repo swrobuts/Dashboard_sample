@@ -21,8 +21,10 @@ from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
 from backend.ingest.ue1_simple import run_ue1_ingest
+from backend.ingest.ue2_pageindex import run_ue2_ingest
 from backend.llm.factory import get_chat_llm
 from backend.retrieval.base import RetrievalResult
+from backend.retrieval.pageindex import PageIndexRAG
 from backend.retrieval.simple import SimpleRAG
 
 log = logging.getLogger(__name__)
@@ -57,23 +59,25 @@ def snapshot() -> dict:
 
 @router.get("/strategies")
 def strategies() -> dict:
+    implemented = {"ue1", "ue2"}
     out = {}
     for s in ("ue1", "ue2", "ue3"):
         with session_scope() as session:
             run = repo.latest_ingest_run(session, s)
             if s == "ue1":
-                with session_scope() as inner:
-                    chunk_count = repo.ue1_chunk_count(inner)
+                count = repo.ue1_chunk_count(session)
+            elif s == "ue2":
+                count = repo.ue2_tree_node_count(session)
             else:
-                chunk_count = 0
+                count = 0
         if run and run.get("started_at"):
             run["started_at"] = run["started_at"].isoformat()
         if run and run.get("finished_at"):
             run["finished_at"] = run["finished_at"].isoformat()
         out[s] = {
             "ingested": (run is not None and run.get("status") == "ok"),
-            "implemented": s == "ue1",
-            "chunk_count": chunk_count,
+            "implemented": s in implemented,
+            "chunk_count": count,   # "chunks" for UE1, "nodes" for UE2 — same field for UI simplicity
             "last_run": run,
         }
     return {"strategies": out}
@@ -84,30 +88,41 @@ def strategies() -> dict:
 _ingest_lock = asyncio.Lock()
 
 
-def _run_ue1_with_record(run_id: int, snapshot_id: int, force: bool) -> None:
-    """Worker: run the UE1 ingest and update the meta.ingest_run row."""
+def _run_ingest_with_record(strategy: str, run_id: int, force: bool) -> None:
+    """Worker: run the requested strategy's ingest and update meta.ingest_run."""
     try:
-        stats = run_ue1_ingest(force=force)
+        if strategy == "ue1":
+            s = run_ue1_ingest(force=force)
+            stats = {
+                "snapshot_created": s.snapshot_created,
+                "document_id": s.document_id,
+                "sections": s.sections,
+                "chunks": s.chunks,
+                "duration_ms": s.duration_ms,
+            }
+        elif strategy == "ue2":
+            s = run_ue2_ingest(force=force)
+            stats = {
+                "document_id": s.document_id,
+                "nodes": s.nodes,
+                "leaves": s.leaves,
+                "internal": s.internal,
+                "llm_calls": s.llm_calls,
+                "duration_ms": s.duration_ms,
+            }
+        else:
+            raise ValueError(f"Strategy {strategy!r} not implemented")
         with session_scope() as session:
-            repo.finish_ingest_run(
-                session, run_id, status="ok",
-                stats={
-                    "snapshot_created": stats.snapshot_created,
-                    "document_id": stats.document_id,
-                    "sections": stats.sections,
-                    "chunks": stats.chunks,
-                    "duration_ms": stats.duration_ms,
-                },
-            )
+            repo.finish_ingest_run(session, run_id, status="ok", stats=stats)
     except Exception as exc:  # noqa: BLE001
-        log.exception("UE1 ingest failed")
+        log.exception("%s ingest failed", strategy)
         with session_scope() as session:
             repo.finish_ingest_run(session, run_id, status="failed", error=str(exc))
 
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest) -> dict:
-    if req.strategy != "ue1":
+    if req.strategy not in ("ue1", "ue2"):
         raise HTTPException(status_code=400, detail=f"Strategy {req.strategy} not implemented yet")
     if _ingest_lock.locked():
         raise HTTPException(status_code=409, detail="Another ingest is already running")
@@ -125,11 +140,11 @@ async def ingest(req: IngestRequest) -> dict:
             revision_id=fetched.revision_id,
             etag=fetched.etag,
         )
-        run_id = repo.start_ingest_run(session, strategy="ue1", snapshot_id=snapshot_id)
+        run_id = repo.start_ingest_run(session, strategy=req.strategy, snapshot_id=snapshot_id)
 
     async def _run_locked() -> None:
         async with _ingest_lock:
-            await asyncio.to_thread(_run_ue1_with_record, run_id, snapshot_id, req.force)
+            await asyncio.to_thread(_run_ingest_with_record, req.strategy, run_id, req.force)
 
     asyncio.create_task(_run_locked())
     return {"status": "started", "strategy": req.strategy, "run_id": run_id, "snapshot_id": snapshot_id}
@@ -175,16 +190,18 @@ def _build_user_prompt(query: str, result: RetrievalResult) -> str:
     return "\n".join(parts)
 
 
-def _get_strategy(name: str):
+def _get_strategy(name: str, llm: str):
     if name == "ue1":
         return SimpleRAG()
+    if name == "ue2":
+        return PageIndexRAG(llm_provider=llm)
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")
 
 
 @router.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
     t0 = time.perf_counter()
-    strategy = _get_strategy(req.strategy)
+    strategy = _get_strategy(req.strategy, req.llm)
     result = strategy.retrieve(req.query, k=req.k or 8)
 
     chat = get_chat_llm(req.llm)
@@ -204,7 +221,7 @@ def query(req: QueryRequest) -> QueryResponse:
 
 @router.post("/query/stream")
 def query_stream(req: QueryRequest):
-    strategy = _get_strategy(req.strategy)
+    strategy = _get_strategy(req.strategy, req.llm)
     result = strategy.retrieve(req.query, k=req.k or 8)
     chat = get_chat_llm(req.llm)
     user_prompt = _build_user_prompt(req.query, result)

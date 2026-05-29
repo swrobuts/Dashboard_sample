@@ -190,6 +190,162 @@ def ue1_chunk_count(session: Session, document_id: int | None = None) -> int:
     )
 
 
+def topk_ue1_in_subtree(
+    session: Session,
+    query_embedding: Sequence[float],
+    k: int,
+    section_paths: Sequence[str],
+) -> list[RetrievedChunk]:
+    """Top-k cosine search restricted to chunks whose section.path is at or
+    below any of the given ``section_paths`` (PageIndex pre-filter for UE2).
+    """
+    if not section_paths:
+        return []
+    # Build OR-of-prefix-match conditions; the trailing space-or-end of path
+    # is anchored to ensure "Geschichte" doesn't match "Geschichten".
+    clauses = " OR ".join(
+        f"s.path = :p{i} OR s.path LIKE :pp{i}" for i in range(len(section_paths))
+    )
+    params: dict[str, object] = {"q": str(list(query_embedding)), "k": k}
+    for i, p in enumerate(section_paths):
+        params[f"p{i}"] = p
+        params[f"pp{i}"] = p + " > %"
+    rows = session.execute(
+        text(
+            f"SELECT c.id, c.section_id, s.path AS section_path, c.text, "
+            f"       c.order_idx, "
+            f"       c.embedding <=> CAST(:q AS vector) AS distance "
+            f"FROM ue1.chunk c "
+            f"JOIN clean.section s ON s.id = c.section_id "
+            f"WHERE {clauses} "
+            f"ORDER BY distance ASC LIMIT :k"
+        ),
+        params,
+    ).mappings().all()
+    return [
+        RetrievedChunk(
+            chunk_id=int(r["id"]),
+            section_id=int(r["section_id"]) if r["section_id"] is not None else None,
+            section_path=r["section_path"],
+            text=r["text"],
+            distance=float(r["distance"]),
+            order_idx=int(r["order_idx"]),
+        )
+        for r in rows
+    ]
+
+
+# ── ue2: tree-node ─────────────────────────────────────────────────────────
+
+@dataclass
+class TreeNode:
+    id: int
+    parent_id: int | None
+    section_id: int | None
+    level: int
+    heading: str
+    path: str
+    order_idx: int
+    summary: str
+    text: str
+
+
+def delete_ue2_tree(session: Session, document_id: int) -> None:
+    session.execute(
+        text("DELETE FROM ue2.tree_node WHERE document_id = :d"),
+        {"d": document_id},
+    )
+
+
+def insert_tree_node(
+    session: Session,
+    *,
+    document_id: int,
+    parent_id: int | None,
+    section_id: int | None,
+    level: int,
+    heading: str,
+    path: str,
+    order_idx: int,
+    summary: str,
+    text_: str,
+) -> int:
+    new_id = session.execute(
+        text(
+            "INSERT INTO ue2.tree_node "
+            "(document_id, parent_id, section_id, level, heading, path, order_idx, summary, text) "
+            "VALUES (:d, :p, :s, :l, :h, :path, :o, :sum, :txt) RETURNING id"
+        ),
+        {"d": document_id, "p": parent_id, "s": section_id, "l": level,
+         "h": heading, "path": path, "o": order_idx, "sum": summary, "txt": text_},
+    ).scalar()
+    return int(new_id)
+
+
+def ue2_tree_node_count(session: Session, document_id: int | None = None) -> int:
+    if document_id is None:
+        return int(session.execute(text("SELECT COUNT(*) FROM ue2.tree_node")).scalar() or 0)
+    return int(
+        session.execute(
+            text("SELECT COUNT(*) FROM ue2.tree_node WHERE document_id = :d"),
+            {"d": document_id},
+        ).scalar()
+        or 0
+    )
+
+
+def ue2_top_level_nodes(session: Session, document_id: int) -> list[TreeNode]:
+    rows = session.execute(
+        text(
+            "SELECT id, parent_id, section_id, level, heading, path, order_idx, summary, text "
+            "FROM ue2.tree_node "
+            "WHERE document_id = :d AND parent_id IS NULL "
+            "ORDER BY order_idx ASC"
+        ),
+        {"d": document_id},
+    ).mappings().all()
+    return [_row_to_tree_node(r) for r in rows]
+
+
+def ue2_children_of(session: Session, parent_id: int) -> list[TreeNode]:
+    rows = session.execute(
+        text(
+            "SELECT id, parent_id, section_id, level, heading, path, order_idx, summary, text "
+            "FROM ue2.tree_node WHERE parent_id = :p ORDER BY order_idx ASC"
+        ),
+        {"p": parent_id},
+    ).mappings().all()
+    return [_row_to_tree_node(r) for r in rows]
+
+
+def latest_document_id_for_url(session: Session, url: str) -> int | None:
+    """Walk raw → clean to find the document for the most recent snapshot."""
+    row = session.execute(
+        text(
+            "SELECT cd.id FROM clean.document cd "
+            "JOIN raw.wikipedia_snapshot s ON s.id = cd.snapshot_id "
+            "WHERE s.url = :url "
+            "ORDER BY s.fetched_at DESC LIMIT 1"
+        ),
+        {"url": url},
+    ).scalar()
+    return int(row) if row is not None else None
+
+
+def _row_to_tree_node(r) -> TreeNode:
+    return TreeNode(
+        id=int(r["id"]),
+        parent_id=int(r["parent_id"]) if r["parent_id"] is not None else None,
+        section_id=int(r["section_id"]) if r["section_id"] is not None else None,
+        level=int(r["level"]),
+        heading=r["heading"],
+        path=r["path"],
+        order_idx=int(r["order_idx"]),
+        summary=r["summary"],
+        text=r["text"] or "",
+    )
+
+
 # ── meta ───────────────────────────────────────────────────────────────────
 
 def start_ingest_run(session: Session, *, strategy: str, snapshot_id: int) -> int:
