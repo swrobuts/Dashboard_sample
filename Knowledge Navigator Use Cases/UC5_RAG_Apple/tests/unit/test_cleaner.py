@@ -45,3 +45,47 @@ def test_intro_paragraphs_become_einleitung_section():
 def test_edit_links_are_stripped_from_headings():
     doc = clean_html(SAMPLE_HTML, "Apple")
     assert all("[edit]" not in s.heading for s in doc.sections)
+
+
+# Modern MediaWiki (~1.43+) wraps each heading in <div class="mw-heading
+# mw-headingN">…</div>. The cleaner must walk the wrapper's siblings, not the
+# heading's empty sibling list.
+MODERN_MW_HTML = """
+<div class="mw-parser-output">
+  <p>Lead über Apple Inc.</p>
+  <div class="mw-heading mw-heading2"><h2 id="Geschichte">Geschichte</h2></div>
+  <div class="mw-heading mw-heading3"><h3 id="Gruendung">1976–1980: Gründung</h3></div>
+  <p>Apple wurde 1976 von Steve Jobs, Steve Wozniak und Ronald Wayne gegründet.</p>
+  <p>Der Apple I war das erste Produkt.</p>
+  <div class="mw-heading mw-heading3"><h3 id="Sculley">1985–1996: Sculley-Ära</h3></div>
+  <p>Nach Jobs' Weggang übernahm John Sculley.</p>
+  <div class="mw-heading mw-heading2"><h2 id="Produkte">Produkte</h2></div>
+  <p>Apple verkauft Hardware und Software.</p>
+</div>
+"""
+
+
+def test_modern_wrapper_html_captures_h3_text():
+    doc = clean_html(MODERN_MW_HTML, "Apple")
+    geschichte = next(s for s in doc.sections if s.heading == "Geschichte")
+    gruendung = next(c for c in geschichte.children if c.heading == "1976–1980: Gründung")
+    sculley = next(c for c in geschichte.children if c.heading == "1985–1996: Sculley-Ära")
+    assert "Wozniak" in gruendung.text, "h3 prose must be captured under modern wrapper HTML"
+    assert "Sculley" in sculley.text
+
+
+def test_modern_wrapper_html_lead_is_only_pre_heading_prose():
+    doc = clean_html(MODERN_MW_HTML, "Apple")
+    intro = next(s for s in doc.sections if s.heading == "Einleitung")
+    assert "Lead über Apple Inc." in intro.text
+    # Crucial: the lead must NOT swallow the entire article (which was the
+    # regression with the older first-heading detection).
+    assert "Wozniak" not in intro.text
+    assert "Sculley" not in intro.text
+
+
+def test_modern_wrapper_html_separates_h2_siblings():
+    doc = clean_html(MODERN_MW_HTML, "Apple")
+    produkte = next(s for s in doc.sections if s.heading == "Produkte")
+    assert "Hardware" in produkte.text
+    assert "Sculley" not in produkte.text   # Geschichte's content must not leak in

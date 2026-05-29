@@ -65,11 +65,50 @@ def _heading_text(tag: Tag) -> str:
     return tag.get_text(strip=True)
 
 
+def _is_heading_wrapper(tag: Tag) -> bool:
+    """Modern MediaWiki wraps each heading in
+    ``<div class="mw-heading mw-headingN">…</div>``. Recognise that wrapper
+    so we walk siblings at the right level."""
+    if not isinstance(tag, Tag) or tag.name != "div":
+        return False
+    classes = tag.get("class") or []
+    return any(c == "mw-heading" or c.startswith("mw-heading") for c in classes)
+
+
+def _wrapper_heading_level(wrapper: Tag) -> int | None:
+    """Get the heading level *of* a wrapper div (without descending into other
+    wrappers)."""
+    for child in wrapper.children:
+        if isinstance(child, Tag):
+            lvl = _heading_level(child)
+            if lvl is not None:
+                return lvl
+    return None
+
+
+def _effective_start(start: Tag) -> Tag:
+    """Walk up from the heading to its mw-heading wrapper if present, so the
+    ``.next_siblings`` walk happens at the right DOM level."""
+    parent = start.parent
+    if parent is not None and _is_heading_wrapper(parent):
+        return parent
+    return start
+
+
 def _collect_following_text(start: Tag, stop_level: int) -> list[Tag | NavigableString]:
-    """Collect siblings after ``start`` until a heading at ``stop_level`` or higher."""
+    """Collect siblings after ``start`` until a heading at ``stop_level`` or
+    higher. Handles both the legacy MediaWiki output (flat headings) and the
+    modern one (each heading inside its own ``<div class="mw-heading…">``)."""
+    walker_start = _effective_start(start)
     out: list[Tag | NavigableString] = []
-    for sib in start.next_siblings:
+    for sib in walker_start.next_siblings:
         if isinstance(sib, Tag):
+            # Wrapper-div containing the next heading
+            if _is_heading_wrapper(sib):
+                wlvl = _wrapper_heading_level(sib)
+                if wlvl is not None and wlvl <= stop_level:
+                    break
+            # Bare heading (legacy HTML)
             lvl = _heading_level(sib)
             if lvl is not None and lvl <= stop_level:
                 break
@@ -106,10 +145,19 @@ def clean_html(html: str, title: str) -> CleanDocument:
     sections: list[CleanSection] = []
     stack: list[CleanSection] = []  # current path
 
-    # Lead paragraphs before the first h2.
+    # Lead paragraphs: everything BEFORE the first heading marker among root's
+    # direct children. The marker is either a bare heading (legacy HTML) or a
+    # mw-heading wrapper (modern HTML).
+    first_marker: Tag | None = None
+    for child in root.children:
+        if isinstance(child, Tag) and (
+            _is_heading_wrapper(child) or _heading_level(child) is not None
+        ):
+            first_marker = child
+            break
+
     lead_nodes: list[Tag | NavigableString] = []
-    first_heading = root.find(lambda t: isinstance(t, Tag) and t.name in HEADING_LEVELS)
-    if first_heading is None:
+    if first_marker is None:
         lead_md = _nodes_to_markdown(list(root.children))
         if lead_md:
             sections.append(CleanSection(level=2, heading="Einleitung", path="Einleitung", text=lead_md))
@@ -117,7 +165,7 @@ def clean_html(html: str, title: str) -> CleanDocument:
         return CleanDocument(title=title, markdown=markdown, sections=sections)
 
     for sib in root.children:
-        if sib is first_heading:
+        if sib is first_marker:
             break
         lead_nodes.append(sib)
     lead_md = _nodes_to_markdown(lead_nodes)
