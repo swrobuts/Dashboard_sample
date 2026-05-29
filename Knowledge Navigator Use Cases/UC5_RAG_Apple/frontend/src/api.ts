@@ -47,6 +47,39 @@ const j = (r: Response) => {
   return r.json();
 };
 
+export interface StrategyResult {
+  strategy: Strategy;
+  answer: string;
+  sources: Source[];
+  trace: Record<string, unknown>;
+  latency_ms: number;
+  llm_calls: number;
+  token_usage: { prompt_tokens: number; completion_tokens: number };
+  skipped_llm: boolean;
+}
+
+export interface JudgeScore {
+  korrektheit: number;
+  vollstaendigkeit: number;
+  quellenbezug: number;
+  fokussiertheit: number;
+  kommentar: string;
+  gesamtnote: number;
+}
+
+export interface CompareResponse {
+  query: string;
+  llm: LLMProvider;
+  results: StrategyResult[];
+  evaluation: {
+    scores: Record<string, JudgeScore>;
+    gewinner: string;
+    begruendung: string;
+    judge_model: string;
+  };
+  total_latency_ms: number;
+}
+
 export const api = {
   health: () => fetch("/api/health").then(j) as Promise<Health>,
   snapshot: () => fetch("/api/snapshot").then(j) as Promise<SnapshotInfo>,
@@ -58,6 +91,12 @@ export const api = {
       body: JSON.stringify({ strategy, force }),
     }).then(j) as Promise<{ status: string; strategy: Strategy; run_id: number; snapshot_id: number }>,
   ingestStatus: (runId: number) => fetch(`/api/ingest/${runId}`).then(j),
+  compare: (body: { query: string; strategies: Strategy[]; llm: LLMProvider; k?: number }) =>
+    fetch("/api/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(j) as Promise<CompareResponse>,
 };
 
 export interface StreamHandlers {

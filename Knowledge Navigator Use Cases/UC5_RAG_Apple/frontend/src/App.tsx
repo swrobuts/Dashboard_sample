@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Admin } from "./components/Admin";
 import { Chat } from "./components/Chat";
+import { Compare } from "./components/Compare";
 import { api, type LLMProvider, type Strategy, type StrategyInfo } from "./api";
 
-type Tab = "chat" | "admin";
+type Tab = "chat" | "vergleich" | "admin";
 
 const STRATEGIES: { id: Strategy; label: string; subtitle: string }[] = [
   { id: "ue1", label: "UE1", subtitle: "Simple RAG" },
@@ -34,7 +35,7 @@ export default function App() {
         <div className="px-6 py-3 flex items-center gap-6">
           <div className="font-bold text-lg">UC5 · RAG <span className="text-slate-400 font-normal">über de.wikipedia.org/wiki/Apple</span></div>
           <nav className="ml-auto flex gap-1">
-            {(["chat", "admin"] as Tab[]).map((t) => (
+            {(["chat", "vergleich", "admin"] as Tab[]).map((t) => (
               <button key={t}
                 onClick={() => setTab(t)}
                 className={
@@ -84,12 +85,12 @@ export default function App() {
         </div>
       </header>
       <main className="flex-1 flex min-h-0">
-        {tab === "chat" ? (
+        {tab === "chat" && (
           <Chat strategy={strategy} llm={llm}
                 ingested={currentInfo?.ingested ?? false} />
-        ) : (
-          <Admin />
         )}
+        {tab === "vergleich" && <Compare llm={llm} strategies={strategies} />}
+        {tab === "admin" && <Admin />}
       </main>
     </div>
   );

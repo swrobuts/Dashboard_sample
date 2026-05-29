@@ -10,16 +10,20 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.api.schemas import (
+    CompareRequest,
+    CompareResponse,
     IngestRequest,
     QueryRequest,
     QueryResponse,
     SourcePayload,
+    StrategyResult,
 )
 from backend.config import get_settings
 from backend.data import repo
 from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
+from backend.evaluation.judge import judge_answers
 from backend.ingest.ue1_simple import run_ue1_ingest
 from backend.ingest.ue2_pageindex import run_ue2_ingest
 from backend.llm.factory import get_chat_llm
@@ -198,6 +202,44 @@ def _get_strategy(name: str, llm: str):
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")
 
 
+def _run_strategy_and_answer(
+    *, strategy: str, query: str, llm: str, k: int
+) -> StrategyResult:
+    """Shared by /query and /compare: retrieve + generate answer + collect metrics."""
+    t0 = time.perf_counter()
+    strat = _get_strategy(strategy, llm)
+    result = strat.retrieve(query, k=k)
+    if not result.chunks:
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        return StrategyResult(
+            strategy=strategy,
+            answer=NO_CONTEXT_ANSWER,
+            sources=[],
+            trace={**result.trace, "skipped_llm": True, "reason": "no chunks retrieved"},
+            latency_ms=latency_ms,
+            llm_calls=int(result.trace.get("llm_calls_nav", 0)),
+            token_usage={"prompt_tokens": 0, "completion_tokens": 0},
+            skipped_llm=True,
+        )
+    chat = get_chat_llm(llm)
+    user_prompt = _build_user_prompt(query, result)
+    answer, usage = chat.generate(SYSTEM_PROMPT, user_prompt)
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+    return StrategyResult(
+        strategy=strategy,
+        answer=answer,
+        sources=[SourcePayload(**asdict(s)) for s in result.sources],
+        trace=result.trace,
+        latency_ms=latency_ms,
+        llm_calls=int(result.trace.get("llm_calls_nav", 0)) + 1,
+        token_usage={
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+        },
+        skipped_llm=False,
+    )
+
+
 NO_CONTEXT_ANSWER = (
     "Ich kann diese Frage nicht beantworten, weil die ausgewählte "
     "Retrieval-Strategie zu dieser Frage keine Auszüge aus dem Wikipedia-"
@@ -210,35 +252,67 @@ NO_CONTEXT_ANSWER = (
 
 @router.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
-    t0 = time.perf_counter()
-    strategy = _get_strategy(req.strategy, req.llm)
-    result = strategy.retrieve(req.query, k=req.k or 8)
-
-    # Guardrail: when retrieval returns no chunks, refuse to fall back to the
-    # model's training data — that's where ungrounded RAG hallucinations live.
-    if not result.chunks:
-        latency_ms = (time.perf_counter() - t0) * 1000
-        return QueryResponse(
-            answer=NO_CONTEXT_ANSWER,
-            sources=[],
-            trace={**result.trace, "skipped_llm": True, "reason": "no chunks retrieved"},
-            llm=req.llm,
-            strategy=req.strategy,
-            latency_ms=round(latency_ms, 1),
-        )
-
-    chat = get_chat_llm(req.llm)
-    user_prompt = _build_user_prompt(req.query, result)
-    answer, usage = chat.generate(SYSTEM_PROMPT, user_prompt)
-    latency_ms = (time.perf_counter() - t0) * 1000
-
+    result = _run_strategy_and_answer(
+        strategy=req.strategy, query=req.query, llm=req.llm, k=req.k or 8,
+    )
     return QueryResponse(
-        answer=answer,
-        sources=[SourcePayload(**asdict(s)) for s in result.sources],
-        trace={**result.trace, "token_usage": asdict(usage)},
+        answer=result.answer,
+        sources=result.sources,
+        trace={**result.trace, "token_usage": result.token_usage},
         llm=req.llm,
         strategy=req.strategy,
-        latency_ms=round(latency_ms, 1),
+        latency_ms=result.latency_ms,
+    )
+
+
+# ── Compare ────────────────────────────────────────────────────────────────
+
+@router.post("/compare", response_model=CompareResponse)
+async def compare(req: CompareRequest) -> CompareResponse:
+    if not req.strategies:
+        raise HTTPException(400, "At least one strategy must be selected")
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    strategies = [s for s in req.strategies if not (s in seen or seen.add(s))]
+    for s in strategies:
+        if s not in ("ue1", "ue2"):
+            raise HTTPException(400, f"Strategy {s!r} not implemented yet")
+
+    t0 = time.perf_counter()
+
+    # Run all strategies in parallel — each retrieves + generates its own
+    # answer. asyncio.gather + to_thread keeps the event loop free during the
+    # blocking LLM/DB calls.
+    coros = [
+        asyncio.to_thread(
+            _run_strategy_and_answer,
+            strategy=s,
+            query=req.query,
+            llm=req.llm,
+            k=req.k or 8,
+        )
+        for s in strategies
+    ]
+    results: list[StrategyResult] = await asyncio.gather(*coros)
+
+    # Judge runs once all strategies are done; uses Gemini for stable JSON.
+    judge_payload = [
+        {
+            "strategy": r.strategy,
+            "answer": r.answer,
+            "sources": [s.model_dump() for s in r.sources],
+        }
+        for r in results
+    ]
+    evaluation = await asyncio.to_thread(judge_answers, req.query, judge_payload)
+    total_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+    return CompareResponse(
+        query=req.query,
+        llm=req.llm,
+        results=results,
+        evaluation=evaluation.to_dict(),
+        total_latency_ms=total_latency_ms,
     )
 
 
