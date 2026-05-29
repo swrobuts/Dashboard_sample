@@ -198,11 +198,34 @@ def _get_strategy(name: str, llm: str):
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")
 
 
+NO_CONTEXT_ANSWER = (
+    "Ich kann diese Frage nicht beantworten, weil die ausgewählte "
+    "Retrieval-Strategie zu dieser Frage keine Auszüge aus dem Wikipedia-"
+    "Artikel gefunden hat. Mögliche Ursachen: die Navigation hat die "
+    "relevante Sektion verfehlt, oder die gewählten Sektionen enthalten "
+    "keinen Text. Probiere die Frage mit einer anderen Strategie oder "
+    "formuliere sie spezifischer."
+)
+
+
 @router.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
     t0 = time.perf_counter()
     strategy = _get_strategy(req.strategy, req.llm)
     result = strategy.retrieve(req.query, k=req.k or 8)
+
+    # Guardrail: when retrieval returns no chunks, refuse to fall back to the
+    # model's training data — that's where ungrounded RAG hallucinations live.
+    if not result.chunks:
+        latency_ms = (time.perf_counter() - t0) * 1000
+        return QueryResponse(
+            answer=NO_CONTEXT_ANSWER,
+            sources=[],
+            trace={**result.trace, "skipped_llm": True, "reason": "no chunks retrieved"},
+            llm=req.llm,
+            strategy=req.strategy,
+            latency_ms=round(latency_ms, 1),
+        )
 
     chat = get_chat_llm(req.llm)
     user_prompt = _build_user_prompt(req.query, result)
@@ -223,11 +246,26 @@ def query(req: QueryRequest) -> QueryResponse:
 def query_stream(req: QueryRequest):
     strategy = _get_strategy(req.strategy, req.llm)
     result = strategy.retrieve(req.query, k=req.k or 8)
+
+    def gen_empty():
+        meta = {
+            "type": "meta",
+            "sources": [],
+            "trace": {**result.trace, "skipped_llm": True, "reason": "no chunks retrieved"},
+            "strategy": req.strategy,
+            "llm": req.llm,
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'token', 'text': NO_CONTEXT_ANSWER}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    if not result.chunks:
+        return StreamingResponse(gen_empty(), media_type="text/event-stream")
+
     chat = get_chat_llm(req.llm)
     user_prompt = _build_user_prompt(req.query, result)
 
     def gen():
-        # First event: meta (sources + trace)
         meta = {
             "type": "meta",
             "sources": [asdict(s) for s in result.sources],
@@ -236,7 +274,6 @@ def query_stream(req: QueryRequest):
             "llm": req.llm,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-        # Token stream
         for piece in chat.stream(SYSTEM_PROMPT, user_prompt):
             yield f"data: {json.dumps({'type': 'token', 'text': piece}, ensure_ascii=False)}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

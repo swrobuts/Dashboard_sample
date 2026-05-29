@@ -100,11 +100,24 @@ class PageIndexRAG:
 
         navigation_ms = (time.perf_counter() - t0) * 1000
 
-        # The *deepest* selected nodes are the most specific. We use those as
-        # the subtree roots; the path-prefix filter automatically includes all
-        # their descendants.
-        deepest = selected_at_each_level[-1]
-        section_paths = [n.path for n in deepest]
+        # Terminal nodes = selected nodes whose own children weren't selected
+        # at the next level (either because the node is a leaf, or because
+        # the navigator chose not to refine further). Each terminal node's
+        # path defines a subtree for the vector search to look in. A naïve
+        # ``selected_at_each_level[-1]`` would silently drop branches where
+        # the navigator hit a leaf early — exactly what bit us in testing.
+        terminal_nodes: list[repo.TreeNode] = []
+        for level_idx, level_selection in enumerate(selected_at_each_level):
+            next_selection = (
+                selected_at_each_level[level_idx + 1]
+                if level_idx + 1 < len(selected_at_each_level)
+                else []
+            )
+            parents_of_next = {n.parent_id for n in next_selection}
+            for n in level_selection:
+                if n.id not in parents_of_next:
+                    terminal_nodes.append(n)
+        section_paths = [n.path for n in terminal_nodes]
 
         # ── Phase 2: vector top-k constrained to those subtrees ──
         t0 = time.perf_counter()
