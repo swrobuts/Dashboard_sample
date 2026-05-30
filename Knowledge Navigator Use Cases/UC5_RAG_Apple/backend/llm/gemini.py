@@ -11,6 +11,17 @@ from backend.config import get_settings
 from backend.llm.base import TokenUsage
 
 
+def _http_options() -> types.HttpOptions | None:
+    """Per-request timeout so a hanging Gemini call can't stall the whole
+    ingest pipeline. Returns None if the SDK version doesn't support timeout
+    via HttpOptions — caller falls back to default."""
+    try:
+        # google-genai >=0.5 supports `timeout` (milliseconds).
+        return types.HttpOptions(timeout=60_000)  # 60s hard cutoff per call
+    except TypeError:
+        return None
+
+
 class GeminiChat:
     name = "gemini"
 
@@ -18,7 +29,12 @@ class GeminiChat:
         settings = get_settings()
         if not settings.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is not set")
-        self._client = genai.Client(api_key=settings.gemini_api_key)
+        opts = _http_options()
+        self._client = (
+            genai.Client(api_key=settings.gemini_api_key, http_options=opts)
+            if opts is not None
+            else genai.Client(api_key=settings.gemini_api_key)
+        )
         self._model = settings.gemini_chat_model
 
     def _config(self, system: str) -> types.GenerateContentConfig:
@@ -65,7 +81,12 @@ class GeminiEmbedder:
         settings = get_settings()
         if not settings.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is not set")
-        self._client = genai.Client(api_key=settings.gemini_api_key)
+        opts = _http_options()
+        self._client = (
+            genai.Client(api_key=settings.gemini_api_key, http_options=opts)
+            if opts is not None
+            else genai.Client(api_key=settings.gemini_api_key)
+        )
         self._model = settings.gemini_embedding_model
         self.dim = settings.gemini_embedding_dim
 

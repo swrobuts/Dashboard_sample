@@ -20,6 +20,7 @@ This is the most LLM-heavy part of the project: ~130 extraction calls +
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -189,14 +190,52 @@ def _load_chunks() -> list[tuple[int, str, str | None]]:
     return [(int(r[0]), r[1], r[2]) for r in rows]
 
 
-def _extract_one(chat, chunk_text: str, chunk_id: int) -> tuple[ChunkExtraction, int]:
-    """Run the extraction LLM call for one chunk. Returns (extraction, calls)."""
+EXTRACTION_TIMEOUT_SEC = 90      # hard cutoff per Gemini call
+EXTRACTION_MAX_ATTEMPTS = 3      # incl. first try
+
+_extraction_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="ue3-extract"
+)
+
+
+def _generate_with_timeout(chat, system: str, user: str, timeout: float) -> str:
+    """Run a sync Gemini call with a hard wall-clock limit. If the underlying
+    HTTP request hangs (no SDK timeout), we abandon the thread and raise. The
+    abandoned thread keeps running until the process exits, but the pipeline
+    stays unblocked."""
+    fut = _extraction_executor.submit(chat.generate, system, user)
     try:
-        raw, _usage = chat.generate(EXTRACTION_SYSTEM, EXTRACTION_TEMPLATE.format(chunk_text=chunk_text))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Extraction failed for chunk %d: %s", chunk_id, exc)
-        return ChunkExtraction(chunk_id=chunk_id), 1
-    return parse_extraction(raw, chunk_id), 1
+        raw, _usage = fut.result(timeout=timeout)
+        return raw or ""
+    except concurrent.futures.TimeoutError as exc:
+        fut.cancel()
+        raise TimeoutError(f"Gemini call exceeded {timeout:.0f}s") from exc
+
+
+def _extract_one(chat, chunk_text: str, chunk_id: int) -> tuple[ChunkExtraction, int]:
+    """Run the extraction LLM call for one chunk with timeout + retries.
+    Returns (extraction, calls). Calls counts every attempt incl. retries."""
+    prompt = EXTRACTION_TEMPLATE.format(chunk_text=chunk_text)
+    attempts = 0
+    backoff = 2.0
+    while attempts < EXTRACTION_MAX_ATTEMPTS:
+        attempts += 1
+        try:
+            raw = _generate_with_timeout(chat, EXTRACTION_SYSTEM, prompt,
+                                          EXTRACTION_TIMEOUT_SEC)
+            return parse_extraction(raw, chunk_id), attempts
+        except TimeoutError as exc:
+            log.warning("Chunk %d extraction timed out (attempt %d/%d): %s",
+                        chunk_id, attempts, EXTRACTION_MAX_ATTEMPTS, exc)
+        except Exception as exc:  # noqa: BLE001
+            # 429s, transient API errors, JSON-decode etc. fall here.
+            log.warning("Chunk %d extraction failed (attempt %d/%d): %s",
+                        chunk_id, attempts, EXTRACTION_MAX_ATTEMPTS, exc)
+        if attempts < EXTRACTION_MAX_ATTEMPTS:
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 20.0)
+    log.error("Chunk %d extraction giving up after %d attempts", chunk_id, attempts)
+    return ChunkExtraction(chunk_id=chunk_id), attempts
 
 
 # ── Neo4j writeback ───────────────────────────────────────────────────────
@@ -360,6 +399,7 @@ def run_ue3_ingest(force: bool = False) -> UE3IngestStats:
     log.info("UE3 ingest: extracting entities from %d chunks", len(chunk_rows))
     extractions: list[ChunkExtraction] = []
     llm_calls = 0
+    t_extract = time.perf_counter()
     for cid, txt, _path in chunk_rows:
         if not (txt or "").strip():
             extractions.append(ChunkExtraction(chunk_id=cid))
@@ -367,9 +407,12 @@ def run_ue3_ingest(force: bool = False) -> UE3IngestStats:
         ext, calls = _extract_one(chat, txt, cid)
         llm_calls += calls
         extractions.append(ext)
-        if len(extractions) % 25 == 0:
-            log.info("  extracted %d/%d chunks (%d LLM calls so far)",
-                     len(extractions), len(chunk_rows), llm_calls)
+        if len(extractions) % 10 == 0:
+            elapsed = time.perf_counter() - t_extract
+            rate = len(extractions) / max(elapsed, 0.1)
+            remaining = (len(chunk_rows) - len(extractions)) / max(rate, 0.01)
+            log.info("  extracted %d/%d chunks (%d LLM calls, %.1f c/s, ~%.0fs left)",
+                     len(extractions), len(chunk_rows), llm_calls, rate, remaining)
 
     # ── Resolve entities to canonical keys; aggregate descriptions ──
     entity_descriptions: dict[str, dict] = {}
