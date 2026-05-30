@@ -11,13 +11,16 @@ from backend.config import get_settings
 from backend.llm.base import TokenUsage
 
 
-def _http_options() -> types.HttpOptions | None:
+def _http_options():
     """Per-request timeout so a hanging Gemini call can't stall the whole
     ingest pipeline. Returns None if the SDK version doesn't support timeout
-    via HttpOptions — caller falls back to default."""
+    via HttpOptions — caller falls back to default. The thread-watchdog in
+    ue3_graphrag._generate_with_timeout() provides a backstop either way."""
+    cls = getattr(types, "HttpOptions", None)
+    if cls is None:
+        return None
     try:
-        # google-genai >=0.5 supports `timeout` (milliseconds).
-        return types.HttpOptions(timeout=60_000)  # 60s hard cutoff per call
+        return cls(timeout=60_000)  # 60s hard cutoff per call
     except TypeError:
         return None
 
