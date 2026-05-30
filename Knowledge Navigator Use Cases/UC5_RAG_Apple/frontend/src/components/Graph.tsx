@@ -309,22 +309,32 @@ export function Graph() {
     if (layout === "concentric") {
       graphRef.current.d3Force("cluster", null as any);
     } else {
+      // The user's colourBy choice ALSO drives the clustering logic.
+      // colourBy=type  → semantically meaningful clusters (all PERSONs
+      //                  together, all PRODUCTs together, etc.). This
+      //                  gives 6 readable islands.
+      // colourBy=community → Louvain communities. Mathematically valid
+      //                  but unintuitive on a sparse graph (e.g. iPhone 4
+      //                  and iPhone 6 each form their own community
+      //                  because they're each connected only to Apple).
+      const groupKey = (n: FGNode) =>
+        colourBy === "community" ? n.community_id : n.type;
       const clusterForce = (alpha: number) => {
         if (!data) return;
         const buckets = new Map<string, { x: number; y: number; n: number }>();
         for (const n of graphData.nodes) {
-          if (!n.community_id || n.x == null || n.y == null) continue;
-          const b = buckets.get(n.community_id) || { x: 0, y: 0, n: 0 };
+          const key = groupKey(n);
+          if (!key || n.x == null || n.y == null) continue;
+          const b = buckets.get(key) || { x: 0, y: 0, n: 0 };
           b.x += n.x; b.y += n.y; b.n += 1;
-          buckets.set(n.community_id, b);
+          buckets.set(key, b);
         }
         for (const [, b] of buckets) { b.x /= b.n; b.y /= b.n; }
-        // Stronger pull (0.9 vs 0.6) so communities visibly form islands
-        // even when their members have few inter-cluster edges.
         const k = 0.9 * alpha;
         for (const n of graphData.nodes) {
-          if (!n.community_id || n.x == null || n.y == null) continue;
-          const c = buckets.get(n.community_id);
+          const key = groupKey(n);
+          if (!key || n.x == null || n.y == null) continue;
+          const c = buckets.get(key);
           if (!c) continue;
           (n as any).vx = ((n as any).vx || 0) + (c.x - n.x) * k;
           (n as any).vy = ((n as any).vy || 0) + (c.y - n.y) * k;
@@ -333,7 +343,7 @@ export function Graph() {
       graphRef.current.d3Force("cluster", clusterForce as any);
     }
     graphRef.current.d3ReheatSimulation();
-  }, [layout, graphData.nodes, data]);
+  }, [layout, colourBy, graphData.nodes, data]);
 
   // Communities → restrained categorical palette (still desaturated)
   const communityColour = useMemo(() => {
@@ -627,26 +637,30 @@ export function Graph() {
             // follow the simulation. ─────────────────────────────────────
             onRenderFramePre={(ctx, scale) => {
               if (layout !== "cluster" || !showHulls) return;
+              // Group hulls by the SAME key as the cluster force —
+              // so the visible polygons match what the layout actually
+              // attracts. Otherwise hulls and forces would compete.
               const groups = new Map<string, [number, number][]>();
               for (const n of graphData.nodes) {
-                if (!n.community_id || n.x == null || n.y == null) continue;
-                if (!groups.has(n.community_id)) groups.set(n.community_id, []);
-                groups.get(n.community_id)!.push([n.x, n.y]);
+                const key = colourBy === "community" ? n.community_id : n.type;
+                if (!key || n.x == null || n.y == null) continue;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key)!.push([n.x, n.y]);
               }
-              for (const [cid, pts] of groups) {
-                // Skip tiny communities — single dots or pairs as polygons
-                // are visual noise. Threshold of 4 keeps only meaningful
-                // groupings (≥4 members), which dramatically declutters
-                // the canvas. Smaller groups still cluster via the force,
-                // they just don't get an outlined hull.
+              for (const [key, pts] of groups) {
+                // Skip tiny groups — single dots or pairs as polygons
+                // are visual lint. Threshold of 4 keeps only meaningful
+                // groupings (≥4 members).
                 if (pts.length < 4) continue;
                 const hull = convexHull(pts);
                 if (hull.length < 3) continue;
-                const colour = communityColour.get(cid) || DEFAULT_COLOR;
-                // Expand the hull outward a bit for breathing room.
+                const colour = colourBy === "community"
+                  ? (communityColour.get(key) || DEFAULT_COLOR)
+                  : (TYPE_COLORS[key] || DEFAULT_COLOR);
+                // Expand outward for breathing room.
                 const cx = hull.reduce((s, p) => s + p[0], 0) / hull.length;
                 const cy = hull.reduce((s, p) => s + p[1], 0) / hull.length;
-                const pad = 14 / scale;
+                const pad = 18 / scale;
                 ctx.beginPath();
                 hull.forEach((p, i) => {
                   const dx = p[0] - cx, dy = p[1] - cy;
@@ -660,6 +674,22 @@ export function Graph() {
                 ctx.lineWidth   = 0.6 / scale;
                 ctx.fill();
                 ctx.stroke();
+
+                // Type-mode: label each island in the hull's colour at
+                // top of the bbox. Community-mode: no labels (community
+                // IDs aren't human-readable).
+                if (colourBy === "type") {
+                  const minY = Math.min(...pts.map(p => p[1]));
+                  const fs = 13 / scale;
+                  ctx.font = `${fs}px Inter, ui-sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.lineWidth = 4 / scale;
+                  ctx.strokeStyle = PAPER;
+                  ctx.strokeText(key, cx, minY - pad - 4 / scale);
+                  ctx.fillStyle = colour;
+                  ctx.fillText(key, cx, minY - pad - 4 / scale);
+                }
               }
             }}
 
@@ -864,7 +894,7 @@ function LeftRail(props: {
         </div>
       </Section>
 
-      <Section title="Farbcodierung">
+      <Section title="Gruppierung & Farbe">
         <div className="flex gap-1" style={{ border: `1px solid ${RULE}` }}>
           {(["type", "community"] as ColourBy[]).map(opt => (
             <button key={opt} onClick={() => setColourBy(opt)}
@@ -877,6 +907,11 @@ function LeftRail(props: {
             </button>
           ))}
         </div>
+        <p className="text-[11px] leading-relaxed mt-2" style={{ color: TEXT_MUTED }}>
+          {colourBy === "type"
+            ? "Eine Insel pro Entitätstyp (semantisch sauber: alle Produkte zusammen, alle Personen zusammen …)."
+            : "Louvain-Communities aus Kanten-Dichte berechnet. Mathematisch sauber, aber bei dünnem Graph nicht immer intuitiv."}
+        </p>
       </Section>
 
       <Section title="Layout">
