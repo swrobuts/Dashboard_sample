@@ -111,6 +111,58 @@ function findCentreNode(nodes: FGNode[]): FGNode | null {
   return orgs.reduce((best, n) => n.mentions > best.mentions ? n : best, orgs[0]);
 }
 
+/** Humanise an UPPER_SNAKE relation type for display.
+ *  "DESIGNED_BY" → "designed by", "associatedWith" → "associated with". */
+function prettifyRelation(t: string): string {
+  if (!t) return "verbunden mit";
+  // Split camelCase into words first, then handle UPPER_SNAKE.
+  const spaced = t
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .trim();
+  return spaced || "verbunden mit";
+}
+
+/** Group all neighbours of `node` by the relation type on the edge,
+ *  preserving direction (selected→other = "out", other→selected = "in").
+ *  Each group is sorted by weight desc, then by neighbour mentions. */
+interface ConnectionGroup {
+  relType: string;
+  direction: "out" | "in";
+  entries: { node: GraphNode; weight: number }[];
+}
+function buildConnections(
+  node: GraphNode | null,
+  allNodes: GraphNode[],
+  edges: GraphEdge[],
+): ConnectionGroup[] {
+  if (!node) return [];
+  const byId = new Map(allNodes.map(n => [n.id, n]));
+  const groups = new Map<string, ConnectionGroup>();
+  for (const e of edges) {
+    let other: GraphNode | undefined;
+    let dir: "out" | "in" | null = null;
+    if (e.source === node.id) { other = byId.get(e.target); dir = "out"; }
+    else if (e.target === node.id) { other = byId.get(e.source); dir = "in"; }
+    if (!other || !dir) continue;
+    const key = `${e.type}::${dir}`;
+    if (!groups.has(key)) groups.set(key, { relType: e.type, direction: dir, entries: [] });
+    groups.get(key)!.entries.push({ node: other, weight: e.weight });
+  }
+  for (const g of groups.values()) {
+    g.entries.sort((a, b) =>
+      b.weight - a.weight || b.node.mentions - a.node.mentions
+    );
+  }
+  // Order groups: outgoing first (you "act on"), then incoming, then by
+  // number of entries desc so the most-populated relation is on top.
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.direction !== b.direction) return a.direction === "out" ? -1 : 1;
+    return b.entries.length - a.entries.length;
+  });
+}
+
 export function Graph() {
   const [data, setData] = useState<GraphPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +180,11 @@ export function Graph() {
   const [pathIds, setPathIds] = useState<string[]>([]);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [sparqlOpen, setSparqlOpen] = useState(true);
+  // Navigation history (breadcrumb) — last few selected entities, so the
+  // user can wander Wikipedia-style through the graph and step back.
+  const [history, setHistory] = useState<FGNode[]>([]);
+  // Focus mode: hide everything except the 1-hop ego network of `selected`.
+  const [focusMode, setFocusMode] = useState(false);
   const graphRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -278,19 +335,65 @@ export function Graph() {
     return TYPE_COLORS[n.type] || DEFAULT_COLOR;
   };
 
-  const neighbourIds = useMemo(() => {
-    if (!hovered || !data) return null as Set<string> | null;
-    const ids = new Set<string>([hovered.id]);
+  // 1-hop neighbour set of a given node (used for hover-dim and selection-
+  // spotlight). Returns null if no node is given.
+  const computeNeighbours = (n: GraphNode | null): Set<string> | null => {
+    if (!n || !data) return null;
+    const ids = new Set<string>([n.id]);
     for (const e of data.edges) {
-      if (e.source === hovered.id) ids.add(e.target);
-      if (e.target === hovered.id) ids.add(e.source);
+      if (e.source === n.id) ids.add(e.target);
+      if (e.target === n.id) ids.add(e.source);
     }
     return ids;
-  }, [hovered, data]);
+  };
+  const neighbourIds   = useMemo(() => computeNeighbours(hovered),  [hovered, data]);
+  const selectedEgoIds = useMemo(() => computeNeighbours(selected), [selected, data]);
 
-  const isDimmed = (id: string) =>
-    (neighbourIds != null && !neighbourIds.has(id) && highlightedIds.size === 0) ||
-    (highlightedIds.size > 0 && !highlightedIds.has(id));
+  // Connections grouped by relation type (incoming/outgoing) for the
+  // selected entity — feeds the Connection Panel.
+  const connections = useMemo<ConnectionGroup[]>(() => {
+    if (!selected || !data) return [];
+    return buildConnections(selected, data.nodes, data.edges);
+  }, [selected, data]);
+
+  const isDimmed = (id: string) => {
+    if (highlightedIds.size > 0) return !highlightedIds.has(id);
+    if (focusMode && selectedEgoIds) return !selectedEgoIds.has(id);
+    if (neighbourIds != null) return !neighbourIds.has(id);
+    if (selectedEgoIds != null) return !selectedEgoIds.has(id);
+    return false;
+  };
+
+  // Wander to another entity (clicking in the Connection Panel calls this).
+  // Pushes the previous selection onto history so the user can go back.
+  const navigateTo = (id: string) => {
+    if (!data) return;
+    const target = data.nodes.find(n => n.id === id) as FGNode | undefined;
+    if (!target) return;
+    if (selected && selected.id !== target.id) {
+      setHistory(h => [...h.slice(-9), selected]);
+    }
+    setSelected(target);
+    // Try to fly to the existing live node (in graphData with x/y) — if
+    // present. data.nodes lacks live coordinates.
+    const live = graphData.nodes.find(n => n.id === id);
+    if (live && live.x != null && live.y != null && graphRef.current) {
+      graphRef.current.centerAt(live.x, live.y, 700);
+      graphRef.current.zoom(Math.max(graphRef.current.zoom(), 2.0), 700);
+    }
+  };
+  const goBack = () => {
+    setHistory(h => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setSelected(prev);
+      const live = graphData.nodes.find(n => n.id === prev.id);
+      if (live && live.x != null && live.y != null && graphRef.current) {
+        graphRef.current.centerAt(live.x, live.y, 600);
+      }
+      return h.slice(0, -1);
+    });
+  };
 
   const toggleType = (t: string) => {
     setTypesEnabled(cur => {
@@ -355,6 +458,7 @@ export function Graph() {
       setSelected(n);
       return;
     }
+    if (selected && selected.id !== n.id) setHistory(h => [...h.slice(-9), selected]);
     setSelected(n);
     if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
   };
@@ -397,6 +501,12 @@ export function Graph() {
         selected={selected}
         communityById={Object.fromEntries((data?.communities || []).map(c => [c.id, c]))}
         colourOf={colourOf}
+        connections={connections}
+        navigateTo={navigateTo}
+        history={history}
+        goBack={goBack}
+        focusMode={focusMode}
+        setFocusMode={setFocusMode}
       />
 
       {/* Canvas */}
@@ -667,12 +777,19 @@ function LeftRail(props: {
   selected: FGNode | null;
   communityById: Record<string, GraphCommunity>;
   colourOf: (n: FGNode) => string;
+  connections: ConnectionGroup[];
+  navigateTo: (id: string) => void;
+  history: FGNode[];
+  goBack: () => void;
+  focusMode: boolean;
+  setFocusMode: (v: boolean) => void;
 }) {
   const {
     data, loading, error, minMentions, setMinMentions, typesEnabled,
     toggleType, colourBy, setColourBy, layout, setLayout, showHulls, setShowHulls,
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
     load, selected, communityById, colourOf,
+    connections, navigateTo, history, goBack, focusMode, setFocusMode,
   } = props;
   return (
     <aside className="w-72 shrink-0 overflow-y-auto"
@@ -819,33 +936,164 @@ function LeftRail(props: {
       )}
 
       {selected && (
-        <div className="px-5 py-5" style={{ borderTop: `1px solid ${RULE}` }}>
-          <div className="text-[10px] uppercase tracking-[0.25em] mb-2" style={{ color: TEXT_MUTED }}>
-            Ausgewählt
-          </div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: colourOf(selected) }} />
-            <span className="font-medium text-[15px]">{selected.name}</span>
-          </div>
-          <div className="text-[11px] font-mono" style={{ color: TEXT_MUTED }}>
-            {selected.type} · {selected.mentions} Erwähnungen
-            {selected.community_id && <> · {selected.community_id}</>}
-          </div>
-          <p className="text-[13px] mt-3 leading-relaxed whitespace-pre-wrap">{selected.description}</p>
-          {selected.community_id && communityById[selected.community_id] && (
-            <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${RULE}` }}>
-              <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
-                Community {selected.community_id}
-              </div>
-              <div className="text-[11px] mt-1 mb-2 font-mono" style={{ color: TEXT_MUTED }}>
-                Level {communityById[selected.community_id].level} · {communityById[selected.community_id].size} Mitglieder
-              </div>
-              <p className="text-[12px] leading-relaxed">{communityById[selected.community_id].summary}</p>
-            </div>
-          )}
-        </div>
+        <ConnectionPanel
+          selected={selected}
+          connections={connections}
+          history={history}
+          goBack={goBack}
+          navigateTo={navigateTo}
+          focusMode={focusMode}
+          setFocusMode={setFocusMode}
+          colourOf={colourOf}
+          communityById={communityById}
+        />
       )}
     </aside>
+  );
+}
+
+
+// ─── Connection Panel — Wikipedia-style hyperlinked navigation ────────────
+// When an entity is selected, this panel shows ALL its connections grouped
+// by relation type and direction. Clicking any neighbour navigates to it
+// (which fires camera fly-to, updates the panel, pushes the previous
+// selection onto a back-stack so the user can wander Wikipedia-style).
+function ConnectionPanel(props: {
+  selected: FGNode;
+  connections: ConnectionGroup[];
+  history: FGNode[];
+  goBack: () => void;
+  navigateTo: (id: string) => void;
+  focusMode: boolean;
+  setFocusMode: (v: boolean) => void;
+  colourOf: (n: FGNode) => string;
+  communityById: Record<string, GraphCommunity>;
+}) {
+  const {
+    selected, connections, history, goBack, navigateTo,
+    focusMode, setFocusMode, colourOf, communityById,
+  } = props;
+
+  const totalConnections = connections.reduce((s, g) => s + g.entries.length, 0);
+  const community = selected.community_id ? communityById[selected.community_id] : null;
+
+  return (
+    <div className="px-5 py-5" style={{ borderTop: `1px solid ${RULE}` }}>
+      {/* Breadcrumb */}
+      {history.length > 0 && (
+        <div className="mb-3 text-[10px] uppercase tracking-[0.2em]">
+          <button onClick={goBack} className="hover:opacity-100 transition"
+                  style={{ color: ACCENT, opacity: 0.85 }}>
+            ‹ zurück zu {history[history.length - 1].name}
+          </button>
+          <span className="mx-2" style={{ color: RULE }}>·</span>
+          <span style={{ color: TEXT_MUTED }}>{history.length} Schritt{history.length === 1 ? "" : "e"}</span>
+        </div>
+      )}
+
+      {/* Identity card */}
+      <div className="text-[10px] uppercase tracking-[0.25em] mb-2" style={{ color: TEXT_MUTED }}>
+        Ausgewählt
+      </div>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-2.5 h-2.5 rounded-full" style={{ background: colourOf(selected) }} />
+        <span className="font-medium text-[16px]" style={{ letterSpacing: "-0.01em" }}>
+          {selected.name}
+        </span>
+      </div>
+      <div className="text-[11px] font-mono" style={{ color: TEXT_MUTED }}>
+        {selected.type} · {selected.mentions} Erwähnungen
+        {selected.community_id && <> · {selected.community_id}</>}
+      </div>
+      {selected.description && (
+        <p className="text-[13px] mt-3 leading-relaxed whitespace-pre-wrap">
+          {selected.description}
+        </p>
+      )}
+
+      {/* Focus toggle — only this entity's ego network visible in the graph */}
+      <button onClick={() => setFocusMode(!focusMode)}
+              className="mt-3 px-2.5 py-1 text-[10px] uppercase tracking-wider transition"
+              style={{
+                border: `1px solid ${focusMode ? ACCENT : RULE}`,
+                background: focusMode ? ACCENT : "transparent",
+                color: focusMode ? PAPER : TEXT_MUTED,
+              }}>
+        {focusMode ? "Fokus aktiv · auflösen" : "Nur Nachbarschaft zeigen"}
+      </button>
+
+      {/* Connections grouped by relation type */}
+      <div className="mt-5">
+        <div className="flex items-baseline justify-between mb-3">
+          <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_INK }}>
+            Verbindungen
+          </div>
+          <div className="text-[10px] font-mono" style={{ color: TEXT_MUTED }}>
+            {totalConnections}
+          </div>
+        </div>
+
+        {connections.length === 0 && (
+          <p className="text-[11px]" style={{ color: TEXT_MUTED }}>
+            Keine Verbindungen im aktuellen Sub-Graphen.
+          </p>
+        )}
+
+        <div className="space-y-4">
+          {connections.map(group => (
+            <div key={`${group.relType}-${group.direction}`}>
+              <div className="flex items-center gap-1.5 mb-1.5 text-[10px] uppercase tracking-[0.2em]"
+                   style={{ color: TEXT_MUTED }}>
+                <span style={{ color: TEXT_INK, fontFamily: "monospace" }}>
+                  {group.direction === "out" ? "→" : "←"}
+                </span>
+                <span>{prettifyRelation(group.relType)}</span>
+                <span className="ml-auto font-mono" style={{ color: TEXT_MUTED }}>
+                  {group.entries.length}
+                </span>
+              </div>
+              <div>
+                {group.entries.map(e => (
+                  <button
+                    key={e.node.id}
+                    onClick={() => navigateTo(e.node.id)}
+                    className="w-full text-left flex items-center gap-2 py-1 px-1 -mx-1 transition group"
+                    style={{ color: TEXT_INK }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = PAPER_SOFT}
+                    onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ background: TYPE_COLORS[e.node.type] || DEFAULT_COLOR }} />
+                    <span className="text-[12.5px] truncate flex-1" title={e.node.name}>
+                      {e.node.name}
+                    </span>
+                    <span className="text-[10px] font-mono opacity-60 group-hover:opacity-100 transition"
+                          style={{ color: TEXT_MUTED }}>
+                      {e.node.mentions}
+                    </span>
+                    <span className="text-[10px] opacity-0 group-hover:opacity-100 transition"
+                          style={{ color: ACCENT }}>↗</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Community context */}
+      {community && (
+        <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${RULE}` }}>
+          <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+            Community {community.id}
+          </div>
+          <div className="text-[11px] mt-1 mb-2 font-mono" style={{ color: TEXT_MUTED }}>
+            Level {community.level} · {community.size} Mitglieder
+          </div>
+          <p className="text-[12px] leading-relaxed">{community.summary}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
