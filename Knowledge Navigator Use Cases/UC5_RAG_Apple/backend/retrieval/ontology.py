@@ -106,16 +106,26 @@ DATEN-REALITÄTSCHECK (wichtig für die Query-Strategie):
   apple:manufactures) existieren in der Ontologie aber sind im Daten
   sehr dünn — verlasse dich auf rdf:type, nicht auf diese Properties.
 
+DATENBEREINIGUNG (wichtig für saubere Ergebnisse):
+- Klasse apple:UnrelatedPerson markiert Personen, die im Wikipedia-Artikel
+  nur als Kontext erwähnt sind (Alan Turing, Pawel Durow etc.) — IMMER mit
+  ``FILTER NOT EXISTS { ?p a apple:UnrelatedPerson }`` ausschließen.
+- Kanonische Personen tragen oft @de UND @en Label — mit ``STR(?name)`` oder
+  ``FILTER(LANG(?name) = "de" || LANG(?name) = "")`` deduplizieren.
+
 QUERY-STRATEGIE-REGELN (verbindlich):
 
 1. FÜR „WER war/ist X-Rolle" (CEO, Founder, Designer, Engineer, Executive):
      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
      PREFIX apple: <http://uc5.butscher.cloud/apple#>
-     SELECT DISTINCT ?name WHERE {
+     SELECT DISTINCT (STR(?label) AS ?name) WHERE {
        ?p a apple:CEO ;        # oder Founder/Designer/etc.
-          rdfs:label ?name .
+          rdfs:label ?label .
+       FILTER NOT EXISTS { ?p a apple:UnrelatedPerson }
      } LIMIT 30
    NIE einen apple:associatedWith-Filter nach apple:Apple dazu hängen.
+   Das ``STR()`` strippt Sprach-Tags, sodass „Tim Cook"@de und „Tim Cook"@en
+   zu einem Ergebnis verschmelzen.
 
 2. FÜR „WELCHE Produkte / Personen / Orte" (Typ-Fragen):
      SELECT DISTINCT ?name WHERE {
