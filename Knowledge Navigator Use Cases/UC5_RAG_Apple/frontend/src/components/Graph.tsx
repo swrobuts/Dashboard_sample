@@ -169,7 +169,12 @@ export function Graph() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<FGNode | null>(null);
   const [hovered, setHovered] = useState<FGNode | null>(null);
-  const [minMentions, setMinMentions] = useState(1);
+  // Default 2 to suppress the long tail of single-mention LOCATIONs and
+  // CONCEPTs the UE3 extractor picks up from Wikipedia (e.g. all 16 Apple
+  // Store addresses including "Breuningerland Sindelfingen") — they're
+  // technically in the article but produce a noisy scatter of isolated
+  // 1-node communities.
+  const [minMentions, setMinMentions] = useState(2);
   const [search, setSearch] = useState("");
   const [typesEnabled, setTypesEnabled] = useState<Set<string>>(new Set(TYPE_OPTIONS));
   const [colourBy, setColourBy] = useState<ColourBy>("type");
@@ -277,11 +282,29 @@ export function Graph() {
     if (!graphRef.current) return;
     const charge = graphRef.current.d3Force("charge") as any;
     if (charge && typeof charge.strength === "function") {
-      charge.strength(layout === "concentric" ? 0 : -90);
+      charge.strength(layout === "concentric" ? 0 : -120);
     }
     const link = graphRef.current.d3Force("link") as any;
     if (link && typeof link.distance === "function") {
-      link.distance(layout === "concentric" ? 1 : 36);
+      link.distance(layout === "concentric" ? 1 : 40);
+    }
+    // Add a centering force in cluster mode: pulls every node gently toward
+    // (0,0). Without this, isolated 1-2-node components drift off into the
+    // empty canvas corners (Breuningerland Sindelfingen wandering off into
+    // the top-right wasteland was the original symptom). The strength is
+    // small so well-connected clusters can still form local centroids.
+    if (layout === "cluster") {
+      const centerForce = (alpha: number) => {
+        const strength = 0.04 * alpha;
+        for (const n of graphData.nodes) {
+          if (n.x == null || n.y == null) continue;
+          (n as any).vx = ((n as any).vx || 0) - n.x * strength;
+          (n as any).vy = ((n as any).vy || 0) - n.y * strength;
+        }
+      };
+      graphRef.current.d3Force("centerPull", centerForce as any);
+    } else {
+      graphRef.current.d3Force("centerPull", null as any);
     }
     if (layout === "concentric") {
       graphRef.current.d3Force("cluster", null as any);
@@ -296,7 +319,9 @@ export function Graph() {
           buckets.set(n.community_id, b);
         }
         for (const [, b] of buckets) { b.x /= b.n; b.y /= b.n; }
-        const k = 0.6 * alpha;
+        // Stronger pull (0.9 vs 0.6) so communities visibly form islands
+        // even when their members have few inter-cluster edges.
+        const k = 0.9 * alpha;
         for (const n of graphData.nodes) {
           if (!n.community_id || n.x == null || n.y == null) continue;
           const c = buckets.get(n.community_id);
@@ -609,7 +634,12 @@ export function Graph() {
                 groups.get(n.community_id)!.push([n.x, n.y]);
               }
               for (const [cid, pts] of groups) {
-                if (pts.length < 3) continue;
+                // Skip tiny communities — single dots or pairs as polygons
+                // are visual noise. Threshold of 4 keeps only meaningful
+                // groupings (≥4 members), which dramatically declutters
+                // the canvas. Smaller groups still cluster via the force,
+                // they just don't get an outlined hull.
+                if (pts.length < 4) continue;
                 const hull = convexHull(pts);
                 if (hull.length < 3) continue;
                 const colour = communityColour.get(cid) || DEFAULT_COLOR;
