@@ -81,35 +81,39 @@ def ensure_repository(reasoning: str = "owl-horst-optimized") -> str:
     ``reasoning`` picks the ruleset; ``owl-horst-optimized`` is a good
     balance (subclass + subproperty + inverse + transitive properties)
     without the full owl-max overhead. Other options: ``rdfsplus-optimized``,
-    ``owl-max-optimized``, ``empty`` (no reasoning)."""
+    ``owl-max-optimized``, ``empty`` (no reasoning).
+
+    GraphDB 11's REST API expects the TTL config either as a multipart form
+    field (``config=@file.ttl``) OR via PUT to ``/rest/repositories/{id}``
+    with text/turtle. We use the multipart variant — well-supported across
+    versions."""
     s = get_settings()
     if repository_exists():
         return f"repo {s.graphdb_repo!r} already exists"
-    # GraphDB Workbench creates repos via a multipart form with a config TTL.
-    # We post a minimal SAIL config inline.
     config_ttl = _build_repo_config(s.graphdb_repo, reasoning)
+    files = {"config": ("config.ttl", config_ttl.encode("utf-8"), "text/turtle")}
     with httpx.Client(timeout=30.0, auth=_auth()) as c:
-        r = c.post(
-            f"{_base_url()}/rest/repositories",
-            headers={"Content-Type": "application/x-turtle"},
-            content=config_ttl,
-        )
+        r = c.post(f"{_base_url()}/rest/repositories", files=files)
         if r.status_code == 400 and "already exist" in r.text.lower():
             return f"repo {s.graphdb_repo!r} already exists (race)"
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # Surface GraphDB's own error message — much easier to diagnose
+            # than a generic httpx HTTPStatusError.
+            raise RuntimeError(
+                f"GraphDB rejected repo creation (HTTP {r.status_code}): {r.text[:400]}"
+            )
     return f"created repo {s.graphdb_repo!r} with reasoning={reasoning}"
 
 
 def _build_repo_config(repo_id: str, ruleset: str) -> str:
-    """Minimal SAIL-config TTL for an in-memory GraphDB repository with
-    reasoning. For a teaching demo this is plenty; production would mount
-    a persistent file storage."""
-    return f"""@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix rep: <http://www.openrdf.org/config/repository#> .
-@prefix sail: <http://www.openrdf.org/config/repository/sail#> .
-@prefix sr: <http://www.openrdf.org/config/repository/sail#> .
-@prefix sb: <http://www.openrdf.org/config/sail/base#> .
-@prefix owlim: <http://www.ontotext.com/trree/owlim#> .
+    """SAIL config TTL for GraphDB 11.x. The namespace was renamed from
+    ``owlim:`` to ``graphdb:`` somewhere around v10, and the property set
+    was trimmed — modern config only needs the handful of keys below."""
+    return f"""@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rep:     <http://www.openrdf.org/config/repository#> .
+@prefix sr:      <http://www.openrdf.org/config/repository/sail#> .
+@prefix sail:    <http://www.openrdf.org/config/sail#> .
+@prefix graphdb: <http://www.ontotext.com/config/graphdb#> .
 
 [] a rep:Repository ;
     rep:repositoryID "{repo_id}" ;
@@ -118,15 +122,18 @@ def _build_repo_config(repo_id: str, ruleset: str) -> str:
         rep:repositoryType "graphdb:SailRepository" ;
         sr:sailImpl [
             sail:sailType "graphdb:Sail" ;
-            owlim:ruleset "{ruleset}" ;
-            owlim:base-URL "http://uc5.butscher.cloud/apple#" ;
-            owlim:defaultNS "" ;
-            owlim:entity-index-size "10000000" ;
-            owlim:enable-context-index "false" ;
-            owlim:cache-memory "128m" ;
-            owlim:query-timeout "30" ;
-            owlim:query-limit-results "10000" ;
-            owlim:throw-QueryEvaluationException-on-timeout "false"
+            graphdb:base-URL "http://uc5.butscher.cloud/apple#" ;
+            graphdb:defaultNS "" ;
+            graphdb:entity-index-size "10000000" ;
+            graphdb:enable-context-index "false" ;
+            graphdb:imports "" ;
+            graphdb:repository-type "file-repository" ;
+            graphdb:ruleset "{ruleset}" ;
+            graphdb:storage-folder "storage" ;
+            graphdb:query-timeout "30" ;
+            graphdb:query-limit-results "10000" ;
+            graphdb:throw-QueryEvaluationException-on-timeout "false" ;
+            graphdb:read-only "false"
         ]
     ] .
 """
