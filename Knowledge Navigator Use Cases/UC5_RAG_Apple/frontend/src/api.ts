@@ -105,6 +105,16 @@ export const api = {
     const url = "/api/graph" + (q.toString() ? `?${q.toString()}` : "");
     return fetch(url).then(j) as Promise<GraphPayload>;
   },
+  sparqlTranslate: (query: string) =>
+    fetch("/api/sparql/translate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }).then(j) as Promise<{ ok: boolean; sparql?: string; error?: string }>,
+  sparqlExecute: (query: string) =>
+    fetch("/api/sparql", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }).then(j) as Promise<{ ok: boolean; kind?: string; result?: any; error?: string }>,
 };
 
 export interface GraphNode {

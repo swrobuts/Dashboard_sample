@@ -143,6 +143,24 @@ _SPARQL_UPDATE_RE = __import__("re").compile(
 )
 
 
+@router.post("/sparql/translate")
+def sparql_translate(body: dict) -> dict:
+    """Translate a natural-language question into SPARQL using the same
+    LLM pipeline UE4 uses internally, but without executing it. The
+    frontend's SPARQL console pre-fills the editor with the generated
+    query so the user can review/edit before hitting Execute."""
+    q = (body.get("query") or "").strip()
+    if not q:
+        raise HTTPException(400, "missing 'query' field")
+    llm = body.get("llm") or "gemini"
+    rag = OntologyRAG(llm_provider=llm)
+    try:
+        sparql = rag._generate_sparql(q)
+        return {"ok": True, "sparql": sparql, "llm": llm}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @router.post("/sparql")
 def sparql(body: dict) -> dict:
     """Debug/teaching endpoint: send a raw SPARQL query OR update against
