@@ -202,6 +202,10 @@ export function Graph() {
   const [history, setHistory] = useState<FGNode[]>([]);
   // Focus mode: hide everything except the 1-hop ego network of `selected`.
   const [focusMode, setFocusMode] = useState(false);
+  // Show edges? In Konzentrik they cross all rings and create visual
+  // noise without adding much — default OFF for Konzentrik. In Cluster
+  // they show the inter-cluster structure — default ON.
+  const [showEdges, setShowEdges] = useState(true);
   const graphRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -217,6 +221,12 @@ export function Graph() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Konzentrik: edges cross all rings and are visual noise → default OFF.
+  // Cluster: edges show inter-cluster structure → default ON.
+  useEffect(() => {
+    setShowEdges(layout === "cluster");
+  }, [layout]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -653,6 +663,8 @@ export function Graph() {
         setLayout={setLayout}
         showHulls={showHulls}
         setShowHulls={setShowHulls}
+        showEdges={showEdges}
+        setShowEdges={setShowEdges}
         pathMode={pathMode}
         setPathMode={(v) => { setPathMode(v); if (!v) { setPathFrom(null); setPathIds([]); } }}
         pathFrom={pathFrom}
@@ -939,6 +951,20 @@ export function Graph() {
               const src = l.source as FGNode;
               const tgt = l.target as FGNode;
               if (!src.x || !src.y || !tgt.x || !tgt.y) return;
+              // Edge-toggle: when hidden, only draw if part of an
+              // explicit highlight (path, hover-incident, SPARQL-match).
+              if (!showEdges) {
+                const sid = src.id, tid = tgt.id;
+                const involved = hovered && (sid === hovered.id || tid === hovered.id);
+                const onPath = pathIds.length > 1 && pathIds.some((id, i) =>
+                  i < pathIds.length - 1 &&
+                  ((id === sid && pathIds[i+1] === tid) ||
+                   (id === tid && pathIds[i+1] === sid))
+                );
+                const sparqlHl = highlightedIds.size > 0 &&
+                  highlightedIds.has(sid) && highlightedIds.has(tid);
+                if (!involved && !onPath && !sparqlHl) return;
+              }
               const involved = hovered != null && (src.id === hovered.id || tgt.id === hovered.id);
               const sparqlHl = highlightedIds.size > 0 && (highlightedIds.has(src.id) && highlightedIds.has(tgt.id));
               // path: an edge is "on path" if both endpoints AND they are
@@ -1145,6 +1171,8 @@ function LeftRail(props: {
   setLayout: (l: Layout) => void;
   showHulls: boolean;
   setShowHulls: (v: boolean) => void;
+  showEdges: boolean;
+  setShowEdges: (v: boolean) => void;
   pathMode: boolean;
   setPathMode: (v: boolean) => void;
   pathFrom: FGNode | null;
@@ -1164,6 +1192,7 @@ function LeftRail(props: {
   const {
     data, loading, error, minMentions, setMinMentions, typesEnabled,
     toggleType, colourBy, setColourBy, layout, setLayout, showHulls, setShowHulls,
+    showEdges, setShowEdges,
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
     load, selected, communityById, colourOf,
     connections, navigateTo, history, goBack, focusMode, setFocusMode,
@@ -1249,15 +1278,26 @@ function LeftRail(props: {
           ))}
         </div>
         {layout === "cluster" && (
-          <label className="flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: TEXT_INK }}>
+          <label className="flex items-center gap-2 cursor-pointer text-[12px] mb-2" style={{ color: TEXT_INK }}>
             <input type="checkbox" checked={showHulls}
                    onChange={e => setShowHulls(e.target.checked)}
                    className="rounded" style={{ accentColor: ACCENT }} />
-            Community-Polygone zeigen
+            Cluster-Polygone zeigen
           </label>
         )}
+        <label className="flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: TEXT_INK }}>
+          <input type="checkbox" checked={showEdges}
+                 onChange={e => setShowEdges(e.target.checked)}
+                 className="rounded" style={{ accentColor: ACCENT }} />
+          Verbindungen zeigen
+        </label>
+        {!showEdges && (
+          <p className="text-[10px] mt-1.5" style={{ color: TEXT_MUTED }}>
+            Bei Hover/Selektion/Pfad trotzdem sichtbar.
+          </p>
+        )}
         {layout === "concentric" && (
-          <p className="text-[11px] leading-relaxed mt-1" style={{ color: TEXT_MUTED }}>
+          <p className="text-[11px] leading-relaxed mt-2" style={{ color: TEXT_MUTED }}>
             Apple im Zentrum, Ringe nach Typ. Innerhalb eines Rings
             sortiert nach Erwähnungen (12 Uhr = häufigste).
           </p>
