@@ -195,6 +195,7 @@ export function Graph() {
   const [pathFrom, setPathFrom] = useState<FGNode | null>(null);
   const [pathIds, setPathIds] = useState<string[]>([]);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
+  const [hoveredLink, setHoveredLink] = useState<FGLink | null>(null);
   const [sparqlOpen, setSparqlOpen] = useState(true);
   // Navigation history (breadcrumb) — last few selected entities, so the
   // user can wander Wikipedia-style through the graph and step back.
@@ -663,6 +664,7 @@ export function Graph() {
             enableNodeDrag={layout === "cluster"}
             enableZoomInteraction
             onNodeHover={(n) => setHovered(n)}
+            onLinkHover={(l) => setHoveredLink(l)}
             onNodeClick={(n) => handleNodeClick(n as FGNode)}
             onBackgroundClick={() => {
               setSelected(null);
@@ -861,6 +863,76 @@ export function Graph() {
                 ctx.fillStyle = isOnPath ? ACCENT : TEXT_INK;
                 ctx.fillText(label, lx, n.y + r + 3 / scale);
                 drawn.push(box);
+              }
+
+              // ─── Edge-label pass ─────────────────────────────────────
+              // Labels shown for:
+              //   • The hovered edge (when no path is active)
+              //   • All edges incident to the hovered node
+              //   • All edges on the highlighted path (permanent)
+              // Drawn at the midpoint of the segment, rotated to match
+              // the edge direction, in the accent colour when on-path.
+              const edgesToLabel: FGLink[] = [];
+              const pushUnique = (l: FGLink) => {
+                if (!edgesToLabel.includes(l)) edgesToLabel.push(l);
+              };
+              // Path edges (highest priority — always shown).
+              if (pathIds.length > 1) {
+                for (const l of graphData.links) {
+                  const sid = typeof l.source === "string" ? l.source : (l.source as FGNode).id;
+                  const tid = typeof l.target === "string" ? l.target : (l.target as FGNode).id;
+                  for (let i = 0; i < pathIds.length - 1; i++) {
+                    if ((pathIds[i] === sid && pathIds[i+1] === tid) ||
+                        (pathIds[i] === tid && pathIds[i+1] === sid)) {
+                      pushUnique(l); break;
+                    }
+                  }
+                }
+              }
+              // Hover-node-incident edges.
+              if (hovered) {
+                for (const l of graphData.links) {
+                  const sid = typeof l.source === "string" ? l.source : (l.source as FGNode).id;
+                  const tid = typeof l.target === "string" ? l.target : (l.target as FGNode).id;
+                  if (sid === hovered.id || tid === hovered.id) pushUnique(l);
+                }
+              }
+              // Directly hovered edge.
+              if (hoveredLink) pushUnique(hoveredLink);
+
+              for (const l of edgesToLabel) {
+                const src = l.source as FGNode;
+                const tgt = l.target as FGNode;
+                if (!src.x || !src.y || !tgt.x || !tgt.y) continue;
+                const relLabel = prettifyRelation(l.type);
+                if (!relLabel) continue;
+                const isOnPathEdge = (() => {
+                  if (pathIds.length < 2) return false;
+                  for (let i = 0; i < pathIds.length - 1; i++) {
+                    if ((pathIds[i] === src.id && pathIds[i+1] === tgt.id) ||
+                        (pathIds[i] === tgt.id && pathIds[i+1] === src.id)) return true;
+                  }
+                  return false;
+                })();
+                const mx = (src.x + tgt.x) / 2;
+                const my = (src.y + tgt.y) / 2;
+                // Rotate label to align with the edge but always read
+                // left-to-right (flip 180° if it would read upside-down).
+                let angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+                if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+                ctx.save();
+                ctx.translate(mx, my);
+                ctx.rotate(angle);
+                const fs = (isOnPathEdge ? 12 : 11) / scale;
+                ctx.font = `${fs}px Inter, ui-sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.lineWidth = 4 / scale;
+                ctx.strokeStyle = PAPER;
+                ctx.strokeText(relLabel, 0, -3 / scale);
+                ctx.fillStyle = isOnPathEdge ? ACCENT : TEXT_INK;
+                ctx.fillText(relLabel, 0, -3 / scale);
+                ctx.restore();
               }
             }}
             linkDirectionalParticles={0}
