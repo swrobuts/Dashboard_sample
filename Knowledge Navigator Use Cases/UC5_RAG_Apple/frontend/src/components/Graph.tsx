@@ -101,6 +101,17 @@ function shortestPath(nodes: FGNode[], links: FGLink[], from: string, to: string
   return [];
 }
 
+/** Aggressive label truncation for dense clusters. The UE3 extractor
+ *  produces verbose entity names like "GJ 2018 (Okt. 17 – Sep. 18)" or
+ *  "iPhone 4 (das vierte Modell)" — useful as full names but unreadable
+ *  when 12 of them stack inside the EVENT hull. Strategy: cut at first
+ *  parenthesis or comma, then hard-cap at 18 chars. */
+function shortLabel(name: string): string {
+  const cut = name.split(/\s*[(,]/)[0].trim();
+  if (cut.length <= 18) return cut;
+  return cut.slice(0, 16).trimEnd() + "…";
+}
+
 /** Find the entity considered the "centre of the graph" — Apple Inc.
  *  Falls back to the most-mentioned ORGANIZATION if no exact match. */
 function findCentreNode(nodes: FGNode[]): FGNode | null {
@@ -303,8 +314,40 @@ export function Graph() {
         }
       };
       graphRef.current.d3Force("centerPull", centerForce as any);
+
+      // Collision force — prevents nodes from piling onto the same spot.
+      // Crucial in type-clustered mode where all 12 EVENT fiscal-year nodes
+      // get pulled to the same centroid and would otherwise stack into one
+      // unreadable blob. Simple O(n²) sweep is fine at 40-250 nodes.
+      const collisionForce = (alpha: number) => {
+        const nodes = graphData.nodes;
+        const pad = 6;
+        for (let i = 0; i < nodes.length; i++) {
+          const a = nodes[i];
+          if (a.x == null || a.y == null) continue;
+          const ar = (a.__radius || 8);
+          for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j];
+            if (b.x == null || b.y == null) continue;
+            const br = (b.__radius || 8);
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = ar + br + pad;
+            if (dist < minDist && dist > 0.01) {
+              const push = (minDist - dist) / dist * 0.5 * alpha;
+              const px = dx * push, py = dy * push;
+              (a as any).vx = ((a as any).vx || 0) - px;
+              (a as any).vy = ((a as any).vy || 0) - py;
+              (b as any).vx = ((b as any).vx || 0) + px;
+              (b as any).vy = ((b as any).vy || 0) + py;
+            }
+          }
+        }
+      };
+      graphRef.current.d3Force("collision", collisionForce as any);
     } else {
       graphRef.current.d3Force("centerPull", null as any);
+      graphRef.current.d3Force("collision", null as any);
     }
     if (layout === "concentric") {
       graphRef.current.d3Force("cluster", null as any);
@@ -725,20 +768,9 @@ export function Graph() {
                 ctx.lineWidth = (isPathFrom ? 1.8 : 1.2) / scale;
                 ctx.stroke();
               }
-              // Labels
-              const showLabel = isHovered || isSelected || isOnPath || alwaysLabeled.has(n.id) || scale > 1.6;
-              if (showLabel) {
-                const fontSize = (isHovered || isOnPath ? 13 : 11) / scale;
-                ctx.font = `${fontSize}px Inter, ui-sans-serif`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "top";
-                const label = n.name.length > 32 ? n.name.slice(0, 30) + "…" : n.name;
-                ctx.lineWidth = 3.5 / scale;
-                ctx.strokeStyle = PAPER;
-                ctx.strokeText(label, n.x!, n.y! + r + 3 / scale);
-                ctx.fillStyle = isOnPath ? ACCENT : TEXT_INK;
-                ctx.fillText(label, n.x!, n.y! + r + 3 / scale);
-              }
+              // Labels are now drawn in onRenderFramePost so that we can
+              // do priority-ordered collision detection (high-mention
+              // labels first, others suppressed if they'd overlap).
               ctx.restore();
             }}
             // Edges
@@ -771,6 +803,65 @@ export function Graph() {
               ctx.lineTo(tgt.x, tgt.y);
               ctx.stroke();
               ctx.restore();
+            }}
+            // ─── Label pass — drawn AFTER nodes/edges with priority-ordered
+            // collision detection. High-mention labels (top of mentions
+            // ranking) get drawn first; subsequent labels are skipped if
+            // their bounding box would overlap an already-drawn one. This
+            // produces a readable canvas even inside dense clusters
+            // (the EVENT pile of fiscal years used to be unreadable). ──
+            onRenderFramePost={(ctx, scale) => {
+              const drawn: { x: number; y: number; w: number; h: number }[] = [];
+              const fits = (r: { x: number; y: number; w: number; h: number }) => {
+                for (const d of drawn) {
+                  if (Math.abs(r.x - d.x) < (r.w + d.w) / 2 &&
+                      Math.abs(r.y - d.y) < (r.h + d.h) / 2) return false;
+                }
+                return true;
+              };
+              // Priority order: hovered > selected > pathway > alwaysLabeled,
+              // then everything else by mentions desc as a tiebreaker.
+              const sortedNodes = [...graphData.nodes].sort((a, b) => {
+                const pa = (hovered?.id === a.id ? 5 : 0)
+                         + (selected?.id === a.id ? 4 : 0)
+                         + (pathIdSet.has(a.id) ? 3 : 0)
+                         + (alwaysLabeled.has(a.id) ? 1 : 0);
+                const pb = (hovered?.id === b.id ? 5 : 0)
+                         + (selected?.id === b.id ? 4 : 0)
+                         + (pathIdSet.has(b.id) ? 3 : 0)
+                         + (alwaysLabeled.has(b.id) ? 1 : 0);
+                return (pb - pa) || (b.mentions - a.mentions);
+              });
+              for (const n of sortedNodes) {
+                if (n.x == null || n.y == null) continue;
+                const isHovered = hovered?.id === n.id;
+                const isSelected = selected?.id === n.id;
+                const isOnPath = pathIdSet.has(n.id);
+                const isAlways = alwaysLabeled.has(n.id);
+                const dim = isDimmed(n.id) || (pathIds.length > 1 && !isOnPath);
+                if (dim && !isHovered && !isSelected && !isOnPath) continue;
+                const eligible = isHovered || isSelected || isOnPath || isAlways || scale > 1.6;
+                if (!eligible) continue;
+                const fontSize = (isHovered || isOnPath ? 13 : 11) / scale;
+                ctx.font = `${fontSize}px Inter, ui-sans-serif`;
+                const label = shortLabel(n.name);
+                const tw = ctx.measureText(label).width;
+                const r = n.__radius || 8;
+                const lx = n.x;
+                const ly = n.y + r + 3 / scale + fontSize / 2;
+                const box = { x: lx, y: ly, w: tw + 6 / scale, h: fontSize + 3 / scale };
+                // Hovered/selected/path labels override collision — they
+                // must be visible, even if they cover something underneath.
+                if (!isHovered && !isSelected && !isOnPath && !fits(box)) continue;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "top";
+                ctx.lineWidth = 3.5 / scale;
+                ctx.strokeStyle = PAPER;
+                ctx.strokeText(label, lx, n.y + r + 3 / scale);
+                ctx.fillStyle = isOnPath ? ACCENT : TEXT_INK;
+                ctx.fillText(label, lx, n.y + r + 3 / scale);
+                drawn.push(box);
+              }
             }}
             linkDirectionalParticles={0}
           />
