@@ -27,6 +27,7 @@ from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
 from backend.evaluation.judge import judge_answers
+from backend.ingest.dbpedia_validator import validate_and_enrich
 from backend.ingest.ue1_simple import run_ue1_ingest
 from backend.ingest.ue2_pageindex import run_ue2_ingest
 from backend.ingest.ue3_graphrag import run_ue3_ingest
@@ -179,6 +180,25 @@ def sparql(body: dict) -> dict:
         return {"ok": True, "kind": "query", "result": graphdb_client.select(q)}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:500], "kind": "update" if is_update else "query"}
+
+
+@router.post("/ue4/validate")
+def ue4_validate() -> dict:
+    """Cross-check the UE4 graph against DBpedia.
+
+    Pulls canonical Apple persons (founders, key personnel) from DBpedia,
+    inserts any we're missing, then verifies every UE3-extracted person
+    has a real Apple connection — demotes context-only mentions to
+    apple:UnrelatedPerson so role-queries stay clean.
+
+    Idempotent. Takes ~10–30 s depending on how many unverified persons
+    are in the graph and DBpedia's current latency."""
+    try:
+        stats = validate_and_enrich()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("DBpedia validation failed")
+        return {"ok": False, "error": str(exc)[:500]}
 
 
 @router.get("/health")

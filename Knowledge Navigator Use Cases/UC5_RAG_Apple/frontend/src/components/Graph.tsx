@@ -468,6 +468,9 @@ function LeftRail(props: {
         </button>
       </div>
 
+      <DBpediaValidator onComplete={load} />
+
+
       {error && (
         <div className="mx-5 mb-4 text-[11px] p-2.5"
              style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
@@ -501,6 +504,68 @@ function LeftRail(props: {
         </div>
       )}
     </aside>
+  );
+}
+
+
+// ─── DBpedia validator — cross-checks UE3 extractions against DBpedia ─────
+function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<null | {
+    canonical_persons_fetched: number;
+    canonical_persons_added: number;
+    unverified_persons_total: number;
+    persons_confirmed: number;
+    persons_demoted: number;
+  }>(null);
+
+  const run = async () => {
+    setRunning(true); setError(null); setStats(null);
+    try {
+      const r = await api.ue4Validate();
+      if (!r.ok) { setError(r.error || "Validator fehlgeschlagen"); return; }
+      setStats(r.stats || null);
+      onComplete();
+    } catch (e) { setError(String(e)); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <div className="px-5 py-4" style={{ borderTop: `1px solid ${RULE}` }}>
+      <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
+        DBpedia · Validierung
+      </div>
+      <p className="text-[11px] leading-relaxed mb-3" style={{ color: TEXT_MUTED }}>
+        Holt kanonische Apple-Personen aus DBpedia und entfernt Kontext-only
+        Personen aus den Rollen-Queries.
+      </p>
+      <button onClick={run} disabled={running}
+              className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
+              style={{
+                border: `1px solid ${ACCENT}`,
+                background: running ? PAPER_SOFT : "transparent",
+                color: ACCENT,
+                opacity: running ? 0.5 : 1,
+              }}
+              onMouseEnter={e => { if (!running) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
+              onMouseLeave={e => { if (!running) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
+        {running ? "Validiert …" : "DBpedia validieren"}
+      </button>
+      {error && (
+        <div className="mt-3 text-[11px] font-mono p-2 break-all"
+             style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
+      )}
+      {stats && (
+        <dl className="mt-3 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
+          <Row label="aus DBpedia geholt" value={String(stats.canonical_persons_fetched)} />
+          <Row label="neu eingefügt"      value={String(stats.canonical_persons_added)} />
+          <Row label="ungeprüft (Start)"  value={String(stats.unverified_persons_total)} />
+          <Row label="bestätigt"          value={String(stats.persons_confirmed)} />
+          <Row label="demoted"            value={String(stats.persons_demoted)} />
+        </dl>
+      )}
+    </div>
   );
 }
 

@@ -115,6 +115,18 @@ export const api = {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     }).then(j) as Promise<{ ok: boolean; kind?: string; result?: any; error?: string }>,
+  ue4Validate: () =>
+    fetch("/api/ue4/validate", { method: "POST" }).then(j) as Promise<{
+      ok: boolean;
+      stats?: {
+        canonical_persons_fetched: number;
+        canonical_persons_added: number;
+        unverified_persons_total: number;
+        persons_confirmed: number;
+        persons_demoted: number;
+      };
+      error?: string;
+    }>,
 };
 
 export interface GraphNode {
