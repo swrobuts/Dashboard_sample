@@ -43,6 +43,76 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# OWL sub-classes considered "narrative" — visible to the user as role
+# tags. Everything else (apple:Person, apple:Organization etc. — the
+# broad parents we already expose as `type`) is filtered out.
+_NARRATIVE_ROLES = {
+    # PERSON sub-classes
+    "CEO", "Founder", "Designer", "Engineer", "Executive", "Employee",
+    "UnrelatedPerson",
+    # ORG sub-classes
+    "Company", "Shareholder", "Supplier",
+    # PRODUCT sub-classes
+    "Smartphone", "Tablet", "Wearable", "Computer", "Desktop", "Notebook",
+    "OperatingSystem", "OnlineService", "ProductFamily",
+    # EVENT sub-classes
+    "Era",
+}
+
+
+def _fetch_entity_roles(entity_keys: list[str]) -> dict[str, list[str]]:
+    """For each UE3 entity_key, return the list of OWL sub-class names
+    asserted in GraphDB (e.g. "CEO", "Designer", "Smartphone").
+
+    Implementation: one batched SPARQL pulling every (subject, class)
+    pair restricted to apple: classes; then we group on the Python side
+    and intersect with the curated narrative role set so we don't show
+    bookkeeping classes like Person/Organization (already in `type`).
+
+    Returns {} on GraphDB failure — UE4 not available shouldn't crash
+    the graph endpoint, just degrades the panel.
+    """
+    if not entity_keys:
+        return {}
+    from backend.data import graphdb_client
+    from backend.ingest.ue4_ontology import _entity_uri
+    key_by_uri: dict[str, str] = {}
+    for k in entity_keys:
+        key_by_uri[_entity_uri(k)] = k
+    q = """
+PREFIX apple: <http://uc5.butscher.cloud/apple#>
+PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT ?s ?cls WHERE {
+  ?s a ?cls .
+  FILTER(STRSTARTS(STR(?s),   "http://uc5.butscher.cloud/apple#"))
+  FILTER(STRSTARTS(STR(?cls), "http://uc5.butscher.cloud/apple#"))
+}
+"""
+    try:
+        res = graphdb_client.select(q)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_fetch_entity_roles: GraphDB query failed: %s", exc)
+        return {}
+    out: dict[str, list[str]] = {}
+    for b in res.get("results", {}).get("bindings", []):
+        subject_uri = b["s"]["value"]
+        class_uri   = b["cls"]["value"]
+        key = key_by_uri.get(subject_uri)
+        if not key:
+            continue
+        class_name = class_uri.rsplit("#", 1)[-1]
+        if class_name not in _NARRATIVE_ROLES:
+            continue
+        out.setdefault(key, [])
+        if class_name not in out[key]:
+            out[key].append(class_name)
+    # Sort each role list for stable output (most-specific intuition
+    # is hard from class names alone, so alphabetical is fine).
+    for v in out.values():
+        v.sort()
+    return out
+
+
 # ── Health & metadata ─────────────────────────────────────────────────────
 
 @router.get("/graph")
@@ -106,6 +176,10 @@ def graph(
         for k in (c["entity_keys"] or []):
             entity_to_community.setdefault(k, c["community_id"])
 
+    # Enrich nodes with OWL subclass roles from GraphDB (Designer, CEO,
+    # Founder, Smartphone, …). Empty list if GraphDB unreachable.
+    entity_roles = _fetch_entity_roles([r["entity_key"] for r in ent_rows])
+
     nodes = [
         {
             "id": r["entity_key"],
@@ -114,6 +188,7 @@ def graph(
             "description": r["description"],
             "mentions": int(r["mention_count"]),
             "community_id": entity_to_community.get(r["entity_key"]),
+            "roles": entity_roles.get(r["entity_key"], []),
         }
         for r in ent_rows
     ]

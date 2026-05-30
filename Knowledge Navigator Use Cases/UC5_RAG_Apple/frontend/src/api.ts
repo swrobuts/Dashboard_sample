@@ -136,6 +136,10 @@ export interface GraphNode {
   description: string;
   mentions: number;
   community_id: string | null;
+  /** OWL sub-class names from GraphDB — e.g. ["CEO","Executive","Founder"]
+   *  for Steve Jobs, ["Smartphone"] for iPhone. Empty if UE4 isn't
+   *  available or the entity has only the broad type. */
+  roles: string[];
 }
 
 export interface GraphEdge {

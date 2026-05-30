@@ -26,6 +26,35 @@ const PAPER_SOFT  = "#efebe2";
 const DEFAULT_COLOR = "#9c9c9c";
 const TYPE_OPTIONS = ["PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", "CONCEPT"];
 
+// OWL sub-classes → single-letter glyph drawn on top of the node disc.
+// One letter per role keeps the node readable at small zoom levels.
+// When an entity has multiple roles, the most "narrative" one wins —
+// see ROLE_PRIORITY.
+const ROLE_GLYPH: Record<string, string> = {
+  CEO: "C", Founder: "F", Designer: "D", Engineer: "E", Executive: "X",
+  Employee: "M", UnrelatedPerson: "·",
+  Company: "C", Shareholder: "$", Supplier: "S",
+  Smartphone: "P", Tablet: "T", Wearable: "W",
+  Computer: "K", Desktop: "D", Notebook: "N",
+  OperatingSystem: "O", OnlineService: "@", ProductFamily: "F",
+  Era: "E",
+};
+// Higher = more interesting to show as the badge letter.
+const ROLE_PRIORITY: Record<string, number> = {
+  CEO: 100, Founder: 95, Designer: 90, Engineer: 85, Executive: 80,
+  Smartphone: 78, Tablet: 75, Computer: 70, OperatingSystem: 68,
+  Company: 60, Shareholder: 55, Supplier: 50,
+  Wearable: 48, Notebook: 45, Desktop: 42, OnlineService: 40,
+  ProductFamily: 35, Era: 30, Employee: 20, UnrelatedPerson: 5,
+};
+
+function primaryRole(roles: string[]): string | null {
+  if (!roles || roles.length === 0) return null;
+  return [...roles].sort((a, b) =>
+    (ROLE_PRIORITY[b] ?? 0) - (ROLE_PRIORITY[a] ?? 0)
+  )[0];
+}
+
 interface FGNode extends GraphNode {
   x?: number; y?: number;
   fx?: number | null; fy?: number | null;
@@ -318,27 +347,53 @@ export function Graph() {
     // o'clock, rotating clockwise) so the eye lands on important nodes
     // immediately. fx/fy are honoured by d3-force as fixed positions.
     else if (layout === "concentric") {
+      // Konzentrik with subclass sectors: within each ring, peers are
+      // grouped by their OWL primary role (CEO, Designer, Smartphone …)
+      // and each role-group gets a contiguous angular sector. Sectors
+      // are sized proportionally to member count and ordered by role
+      // priority. Result: a Designer-Sektor, CEO-Sektor, Founder-
+      // Sektor etc. inside the PERSON ring; Smartphones / Computers /
+      // OperatingSystems as sectors inside the PRODUCT ring.
       const centre = findCentreNode(nodes);
       const types = RING_ORDER.filter(t => nodes.some(n => n.type === t && n !== centre));
-      // Compact spacing — fit comfortably even on a 1000×700 canvas.
-      const inner = 90;
-      const step  = 60;
-      const radiusFor = (typeIdx: number) => inner + typeIdx * step;
+      const inner = 90, step = 60;
+      if (centre) { centre.fx = 0; centre.fy = 0; }
+      // First clear any prior pinning for the centre + nodes-without-a-ring.
       for (const n of nodes) {
-        if (n === centre) {
-          n.fx = 0; n.fy = 0;
-          continue;
+        if (n === centre) continue;
+        if (!types.includes(n.type)) { n.fx = null; n.fy = null; }
+      }
+      for (let ti = 0; ti < types.length; ti++) {
+        const t = types[ti];
+        const r = inner + ti * step;
+        const peers = nodes.filter(m => m.type === t && m !== centre);
+        if (peers.length === 0) continue;
+        // Bucket by primary role; null role → "_other"
+        const buckets = new Map<string, FGNode[]>();
+        for (const p of peers) {
+          const key = primaryRole(p.roles || []) ?? "_other";
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key)!.push(p);
         }
-        const typeIdx = types.indexOf(n.type);
-        if (typeIdx < 0) { n.fx = null; n.fy = null; continue; }
-        const peers = nodes
-          .filter(m => m.type === n.type && m !== centre)
-          .sort((a, b) => b.mentions - a.mentions);
-        const peerIdx = peers.indexOf(n);
-        const r = radiusFor(typeIdx);
-        const theta = -Math.PI / 2 + (peerIdx / peers.length) * Math.PI * 2;
-        n.fx = r * Math.cos(theta);
-        n.fy = r * Math.sin(theta);
+        // Sort each bucket: most-mentioned first (gets the centre angle)
+        for (const arr of buckets.values()) arr.sort((a, b) => b.mentions - a.mentions);
+        // Sort buckets: known roles by priority desc, "_other" last
+        const sectors = Array.from(buckets.entries()).sort((a, b) => {
+          if (a[0] === "_other") return 1;
+          if (b[0] === "_other") return -1;
+          return (ROLE_PRIORITY[b[0]] ?? 0) - (ROLE_PRIORITY[a[0]] ?? 0);
+        });
+        let theta = -Math.PI / 2;       // start at 12 o'clock, rotate clockwise
+        for (const [, members] of sectors) {
+          const angle = (members.length / peers.length) * Math.PI * 2;
+          for (let i = 0; i < members.length; i++) {
+            // Place at the centre of each member's slice within the sector
+            const t2 = theta + ((i + 0.5) / members.length) * angle;
+            members[i].fx = r * Math.cos(t2);
+            members[i].fy = r * Math.sin(t2);
+          }
+          theta += angle;
+        }
       }
     } else {
       // Cluster + Community mode — release pinning so the force simulation
@@ -940,6 +995,21 @@ export function Graph() {
                 ctx.lineWidth = (isPathFrom ? 1.8 : 1.2) / scale;
                 ctx.stroke();
               }
+              // Role glyph — single white letter inside the disc for
+              // entities with a primary OWL sub-class. Tells you "this
+              // is a CEO" / "this is a Smartphone" without expanding.
+              // Only draw if the node is large enough that the letter
+              // reads cleanly.
+              const role = primaryRole(n.roles || []);
+              const glyph = role ? ROLE_GLYPH[role] : null;
+              if (glyph && r * scale > 6) {
+                const fs = Math.min(r * 1.2, 14 / scale);
+                ctx.font = `bold ${fs}px Inter, ui-sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = PAPER;     // white-on-coloured-disc
+                ctx.fillText(glyph, n.x!, n.y!);
+              }
               // Labels are now drawn in onRenderFramePost so that we can
               // do priority-ordered collision detection (high-mention
               // labels first, others suppressed if they'd overlap).
@@ -1427,6 +1497,24 @@ function ConnectionPanel(props: {
         {selected.type} · {selected.mentions} Erwähnungen
         {selected.community_id && <> · {selected.community_id}</>}
       </div>
+      {/* OWL sub-class roles as compact tags. Click would filter the
+          graph to other entities sharing that role — a TODO for a
+          follow-up, currently informational only. */}
+      {selected.roles && selected.roles.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {selected.roles.map(r => (
+            <span key={r}
+                  className="text-[10px] uppercase tracking-wider px-1.5 py-0.5"
+                  style={{
+                    border: `1px solid ${TYPE_COLORS[selected.type] || DEFAULT_COLOR}55`,
+                    color: TYPE_COLORS[selected.type] || TEXT_INK,
+                    background: PAPER_SOFT,
+                  }}>
+              {r}
+            </span>
+          ))}
+        </div>
+      )}
       {selected.description && (
         <p className="text-[13px] mt-3 leading-relaxed whitespace-pre-wrap">
           {selected.description}
