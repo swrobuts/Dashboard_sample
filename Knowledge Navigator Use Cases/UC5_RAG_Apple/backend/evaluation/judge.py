@@ -87,59 +87,85 @@ def _format_sources(sources: list[dict]) -> str:
     return ", ".join(f"{p} (×{n})" if n > 1 else p for p, n in seen.items())
 
 
+MAX_ANSWER_CHARS_FOR_JUDGE = 1500
+
+
 def _build_judge_prompt(query: str, results: list[dict]) -> str:
-    """``results`` items: {strategy, answer, sources}."""
+    """``results`` items: {strategy, answer, sources}.
+
+    Two tweaks vs. the naive schema-prompt:
+    (1) cap each answer to MAX_ANSWER_CHARS_FOR_JUDGE chars — plenty for an
+        LLM to assess content quality, well within reliable-JSON budget.
+    (2) present a *concrete example* JSON skeleton with placeholder values
+        rather than schema-with-type-hints; models tend to mirror examples
+        but copy schemas verbatim (returning `int` as a literal string).
+    """
     parts = ["# Frage", query, ""]
     for r in results:
         strat = r["strategy"]
+        answer = (r.get("answer") or "").strip() or "(keine Antwort)"
+        if len(answer) > MAX_ANSWER_CHARS_FOR_JUDGE:
+            answer = answer[:MAX_ANSWER_CHARS_FOR_JUDGE] + " …[gekürzt]"
         parts.append(f"## Antwort {strat.upper()}")
         parts.append('"""')
-        parts.append((r.get("answer") or "").strip() or "(keine Antwort)")
+        parts.append(answer)
         parts.append('"""')
         parts.append(f"Genutzte Sektionen: {_format_sources(r.get('sources') or [])}")
         parts.append("")
 
     strategy_keys = [r["strategy"] for r in results]
-    scores_schema = ", ".join(
-        f'"{k}": {{"korrektheit": int, "vollstaendigkeit": int, '
-        f'"quellenbezug": int, "fokussiertheit": int, "kommentar": str}}'
+    example_scores = ", ".join(
+        f'"{k}": {{"korrektheit": 3, "vollstaendigkeit": 3, '
+        f'"quellenbezug": 3, "fokussiertheit": 3, "kommentar": "..."}}'
         for k in strategy_keys
     )
-    winner_options = " | ".join(f'"{k}"' for k in strategy_keys) + ' | "tie"'
+    winner_choices = ", ".join(f"'{k}'" for k in strategy_keys) + ", 'tie'"
 
     parts.append("# Aufgabe")
     parts.append(
-        "Bewerte JEDE Antwort auf den vier Kriterien (1 sehr gut – 5 mangelhaft). "
-        "Wähle einen Gewinner oder 'tie' bei Gleichstand. Begründung in 1–2 Sätzen. "
-        "Antworte AUSSCHLIESSLICH mit gültigem JSON, ohne Codefence, ohne Erklärung "
-        "drumherum, in genau dieser Struktur:"
+        f"Bewerte JEDE Antwort auf vier Kriterien (1 sehr gut – 5 mangelhaft). "
+        f"Wähle einen Gewinner aus: {winner_choices}. "
+        f"'tie' nur bei echtem Gleichstand. Begründung 1–2 Sätze. "
+        f"Antworte AUSSCHLIESSLICH mit gültigem JSON, keine Codefence, "
+        f"keine Erklärung davor/danach. Beispiel-Struktur:"
     )
-    parts.append("{")
-    parts.append(f'  "scores": {{ {scores_schema} }},')
-    parts.append(f'  "gewinner": {winner_options},')
-    parts.append('  "begruendung": str')
-    parts.append("}")
+    parts.append("")
+    parts.append('{ "scores": { ' + example_scores + ' }, '
+                 f'"gewinner": "{strategy_keys[0]}", '
+                 '"begruendung": "..." }')
     return "\n".join(parts)
 
 
-_JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
 def _extract_json(text: str) -> dict | None:
-    """Pull a JSON object out of a model response that may have prose around it."""
+    """Pull a JSON object out of a model response that may have prose around
+    it. Uses json.JSONDecoder.raw_decode() which parses the FIRST complete
+    JSON value at a position and tells us where it ended — so we tolerate
+    trailing text without falling for the greedy ``\\{.*\\}`` regex trap
+    (which matches first ``{`` to last ``}`` and chokes on extra braces in
+    explanation text)."""
     if not text:
         return None
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    m = _JSON_BLOCK_RE.search(cleaned)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
+    # Find the first '{' and try raw_decode from there; if that fails, try
+    # the next '{', and so on. Limits to first few candidates so we don't
+    # spend forever on adversarial input.
+    decoder = json.JSONDecoder()
+    for _ in range(5):
+        idx = cleaned.find("{")
+        if idx < 0:
+            return None
+        try:
+            obj, _end = decoder.raw_decode(cleaned[idx:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        # advance past this brace and try again
+        cleaned = cleaned[idx + 1:]
+    return None
 
 
 def _clamp(value, lo: int = 1, hi: int = 5) -> int:
