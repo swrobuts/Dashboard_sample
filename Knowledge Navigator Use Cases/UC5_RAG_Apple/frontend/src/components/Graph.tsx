@@ -251,13 +251,63 @@ export function Graph() {
       .filter(e => ids.has(e.source) && ids.has(e.target))
       .map(e => ({ ...e }));
 
+    // ─── Cluster + Typ: deterministic pack layout ─────────────────────
+    //
+    // The force-based cluster mode produced random-looking blobs because
+    // the simulation found a different local minimum on every layout
+    // and the convex hulls just traced the chaos. For type-clustering
+    // we instead PIN every node: Apple at centre, one fixed cluster
+    // centre per type on a 6-spoke wheel around Apple, members arranged
+    // inside each cluster in a phyllotaxis spiral (sunflower-seed
+    // pattern) for tight, organic packing. Hulls become perfect circles
+    // — uniform, calm, signage-quality, Aicher would approve.
+    //
+    // (Cluster + Community keeps the messy force layout — that's the
+    // didactic counterexample to deterministic semantic grouping.)
+    if (layout === "cluster" && colourBy === "type") {
+      const apple = findCentreNode(nodes);
+      const typesPresent = RING_ORDER.filter(t =>
+        nodes.some(n => n.type === t && n !== apple)
+      );
+      const memberRadius = 16;          // intra-cluster spacing constant
+      const padding = 32;                // extra space around each circle
+      // Cluster radius scales with √members so clusters look balanced
+      // even when member counts vary a lot (3 PERSONs vs 14 EVENTs).
+      const clusterRadii = new Map<string, number>();
+      for (const t of typesPresent) {
+        const n = nodes.filter(m => m.type === t && m !== apple).length;
+        clusterRadii.set(t, memberRadius * Math.sqrt(Math.max(n, 1)) + 24);
+      }
+      // Place cluster centres on a circle around Apple. The orbit radius
+      // is chosen so the biggest cluster's edge clears Apple by `padding`.
+      const maxR = Math.max(...clusterRadii.values(), 60);
+      const orbitR = maxR + padding + 60;
+      for (let ti = 0; ti < typesPresent.length; ti++) {
+        const t = typesPresent[ti];
+        const angle = -Math.PI / 2 + (ti / typesPresent.length) * Math.PI * 2;
+        const cx = orbitR * Math.cos(angle);
+        const cy = orbitR * Math.sin(angle);
+        const members = nodes.filter(m => m.type === t && m !== apple)
+                              .sort((a, b) => b.mentions - a.mentions);
+        // Phyllotaxis (golden angle): tight, no overlap, no obvious
+        // grid. Top-mention member at centre because Math.sqrt(0)=0.
+        const golden = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.39996
+        for (let i = 0; i < members.length; i++) {
+          const r = memberRadius * Math.sqrt(i);
+          const theta = i * golden;
+          members[i].fx = cx + r * Math.cos(theta);
+          members[i].fy = cy + r * Math.sin(theta);
+        }
+      }
+      if (apple) { apple.fx = 0; apple.fy = 0; }
+    }
     // ─── Concentric layout: pin nodes to type-stratified rings ──────────
     //
     // Aicher-grade radial composition: Apple at the centre, then rings by
     // type. Within each ring, sort by mentions (most-mentioned at 12
     // o'clock, rotating clockwise) so the eye lands on important nodes
     // immediately. fx/fy are honoured by d3-force as fixed positions.
-    if (layout === "concentric") {
+    else if (layout === "concentric") {
       const centre = findCentreNode(nodes);
       const ringRadius = Math.max(120, Math.min(size.w, size.h) * 0.08);
       const types = RING_ORDER.filter(t => nodes.some(n => n.type === t && n !== centre));
@@ -279,12 +329,13 @@ export function Graph() {
         n.fy = r * Math.sin(theta);
       }
     } else {
-      // Cluster mode — release pinning so the force simulation runs.
+      // Cluster + Community mode — release pinning so the force simulation
+      // runs. The messy result is the didactic point.
       for (const n of nodes) { n.fx = null; n.fy = null; }
     }
 
     return { nodes, links };
-  }, [data, search, layout, size.w, size.h]);
+  }, [data, search, layout, colourBy, size.w, size.h]);
 
   // ─── Cluster force: in cluster mode, pull each node toward its
   // community's centroid. Without this, d3-force produces the classic
@@ -292,20 +343,24 @@ export function Graph() {
   // We compute centroids on every tick from current node positions.
   useEffect(() => {
     if (!graphRef.current) return;
+    // When positions are pinned (concentric, OR cluster+type pack),
+    // disable all the drift-producing forces.
+    const allPinned = layout === "concentric" ||
+                      (layout === "cluster" && colourBy === "type");
     const charge = graphRef.current.d3Force("charge") as any;
     if (charge && typeof charge.strength === "function") {
-      charge.strength(layout === "concentric" ? 0 : -120);
+      charge.strength(allPinned ? 0 : -120);
     }
     const link = graphRef.current.d3Force("link") as any;
     if (link && typeof link.distance === "function") {
-      link.distance(layout === "concentric" ? 1 : 40);
+      link.distance(allPinned ? 1 : 40);
     }
     // Add a centering force in cluster mode: pulls every node gently toward
     // (0,0). Without this, isolated 1-2-node components drift off into the
     // empty canvas corners (Breuningerland Sindelfingen wandering off into
     // the top-right wasteland was the original symptom). The strength is
     // small so well-connected clusters can still form local centroids.
-    if (layout === "cluster") {
+    if (layout === "cluster" && !allPinned) {
       const centerForce = (alpha: number) => {
         const strength = 0.04 * alpha;
         for (const n of graphData.nodes) {
@@ -350,7 +405,7 @@ export function Graph() {
       graphRef.current.d3Force("centerPull", null as any);
       graphRef.current.d3Force("collision", null as any);
     }
-    if (layout === "concentric") {
+    if (allPinned) {
       graphRef.current.d3Force("cluster", null as any);
     } else {
       // The user's colourBy choice ALSO drives the clustering logic.
@@ -388,6 +443,35 @@ export function Graph() {
     }
     graphRef.current.d3ReheatSimulation();
   }, [layout, colourBy, graphData.nodes, data]);
+
+  // Cluster bubbles (centre + radius per type) for the pack-layout mode.
+  // Empty when we're in concentric or community-cluster mode.
+  const clusterBubbles = useMemo(() => {
+    if (!(layout === "cluster" && colourBy === "type")) return [] as Array<{
+      type: string; cx: number; cy: number; r: number;
+    }>;
+    const apple = findCentreNode(graphData.nodes);
+    const typesPresent = RING_ORDER.filter(t =>
+      graphData.nodes.some(n => n.type === t && n !== apple)
+    );
+    const out: { type: string; cx: number; cy: number; r: number }[] = [];
+    for (const t of typesPresent) {
+      const members = graphData.nodes.filter(n => n.type === t && n !== apple);
+      if (members.length === 0) continue;
+      const xs = members.map(n => n.fx ?? n.x ?? 0);
+      const ys = members.map(n => n.fy ?? n.y ?? 0);
+      const cx = xs.reduce((s, v) => s + v, 0) / xs.length;
+      const cy = ys.reduce((s, v) => s + v, 0) / ys.length;
+      // Radius = farthest member distance from centre + breathing room
+      const r = members.reduce((m, n) => {
+        const dx = (n.fx ?? n.x ?? 0) - cx;
+        const dy = (n.fy ?? n.y ?? 0) - cy;
+        return Math.max(m, Math.hypot(dx, dy));
+      }, 0) + 20;
+      out.push({ type: t, cx, cy, r });
+    }
+    return out;
+  }, [layout, colourBy, graphData.nodes]);
 
   // Communities → restrained categorical palette (still desaturated)
   const communityColour = useMemo(() => {
@@ -661,7 +745,7 @@ export function Graph() {
             d3VelocityDecay={layout === "concentric" ? 0.5 : 0.28}
             cooldownTicks={layout === "concentric" ? 60 : 500}
             warmupTicks={layout === "concentric" ? 0 : 80}
-            enableNodeDrag={layout === "cluster"}
+            enableNodeDrag={layout === "cluster" && colourBy === "community"}
             enableZoomInteraction
             onNodeHover={(n) => setHovered(n)}
             onLinkHover={(l) => setHoveredLink(l)}
@@ -682,9 +766,34 @@ export function Graph() {
             // follow the simulation. ─────────────────────────────────────
             onRenderFramePre={(ctx, scale) => {
               if (layout !== "cluster" || !showHulls) return;
-              // Group hulls by the SAME key as the cluster force —
-              // so the visible polygons match what the layout actually
-              // attracts. Otherwise hulls and forces would compete.
+
+              // ─── Pack mode: clean circles, one per type ─────────────
+              if (colourBy === "type" && clusterBubbles.length > 0) {
+                for (const b of clusterBubbles) {
+                  const colour = TYPE_COLORS[b.type] || DEFAULT_COLOR;
+                  ctx.beginPath();
+                  ctx.arc(b.cx, b.cy, b.r, 0, Math.PI * 2);
+                  ctx.fillStyle   = colour + "0d";  // ~5% alpha
+                  ctx.strokeStyle = colour + "55";  // ~33% alpha hairline
+                  ctx.lineWidth   = 0.7 / scale;
+                  ctx.fill();
+                  ctx.stroke();
+                  // Type label in the cluster colour above the circle.
+                  const fs = 13 / scale;
+                  ctx.font = `${fs}px Inter, ui-sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.lineWidth = 4 / scale;
+                  ctx.strokeStyle = PAPER;
+                  ctx.strokeText(b.type, b.cx, b.cy - b.r - 6 / scale);
+                  ctx.fillStyle = colour;
+                  ctx.fillText(b.type, b.cx, b.cy - b.r - 6 / scale);
+                }
+                return;
+              }
+
+              // ─── Community-cluster mode: convex hulls around messy
+              //     force-positioned groups (didactic counterexample) ──
               const groups = new Map<string, [number, number][]>();
               for (const n of graphData.nodes) {
                 const key = colourBy === "community" ? n.community_id : n.type;
