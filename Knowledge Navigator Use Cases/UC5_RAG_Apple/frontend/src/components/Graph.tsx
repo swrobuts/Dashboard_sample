@@ -210,51 +210,6 @@ export function Graph() {
     return () => ro.disconnect();
   }, []);
 
-  // ─── Cluster force: in cluster mode, pull each node toward its
-  // community's centroid. Without this, d3-force produces the classic
-  // "hairball"; with it, communities visibly separate into islands.
-  // We compute centroids on every tick from current node positions.
-  useEffect(() => {
-    if (!graphRef.current) return;
-    const charge = graphRef.current.d3Force("charge") as any;
-    if (charge && typeof charge.strength === "function") {
-      charge.strength(layout === "concentric" ? 0 : -90);
-    }
-    const link = graphRef.current.d3Force("link") as any;
-    if (link && typeof link.distance === "function") {
-      link.distance(layout === "concentric" ? 1 : 36);
-    }
-
-    if (layout === "concentric") {
-      // remove the cluster force if previously installed
-      graphRef.current.d3Force("cluster", null as any);
-    } else {
-      // custom alpha-decaying cluster force
-      const clusterForce = (alpha: number) => {
-        if (!data) return;
-        // Group current nodes by community and compute centroid each tick.
-        const buckets = new Map<string, { x: number; y: number; n: number }>();
-        for (const n of graphData.nodes) {
-          if (!n.community_id || n.x == null || n.y == null) continue;
-          const b = buckets.get(n.community_id) || { x: 0, y: 0, n: 0 };
-          b.x += n.x; b.y += n.y; b.n += 1;
-          buckets.set(n.community_id, b);
-        }
-        for (const [, b] of buckets) { b.x /= b.n; b.y /= b.n; }
-        const k = 0.6 * alpha; // gentle pull, scales with simulation cooling
-        for (const n of graphData.nodes) {
-          if (!n.community_id || n.x == null || n.y == null) continue;
-          const c = buckets.get(n.community_id);
-          if (!c) continue;
-          (n as any).vx = ((n as any).vx || 0) + (c.x - n.x) * k;
-          (n as any).vy = ((n as any).vy || 0) + (c.y - n.y) * k;
-        }
-      };
-      graphRef.current.d3Force("cluster", clusterForce as any);
-    }
-    graphRef.current.d3ReheatSimulation();
-  }, [layout, graphData.nodes, data]);
-
   const graphData = useMemo(() => {
     if (!data) return { nodes: [] as FGNode[], links: [] as FGLink[] };
     const q = search.trim().toLowerCase();
@@ -313,6 +268,47 @@ export function Graph() {
 
     return { nodes, links };
   }, [data, search, layout, size.w, size.h]);
+
+  // ─── Cluster force: in cluster mode, pull each node toward its
+  // community's centroid. Without this, d3-force produces the classic
+  // "hairball"; with it, communities visibly separate into islands.
+  // We compute centroids on every tick from current node positions.
+  useEffect(() => {
+    if (!graphRef.current) return;
+    const charge = graphRef.current.d3Force("charge") as any;
+    if (charge && typeof charge.strength === "function") {
+      charge.strength(layout === "concentric" ? 0 : -90);
+    }
+    const link = graphRef.current.d3Force("link") as any;
+    if (link && typeof link.distance === "function") {
+      link.distance(layout === "concentric" ? 1 : 36);
+    }
+    if (layout === "concentric") {
+      graphRef.current.d3Force("cluster", null as any);
+    } else {
+      const clusterForce = (alpha: number) => {
+        if (!data) return;
+        const buckets = new Map<string, { x: number; y: number; n: number }>();
+        for (const n of graphData.nodes) {
+          if (!n.community_id || n.x == null || n.y == null) continue;
+          const b = buckets.get(n.community_id) || { x: 0, y: 0, n: 0 };
+          b.x += n.x; b.y += n.y; b.n += 1;
+          buckets.set(n.community_id, b);
+        }
+        for (const [, b] of buckets) { b.x /= b.n; b.y /= b.n; }
+        const k = 0.6 * alpha;
+        for (const n of graphData.nodes) {
+          if (!n.community_id || n.x == null || n.y == null) continue;
+          const c = buckets.get(n.community_id);
+          if (!c) continue;
+          (n as any).vx = ((n as any).vx || 0) + (c.x - n.x) * k;
+          (n as any).vy = ((n as any).vy || 0) + (c.y - n.y) * k;
+        }
+      };
+      graphRef.current.d3Force("cluster", clusterForce as any);
+    }
+    graphRef.current.d3ReheatSimulation();
+  }, [layout, graphData.nodes, data]);
 
   // Communities → restrained categorical palette (still desaturated)
   const communityColour = useMemo(() => {
