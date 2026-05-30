@@ -137,18 +137,30 @@ def graph(
     return {"nodes": nodes, "edges": edges, "communities": communities}
 
 
+_SPARQL_UPDATE_RE = __import__("re").compile(
+    r"^\s*(PREFIX[^\n]*\n\s*)*\s*(INSERT|DELETE|CLEAR|LOAD|CREATE|DROP|COPY|MOVE|ADD)\b",
+    __import__("re").IGNORECASE,
+)
+
+
 @router.post("/sparql")
 def sparql(body: dict) -> dict:
-    """Debug/teaching endpoint: send a raw SPARQL query against the UE4
-    GraphDB repo and get the JSON results back. Bypasses the LLM."""
+    """Debug/teaching endpoint: send a raw SPARQL query OR update against
+    the UE4 GraphDB repo and get the JSON results back. Bypasses the LLM.
+    Routes INSERT/DELETE/CLEAR/LOAD to /statements (UPDATE endpoint),
+    everything else to the query endpoint."""
     from backend.data import graphdb_client
     q = (body.get("query") or "").strip()
     if not q:
         raise HTTPException(400, "missing 'query' field")
+    is_update = bool(_SPARQL_UPDATE_RE.match(q))
     try:
-        return {"ok": True, "result": graphdb_client.select(q)}
+        if is_update:
+            graphdb_client.update(q)
+            return {"ok": True, "kind": "update", "result": "executed"}
+        return {"ok": True, "kind": "query", "result": graphdb_client.select(q)}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)[:500]}
+        return {"ok": False, "error": str(exc)[:500], "kind": "update" if is_update else "query"}
 
 
 @router.get("/health")

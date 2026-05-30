@@ -81,10 +81,9 @@ inverse Properties werden automatisch ergänzt.
 
 NL_TO_SPARQL_SYSTEM = (
     "Du bist ein SPARQL-1.1-Query-Generator für eine OWL-Ontologie über das "
-    "Unternehmen Apple. Du bekommst die Ontologie-Struktur und eine "
-    "deutsche Frage. Erzeuge eine SELECT-Query, die alle relevanten "
-    "Bindungen liefert. Nutze rdfs:label/foaf:name für lesbare Ausgaben. "
-    "Nutze die Reasoning-Fähigkeiten der Ontologie aus (Subklassen, Inverse). "
+    "Unternehmen Apple, die OWL-Horst-Reasoning aktiv hat (Subklassen-, "
+    "Subproperty- und Inverse-Inferenz). Du bekommst die Ontologie-Struktur "
+    "und eine deutsche Frage. Erzeuge eine SELECT-Query. "
     "Halte die Query knapp (max. 20 Zeilen). "
     "Antworte AUSSCHLIESSLICH mit dem SPARQL-Code, ohne Codefence, ohne "
     "Erklärung davor/danach."
@@ -92,16 +91,40 @@ NL_TO_SPARQL_SYSTEM = (
 
 NL_TO_SPARQL_TEMPLATE = """{ontology}
 
-Frage: {query}
+DATEN-REALITÄTSCHECK (wichtig für die Query-Strategie):
+- Die meisten Beziehungen wurden ungenau extrahiert und liegen als
+  ``apple:associatedWith`` (Catch-all) vor — spezifische Properties wie
+  apple:wasCEOOf/foundedBy/manufactures sind nur sehr selten gesetzt.
+- ROLLEN sind dagegen sauber als Klassen-Typen modelliert: eine Person mit
+  CEO-Rolle hat ``rdf:type apple:CEO``. Eine Person mit Founder-Rolle hat
+  ``rdf:type apple:Founder``. Subklassen-Inferenz ist aktiv — eine Query
+  auf apple:Executive liefert auch apple:CEO automatisch.
+- Die Firma "Apple" existiert als ``apple:Apple`` UND als ``apple:AppleInc``
+  (owl:sameAs verlinkt). Beide funktionieren — nutze den, der für deine
+  Anfrage weniger restriktiv ist.
 
-Hinweise:
-- Beim Bedarf transitive subClassOf*-Pfade verwenden, um auch Unterklassen
-  mitzunehmen (z.B. ?x rdf:type/rdfs:subClassOf* apple:Person).
-- LIMIT 30 anhängen.
-- Wenn die Frage nach Personen mit Rolle fragt, denk an apple:CEO etc. als
-  Subklassen — der Reasoner liefert sie automatisch bei einem Subklassen-Match.
-- Wenn die Frage nicht beantwortbar erscheint, schreibe eine möglichst
-  breite Query (alle Tripel mit apple:AppleInc als Subjekt oder Objekt).
+QUERY-STRATEGIE-REGELN (in dieser Reihenfolge probieren):
+1. FÜR „WER war/ist X-Rolle" (CEO, Founder, Designer, etc.):
+     ?p rdf:type/rdfs:subClassOf* apple:CEO ;
+        rdfs:label ?label .
+   NICHT ?p apple:wasCEOOf — die Property ist im Daten kaum vorhanden.
+
+2. FÜR „WAS gehört zu Apple" (Produkte, Personen, Orte):
+     { ?x apple:associatedWith apple:Apple } UNION
+     { apple:Apple apple:associatedWith ?x }
+     ?x rdf:type ?t ; rdfs:label ?label .
+     FILTER (?t = apple:Product || ?t = apple:Person || ...)
+
+3. FÜR Typ-Fragen ("welche Produkte/Personen sind erwähnt"):
+     ?x rdf:type/rdfs:subClassOf* apple:Product ;
+        rdfs:label ?label .
+
+4. IMMER:
+   - rdfs:label für lesbare Namen
+   - LIMIT 30 am Ende
+   - PREFIX-Block am Anfang nicht vergessen (apple, rdf, rdfs, foaf, owl)
+
+Frage: {query}
 
 SPARQL:"""
 
