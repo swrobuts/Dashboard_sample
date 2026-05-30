@@ -309,9 +309,11 @@ export function Graph() {
     // immediately. fx/fy are honoured by d3-force as fixed positions.
     else if (layout === "concentric") {
       const centre = findCentreNode(nodes);
-      const ringRadius = Math.max(120, Math.min(size.w, size.h) * 0.08);
       const types = RING_ORDER.filter(t => nodes.some(n => n.type === t && n !== centre));
-      const radiusFor = (typeIdx: number) => ringRadius + typeIdx * ringRadius * 0.85;
+      // Compact spacing — fit comfortably even on a 1000×700 canvas.
+      const inner = 90;
+      const step  = 60;
+      const radiusFor = (typeIdx: number) => inner + typeIdx * step;
       for (const n of nodes) {
         if (n === centre) {
           n.fx = 0; n.fy = 0;
@@ -765,6 +767,37 @@ export function Graph() {
             // a glance without colour overload. Updated every frame to
             // follow the simulation. ─────────────────────────────────────
             onRenderFramePre={(ctx, scale) => {
+              // ─── Concentric layout: draw the ring guides + labels.
+              //     Without these the rings exist mathematically but the
+              //     eye can't see the structure — just a punctured cloud.
+              if (layout === "concentric") {
+                const types = RING_ORDER.filter(t =>
+                  graphData.nodes.some(n => n.type === t && !/^Apple/i.test(n.name))
+                );
+                const inner = 90, step = 60;
+                for (let ti = 0; ti < types.length; ti++) {
+                  const r = inner + ti * step;
+                  const colour = TYPE_COLORS[types[ti]] || DEFAULT_COLOR;
+                  // Faint ring line
+                  ctx.beginPath();
+                  ctx.arc(0, 0, r, 0, Math.PI * 2);
+                  ctx.strokeStyle = colour + "33";  // ~20% alpha
+                  ctx.lineWidth = 0.6 / scale;
+                  ctx.stroke();
+                  // Ring label at the top (12 o'clock)
+                  const fs = 11 / scale;
+                  ctx.font = `${fs}px Inter, ui-sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.lineWidth = 4 / scale;
+                  ctx.strokeStyle = PAPER;
+                  ctx.strokeText(types[ti], 0, -r + fs * 0.6);
+                  ctx.fillStyle = colour;
+                  ctx.fillText(types[ti], 0, -r + fs * 0.6);
+                }
+                return;
+              }
+
               if (layout !== "cluster" || !showHulls) return;
 
               // ─── Pack mode: clean circles, one per type ─────────────
