@@ -92,32 +92,43 @@ NL_TO_SPARQL_SYSTEM = (
 _NL_TO_SPARQL_BODY = """__ONTOLOGY__
 
 DATEN-REALITÄTSCHECK (wichtig für die Query-Strategie):
-- Die meisten Beziehungen wurden ungenau extrahiert und liegen als
-  ``apple:associatedWith`` (Catch-all) vor — spezifische Properties wie
-  apple:wasCEOOf/foundedBy/manufactures sind nur sehr selten gesetzt.
-- ROLLEN sind dagegen sauber als Klassen-Typen modelliert: eine Person mit
-  CEO-Rolle hat ``rdf:type apple:CEO``. Eine Person mit Founder-Rolle hat
-  ``rdf:type apple:Founder``. Subklassen-Inferenz ist aktiv — eine Query
-  auf apple:Executive liefert auch apple:CEO automatisch.
-- Die Firma "Apple" existiert als ``apple:Apple`` UND als ``apple:AppleInc``
-  (owl:sameAs verlinkt). Beide funktionieren — nutze den, der für deine
-  Anfrage weniger restriktiv ist.
+- Der GESAMTE Wissensgraph beschreibt das Unternehmen Apple. Es gibt keine
+  andere Firma. Du musst Personen/Produkte NICHT zusätzlich zu Apple
+  filtern — wer hier ein apple:CEO ist, ist immer ein Apple-CEO. Verwende
+  KEINEN apple:associatedWith-Filter zu apple:Apple oder apple:AppleInc;
+  der Filter wirft Ergebnisse weg.
+- ROLLEN sind sauber als Klassen-Typen modelliert: Person mit CEO-Rolle
+  hat ``rdf:type apple:CEO``, Founder hat ``rdf:type apple:Founder``,
+  Designer hat ``rdf:type apple:Designer``. Subklassen-Inferenz ist
+  aktiv — Query auf apple:Executive liefert auch apple:CEO automatisch.
+- Die meisten Beziehungen sind als generisches ``apple:associatedWith``
+  abgelegt. Spezifische Properties (apple:wasCEOOf, apple:foundedBy,
+  apple:manufactures) existieren in der Ontologie aber sind im Daten
+  sehr dünn — verlasse dich auf rdf:type, nicht auf diese Properties.
 
-QUERY-STRATEGIE-REGELN (in dieser Reihenfolge probieren):
-1. FÜR „WER war/ist X-Rolle" (CEO, Founder, Designer, etc.):
-     ?p rdf:type/rdfs:subClassOf* apple:CEO ;
-        rdfs:label ?label .
-   NICHT ?p apple:wasCEOOf — die Property ist im Daten kaum vorhanden.
+QUERY-STRATEGIE-REGELN (verbindlich):
 
-2. FÜR „WAS gehört zu Apple" (Produkte, Personen, Orte):
-     { ?x apple:associatedWith apple:Apple } UNION
-     { apple:Apple apple:associatedWith ?x }
-     ?x rdf:type ?t ; rdfs:label ?label .
-     FILTER (?t = apple:Product || ?t = apple:Person || ...)
+1. FÜR „WER war/ist X-Rolle" (CEO, Founder, Designer, Engineer, Executive):
+     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+     PREFIX apple: <http://uc5.butscher.cloud/apple#>
+     SELECT DISTINCT ?name WHERE {
+       ?p a apple:CEO ;        # oder Founder/Designer/etc.
+          rdfs:label ?name .
+     } LIMIT 30
+   NIE einen apple:associatedWith-Filter nach apple:Apple dazu hängen.
 
-3. FÜR Typ-Fragen ("welche Produkte/Personen sind erwähnt"):
-     ?x rdf:type/rdfs:subClassOf* apple:Product ;
-        rdfs:label ?label .
+2. FÜR „WELCHE Produkte / Personen / Orte" (Typ-Fragen):
+     SELECT DISTINCT ?name WHERE {
+       ?x rdf:type/rdfs:subClassOf* apple:Product ;
+          rdfs:label ?name .
+     } LIMIT 30
+   Wieder: kein zusätzlicher Apple-Bezug nötig.
+
+3. FÜR „WER steht in Beziehung zu Y" (wo Y ein konkreter Knoten ist):
+     SELECT DISTINCT ?label WHERE {
+       { Y apple:associatedWith ?p } UNION { ?p apple:associatedWith Y }
+       ?p rdfs:label ?label .
+     }
 
 4. IMMER:
    - rdfs:label für lesbare Namen

@@ -129,6 +129,7 @@ def _build_repo_config(repo_id: str, ruleset: str) -> str:
             graphdb:imports "" ;
             graphdb:repository-type "file-repository" ;
             graphdb:ruleset "{ruleset}" ;
+            graphdb:disable-sameAs "false" ;
             graphdb:storage-folder "storage" ;
             graphdb:query-timeout "30" ;
             graphdb:query-limit-results "10000" ;
