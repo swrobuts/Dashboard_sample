@@ -108,16 +108,11 @@ apple:JonyIve
 # Aliase: bestehende UE3-Extraktionen → kanonische URIs
 # ───────────────────────────────────────────────────────────────────────
 
+# Aliase nutzen das exakte UE3-URI-Schema: PascalCase ohne Unterstriche
+# (siehe backend.ingest.ue4_ontology._entity_uri).
 apple:Wozniak       owl:sameAs apple:SteveWozniak .
-apple:Stephen_Wozniak owl:sameAs apple:SteveWozniak .
-apple:Steve_Wozniak owl:sameAs apple:SteveWozniak .
-apple:Steve_Jobs    owl:sameAs apple:SteveJobs .
-apple:Jonathan_Ive  owl:sameAs apple:JonyIve .
 apple:JonathanIve   owl:sameAs apple:JonyIve .
-apple:Ron_Wayne     owl:sameAs apple:RonWayne .
-apple:RonaldWayne   owl:sameAs apple:RonWayne .
-apple:Ronald_Wayne  owl:sameAs apple:RonWayne .
-apple:Tim_Cook      owl:sameAs apple:TimCook .
+apple:RonWayne      owl:sameAs apple:RonWayne .   # bereits identisch — Sicherheitsnetz
 
 # ───────────────────────────────────────────────────────────────────────
 # Cleanup: offensichtlich themenfremde „Personen" aus UE3 zurücktypisieren
@@ -130,19 +125,24 @@ apple:Tim_Cook      owl:sameAs apple:TimCook .
 # inhaltlich unehrlich (sie sind ja Personen) — aber sie sind keine
 # Apple-Personen. Eine Klasse apple:UnrelatedPerson markiert sie als
 # nicht-Apple-spezifisch, damit Apple-Personen-Queries sauber bleiben.
+#
+# WICHTIG: URI-Schema = PascalCase ohne Unterstriche und ohne abschließenden
+# Punkt — sonst rejected GraphDB die gesamte Datei (Turtle-Syntax).
+# Eight Inc. → EightInc; Sabine Leutheusser-Schnarrenberger → SabineLeutheusser-schnarrenberger
+# (Bindestrich bleibt, zweites 's' kleingeschrieben wie es UE3 erzeugt).
 # ───────────────────────────────────────────────────────────────────────
 
 apple:UnrelatedPerson rdfs:subClassOf apple:Person ;
     rdfs:label "Person ohne Apple-spezifische Rolle (Kontext-Erwähnung)"@de .
 
-apple:Aljaksandr_Lukaschenka          a apple:UnrelatedPerson .
-apple:Alan_Turing                     a apple:UnrelatedPerson .
-apple:Isaac_Newton                    a apple:UnrelatedPerson .
-apple:Sabine_Leutheusser-Schnarrenberger a apple:UnrelatedPerson .
-apple:Uiguren                         a apple:UnrelatedPerson .
-apple:Eight_Inc.                      a apple:UnrelatedPerson .
-apple:Pawel_Durow                     a apple:UnrelatedPerson .
-apple:Laura_Sydell                    a apple:UnrelatedPerson .
-apple:Quinn_Nelson                    a apple:UnrelatedPerson .
-apple:Steven_Levy                     a apple:UnrelatedPerson .
-apple:David_Yoffie                    a apple:UnrelatedPerson .
+apple:AljaksandrLukaschenka              a apple:UnrelatedPerson .
+apple:AlanTuring                         a apple:UnrelatedPerson .
+apple:IsaacNewton                        a apple:UnrelatedPerson .
+apple:SabineLeutheusser-schnarrenberger  a apple:UnrelatedPerson .
+apple:Uiguren                            a apple:UnrelatedPerson .
+apple:EightInc                           a apple:UnrelatedPerson .
+apple:PawelDurow                         a apple:UnrelatedPerson .
+apple:LauraSydell                        a apple:UnrelatedPerson .
+apple:QuinnNelson                        a apple:UnrelatedPerson .
+apple:StevenLevy                         a apple:UnrelatedPerson .
+apple:DavidYoffie                        a apple:UnrelatedPerson .

@@ -203,17 +203,38 @@ def count_triples() -> int:
 def apply_graphdb_setup() -> dict:
     """Create the repo if needed and upload every .ttl under
     data/migrations/graphdb/. Idempotent — re-runs simply re-upload (GraphDB
-    deduplicates triples)."""
+    deduplicates triples).
+
+    Errors uploading individual TTL files are logged loudly and recorded
+    in the returned ``failed`` list, but do not abort the whole run —
+    that way one broken file doesn't take down UE4 entirely. (We learned
+    this the hard way: ``apple:Eight_Inc.`` had a trailing dot, GraphDB
+    silently rejected the whole file with HTTP 400, and the missing
+    canonical-persons data only showed up days later as „Tim Cook fehlt".)
+    """
     info: dict = {}
     info["repo_status"] = ensure_repository()
     files = sorted(GRAPHDB_ASSETS_DIR.glob("*.ttl"))
     uploaded: list[str] = []
+    failed: list[dict] = []
     for f in files:
-        upload_ontology_file(f)
-        uploaded.append(f.name)
-        log.info("Uploaded GraphDB ontology %s", f.name)
+        try:
+            upload_ontology_file(f)
+            uploaded.append(f.name)
+            log.info("Uploaded GraphDB ontology %s", f.name)
+        except Exception as exc:  # noqa: BLE001
+            # Show file name + a snippet of GraphDB's actual error so the
+            # operator can diagnose without reading container logs raw.
+            msg = str(exc)
+            log.error("GraphDB UPLOAD FAILED: %s — %s",
+                      f.name, msg[:500].replace("\n", " "))
+            failed.append({"file": f.name, "error": msg[:500]})
     info["uploaded"] = uploaded
+    info["failed"] = failed
     info["triple_count"] = count_triples()
+    if failed:
+        log.error("GraphDB setup: %d of %d files failed to upload",
+                  len(failed), len(files))
     return info
 
 
