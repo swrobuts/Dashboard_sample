@@ -26,18 +26,188 @@ const PAPER_SOFT  = "#efebe2";
 const DEFAULT_COLOR = "#9c9c9c";
 const TYPE_OPTIONS = ["PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", "CONCEPT"];
 
-// OWL sub-classes → single-letter glyph drawn on top of the node disc.
-// One letter per role keeps the node readable at small zoom levels.
-// When an entity has multiple roles, the most "narrative" one wins —
-// see ROLE_PRIORITY.
-const ROLE_GLYPH: Record<string, string> = {
-  CEO: "C", Founder: "F", Designer: "D", Engineer: "E", Executive: "X",
-  Employee: "M", UnrelatedPerson: "·",
-  Company: "C", Shareholder: "$", Supplier: "S",
-  Smartphone: "P", Tablet: "T", Wearable: "W",
-  Computer: "K", Desktop: "D", Notebook: "N",
-  OperatingSystem: "O", OnlineService: "@", ProductFamily: "F",
-  Era: "E",
+// OWL sub-classes → monochrome canvas pictogram drawn inside the disc.
+// Aicher-style: each role gets a single recognisable geometric mark.
+// Drawn in PAPER colour (white-on-coloured-disc) so they read on every
+// type colour. Each fn gets (ctx, cx, cy, s) where s is the half-size
+// of the icon — caller pre-clipped to the disc.
+type IconDraw = (ctx: CanvasRenderingContext2D, x: number, y: number, s: number) => void;
+
+const ICON_DRAW: Record<string, IconDraw> = {
+  // CEO — crown (3 spikes, classical leadership glyph)
+  CEO: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.moveTo(x - s, y + s * 0.4);
+    ctx.lineTo(x - s, y - s * 0.2);
+    ctx.lineTo(x - s * 0.5, y + s * 0.1);
+    ctx.lineTo(x, y - s * 0.7);
+    ctx.lineTo(x + s * 0.5, y + s * 0.1);
+    ctx.lineTo(x + s, y - s * 0.2);
+    ctx.lineTo(x + s, y + s * 0.4);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Founder — 5-pointed star
+  Founder: (ctx, x, y, s) => {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? s : s * 0.45;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Designer — drafting compass (T-shape with serif)
+  Designer: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.6, y - s * 0.7);
+    ctx.lineTo(x, y + s * 0.7);
+    ctx.lineTo(x + s * 0.6, y - s * 0.7);
+    ctx.lineTo(x + s * 0.25, y - s * 0.7);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x - s * 0.25, y - s * 0.7);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Engineer — gear cog (4 teeth simplified)
+  Engineer: (ctx, x, y, s) => {
+    const teeth = 8;
+    const inner = s * 0.55, outer = s * 0.95;
+    ctx.beginPath();
+    for (let i = 0; i < teeth * 2; i++) {
+      const r = i % 2 === 0 ? outer : inner;
+      const a = (i * Math.PI) / teeth;
+      const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Executive — two horizontal bars (rank insignia)
+  Executive: (ctx, x, y, s) => {
+    ctx.fillRect(x - s, y - s * 0.5, s * 2, s * 0.35);
+    ctx.fillRect(x - s, y + s * 0.15, s * 2, s * 0.35);
+  },
+  // Employee — single bar
+  Employee: (ctx, x, y, s) => {
+    ctx.fillRect(x - s, y - s * 0.2, s * 2, s * 0.4);
+  },
+  // UnrelatedPerson — small dot
+  UnrelatedPerson: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.arc(x, y, s * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  // Company — square building (3 windows)
+  Company: (ctx, x, y, s) => {
+    ctx.fillRect(x - s * 0.9, y - s * 0.7, s * 1.8, s * 1.5);
+  },
+  // Shareholder — dollar/circle-with-line
+  Shareholder: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.arc(x, y, s * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  // Supplier — arrow → (incoming supply)
+  Supplier: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.moveTo(x - s, y - s * 0.4);
+    ctx.lineTo(x + s * 0.3, y - s * 0.4);
+    ctx.lineTo(x + s * 0.3, y - s * 0.8);
+    ctx.lineTo(x + s, y);
+    ctx.lineTo(x + s * 0.3, y + s * 0.8);
+    ctx.lineTo(x + s * 0.3, y + s * 0.4);
+    ctx.lineTo(x - s, y + s * 0.4);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Smartphone — vertical rounded rect with screen + button
+  Smartphone: (ctx, x, y, s) => {
+    const w = s * 1.0, h = s * 1.8, rad = s * 0.2;
+    const left = x - w / 2, top = y - h / 2;
+    ctx.beginPath();
+    ctx.moveTo(left + rad, top);
+    ctx.lineTo(left + w - rad, top);
+    ctx.quadraticCurveTo(left + w, top, left + w, top + rad);
+    ctx.lineTo(left + w, top + h - rad);
+    ctx.quadraticCurveTo(left + w, top + h, left + w - rad, top + h);
+    ctx.lineTo(left + rad, top + h);
+    ctx.quadraticCurveTo(left, top + h, left, top + h - rad);
+    ctx.lineTo(left, top + rad);
+    ctx.quadraticCurveTo(left, top, left + rad, top);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // Tablet — wider rounded rect
+  Tablet: (ctx, x, y, s) => {
+    ctx.fillRect(x - s, y - s * 0.7, s * 2, s * 1.4);
+  },
+  // Wearable — small ring
+  Wearable: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.arc(x, y, s * 0.85, 0, Math.PI * 2);
+    ctx.arc(x, y, s * 0.45, 0, Math.PI * 2, true);
+    ctx.fill();
+  },
+  // Computer — monitor (rect + stand)
+  Computer: (ctx, x, y, s) => {
+    ctx.fillRect(x - s, y - s * 0.7, s * 2, s * 1.2);
+    ctx.fillRect(x - s * 0.4, y + s * 0.5, s * 0.8, s * 0.3);
+  },
+  Desktop: (ctx, x, y, s) => ICON_DRAW.Computer(ctx, x, y, s),
+  // Notebook — laptop (rect + base wedge)
+  Notebook: (ctx, x, y, s) => {
+    ctx.fillRect(x - s * 0.85, y - s * 0.7, s * 1.7, s * 0.95);
+    ctx.beginPath();
+    ctx.moveTo(x - s, y + s * 0.4);
+    ctx.lineTo(x + s, y + s * 0.4);
+    ctx.lineTo(x + s * 0.85, y + s * 0.7);
+    ctx.lineTo(x - s * 0.85, y + s * 0.7);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // OperatingSystem — 2×2 grid of dots
+  OperatingSystem: (ctx, x, y, s) => {
+    const d = s * 0.4, off = s * 0.45;
+    for (const dx of [-off, off]) for (const dy of [-off, off]) {
+      ctx.beginPath();
+      ctx.arc(x + dx, y + dy, d, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+  // OnlineService — cloud (3 bumps)
+  OnlineService: (ctx, x, y, s) => {
+    ctx.beginPath();
+    ctx.arc(x - s * 0.5, y + s * 0.1, s * 0.5, Math.PI, 0);
+    ctx.arc(x,           y - s * 0.2, s * 0.55, Math.PI, 0);
+    ctx.arc(x + s * 0.5, y + s * 0.1, s * 0.5, Math.PI, 0);
+    ctx.lineTo(x + s, y + s * 0.5);
+    ctx.lineTo(x - s, y + s * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // ProductFamily — three stacked rectangles (family tree)
+  ProductFamily: (ctx, x, y, s) => {
+    ctx.fillRect(x - s, y - s * 0.7, s * 2, s * 0.4);
+    ctx.fillRect(x - s, y - s * 0.2, s * 2, s * 0.4);
+    ctx.fillRect(x - s, y + s * 0.3, s * 2, s * 0.4);
+  },
+  // Era — clock face (circle + hand)
+  Era: (ctx, x, y, s) => {
+    ctx.lineWidth = s * 0.18;
+    ctx.strokeStyle = ctx.fillStyle as string;
+    ctx.beginPath();
+    ctx.arc(x, y, s * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - s * 0.55);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + s * 0.4, y);
+    ctx.stroke();
+  },
 };
 // Higher = more interesting to show as the badge letter.
 const ROLE_PRIORITY: Record<string, number> = {
@@ -995,20 +1165,17 @@ export function Graph() {
                 ctx.lineWidth = (isPathFrom ? 1.8 : 1.2) / scale;
                 ctx.stroke();
               }
-              // Role glyph — single white letter inside the disc for
-              // entities with a primary OWL sub-class. Tells you "this
-              // is a CEO" / "this is a Smartphone" without expanding.
-              // Only draw if the node is large enough that the letter
-              // reads cleanly.
+              // Role icon — Aicher-style monochrome pictogram inside the
+              // disc. Tells you "this is a CEO" / "this is a Smartphone"
+              // without expanding. Drawn in PAPER (white) so it reads on
+              // every type colour. Only drawn when the disc is big enough
+              // that the icon shape is recognisable.
               const role = primaryRole(n.roles || []);
-              const glyph = role ? ROLE_GLYPH[role] : null;
-              if (glyph && r * scale > 6) {
-                const fs = Math.min(r * 1.2, 14 / scale);
-                ctx.font = `bold ${fs}px Inter, ui-sans-serif`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillStyle = PAPER;     // white-on-coloured-disc
-                ctx.fillText(glyph, n.x!, n.y!);
+              const drawIcon = role ? ICON_DRAW[role] : null;
+              if (drawIcon && r * scale > 7) {
+                const iconSize = r * 0.55;
+                ctx.fillStyle = PAPER;
+                drawIcon(ctx, n.x!, n.y!, iconSize);
               }
               // Labels are now drawn in onRenderFramePost so that we can
               // do priority-ordered collision detection (high-mention
