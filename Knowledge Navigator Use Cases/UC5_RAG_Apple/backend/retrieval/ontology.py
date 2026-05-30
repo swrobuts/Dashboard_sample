@@ -164,7 +164,11 @@ class OntologyRAG:
         except Exception as exc:  # noqa: BLE001
             log.warning("SPARQL generation LLM failed: %s", exc)
             return ""
-        return _strip_codefence(raw or "")
+        sparql = _strip_codefence(raw or "")
+        # Defensive: many models forget to repeat the PREFIX block even when
+        # we put it in the ontology summary. Auto-prepend any prefix we
+        # actually use that's missing from the query.
+        return _ensure_prefixes(sparql)
 
     def _bindings_to_chunks(
         self, bindings: list[dict],
@@ -246,3 +250,41 @@ def _strip_codefence(raw: str) -> str:
         s = re.sub(r"^```[a-zA-Z]*\s*", "", s)
         s = re.sub(r"\s*```$", "", s)
     return s.strip()
+
+
+# Standard prefixes our ontology uses. Auto-prepended to LLM-generated SPARQL
+# if missing — Gemini sometimes forgets them despite the instruction.
+_KNOWN_PREFIXES = {
+    "apple":  "http://uc5.butscher.cloud/apple#",
+    "rdf":    "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs":   "http://www.w3.org/2000/01/rdf-schema#",
+    "owl":    "http://www.w3.org/2002/07/owl#",
+    "foaf":   "http://xmlns.com/foaf/0.1/",
+    "schema": "http://schema.org/",
+    "xsd":    "http://www.w3.org/2001/XMLSchema#",
+    "dbo":    "http://dbpedia.org/ontology/",
+    "dbr":    "http://dbpedia.org/resource/",
+}
+
+
+def _ensure_prefixes(sparql: str) -> str:
+    """Prepend PREFIX declarations for any of the known prefixes that
+    appear in the query body but aren't already declared at the top.
+    Without this, even a perfect SELECT trips GraphDB with HTTP 400."""
+    if not sparql:
+        return sparql
+    head_lower = sparql.lower()
+    missing: list[str] = []
+    for prefix, uri in _KNOWN_PREFIXES.items():
+        used = re.search(rf"(?<![A-Za-z0-9_]){prefix}:", sparql)
+        if not used:
+            continue
+        declared = re.search(
+            rf"prefix\s+{prefix}\s*:",
+            head_lower,
+        )
+        if not declared:
+            missing.append(f"PREFIX {prefix}: <{uri}>")
+    if not missing:
+        return sparql
+    return "\n".join(missing) + "\n" + sparql

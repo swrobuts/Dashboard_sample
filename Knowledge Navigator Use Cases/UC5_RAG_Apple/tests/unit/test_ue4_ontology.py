@@ -75,3 +75,36 @@ def test_ontology_defines_ceo_subclass_of_executive():
     ceo = URIRef("http://uc5.butscher.cloud/apple#CEO")
     executive = URIRef("http://uc5.butscher.cloud/apple#Executive")
     assert (ceo, RDFS.subClassOf, executive) in g
+
+
+# ── _ensure_prefixes ────────────────────────────────────────────────────────
+
+from backend.retrieval.ontology import _ensure_prefixes
+
+
+def test_ensure_prefixes_adds_missing():
+    q = "SELECT ?p WHERE { ?p apple:wasCEOOf apple:AppleInc }"
+    out = _ensure_prefixes(q)
+    assert "PREFIX apple: <http://uc5.butscher.cloud/apple#>" in out
+    assert q in out  # body preserved
+
+
+def test_ensure_prefixes_handles_multiple_namespaces():
+    q = "SELECT ?n WHERE { ?p apple:foundedBy ?p2 . ?p2 foaf:name ?n }"
+    out = _ensure_prefixes(q)
+    assert "PREFIX apple:" in out
+    assert "PREFIX foaf:" in out
+    assert "PREFIX rdfs:" not in out  # not used in body
+
+
+def test_ensure_prefixes_keeps_already_declared():
+    q = "PREFIX apple: <http://uc5.butscher.cloud/apple#>\nSELECT ?p WHERE { ?p apple:foundedBy apple:AppleInc }"
+    out = _ensure_prefixes(q)
+    # Only one PREFIX apple: line (the original)
+    assert out.count("PREFIX apple:") == 1
+    # Body unchanged
+    assert "SELECT ?p" in out
+
+
+def test_ensure_prefixes_no_op_for_empty():
+    assert _ensure_prefixes("") == ""
