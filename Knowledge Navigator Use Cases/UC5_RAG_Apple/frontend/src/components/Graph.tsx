@@ -598,20 +598,26 @@ function SparqlConsole({ onResults, nodeIds }: {
 
   const translate = async () => {
     if (!nlQuery.trim()) return;
-    setTranslating(true); setError(null);
+    setTranslating(true); setError(null); setResult(null);
     try {
       const r = await api.sparqlTranslate(nlQuery.trim());
-      if (r.ok && r.sparql) setSparql(r.sparql);
-      else setError(r.error || "Übersetzung fehlgeschlagen");
+      if (r.ok && r.sparql) {
+        setSparql(r.sparql);
+        // Auto-execute so the user sees the answer in one click.
+        await executeWith(r.sparql);
+      } else {
+        setError(r.error || "Übersetzung fehlgeschlagen");
+      }
     } catch (e) { setError(String(e)); }
     finally { setTranslating(false); }
   };
 
-  const execute = async () => {
-    if (!sparql.trim()) return;
+  const executeWith = async (querySparql: string) => {
+    const s = querySparql.trim();
+    if (!s) return;
     setExecuting(true); setError(null); setResult(null);
     try {
-      const r = await api.sparqlExecute(sparql.trim());
+      const r = await api.sparqlExecute(s);
       if (!r.ok) { setError(r.error || "Fehler"); return; }
       setResult(r.result);
       const matched: string[] = [];
@@ -633,6 +639,8 @@ function SparqlConsole({ onResults, nodeIds }: {
     } catch (e) { setError(String(e)); }
     finally { setExecuting(false); }
   };
+
+  const execute = () => executeWith(sparql);
 
   return (
     <aside className="w-[30rem] shrink-0 flex flex-col"
@@ -726,7 +734,13 @@ function SparqlConsole({ onResults, nodeIds }: {
                style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
         )}
 
-        {result && <ResultTable result={result} />}
+        {executing && (
+          <div className="text-[11px] uppercase tracking-wider" style={{ color: TEXT_MUTED }}>
+            führt SPARQL aus …
+          </div>
+        )}
+
+        {result && !executing && <ResultTable result={result} />}
       </div>
     </aside>
   );
@@ -736,18 +750,40 @@ function SparqlConsole({ onResults, nodeIds }: {
 function ResultTable({ result }: { result: any }) {
   const headVars: string[] = result?.head?.vars || [];
   const bindings: any[] = result?.results?.bindings || [];
-  if (!Array.isArray(bindings)) {
-    if (typeof result?.boolean === "boolean") {
-      return (
-        <div className="py-2" style={{ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }}>
-          <span className="text-[10px] uppercase tracking-wider mr-3" style={{ color: TEXT_MUTED }}>ASK</span>
-          <span className="font-mono text-[14px]"
-                style={{ color: result.boolean ? TEXT_INK : ACCENT }}>
-            {String(result.boolean)}
-          </span>
+  // ASK queries: GraphDB returns { boolean: true/false }
+  if (typeof result?.boolean === "boolean") {
+    return (
+      <div className="py-2" style={{ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }}>
+        <span className="text-[10px] uppercase tracking-wider mr-3" style={{ color: TEXT_MUTED }}>ASK</span>
+        <span className="font-mono text-[14px]"
+              style={{ color: result.boolean ? TEXT_INK : ACCENT }}>
+          {String(result.boolean)}
+        </span>
+      </div>
+    );
+  }
+  // SELECT with zero rows — show explicit empty state so the user knows
+  // the query *did* run, it just had no matches.
+  if (Array.isArray(bindings) && bindings.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase tracking-[0.2em]" style={{ color: TEXT_MUTED }}>
+          Ergebnis · <span className="font-mono" style={{ color: TEXT_INK }}>0</span> Zeilen
         </div>
-      );
-    }
+        <div className="p-3 text-[12px] leading-relaxed"
+             style={{ border: `1px solid ${RULE}`, background: PAPER_SOFT, color: TEXT_INK }}>
+          Die Query lief erfolgreich, lieferte aber keine Bindings.
+          Mögliche Ursachen:
+          <ul className="mt-1.5 list-disc pl-5" style={{ color: TEXT_MUTED }}>
+            <li>zu enger Filter (z.&nbsp;B. zusätzliches <code className="font-mono">apple:associatedWith apple:AppleInc</code>)</li>
+            <li>falsche Klasse — versuche eine Oberklasse wie <code className="font-mono">apple:Person</code></li>
+            <li>Reasoning greift nicht — prüfe Prefixe und <code className="font-mono">rdf:type</code></li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+  if (!Array.isArray(bindings)) {
     return <div className="text-[11px]" style={{ color: TEXT_MUTED }}>(kein Tabellenergebnis)</div>;
   }
   return (
