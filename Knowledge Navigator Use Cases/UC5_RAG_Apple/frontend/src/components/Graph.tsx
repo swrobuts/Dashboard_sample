@@ -4,23 +4,31 @@ import {
   api, type GraphCommunity, type GraphEdge, type GraphNode, type GraphPayload,
 } from "../api";
 
-// ─── Neon palette — colors per entity type (high-saturation for dark bg) ────
+// ─── Restrained palette ────────────────────────────────────────────────────
+// Inspired by Aicher's systematic categorical coding and Tufte's
+// "use colour to encode information, not to decorate". Each type gets a
+// distinct but desaturated tone that reads cleanly on warm paper.
 const TYPE_COLORS: Record<string, string> = {
-  PERSON:       "#22d3ee", // cyan-400
-  ORGANIZATION: "#a78bfa", // violet-400
-  PRODUCT:      "#f472b6", // pink-400
-  EVENT:        "#fbbf24", // amber-400
-  LOCATION:     "#34d399", // emerald-400
-  CONCEPT:      "#fb7185", // rose-400
+  PERSON:       "#1f1f1f", // ink
+  ORGANIZATION: "#8c4a3c", // brick
+  PRODUCT:      "#2c4a6b", // ink-navy
+  EVENT:        "#8a6a3a", // umber
+  LOCATION:     "#4a6b3a", // olive
+  CONCEPT:      "#5a4a6b", // dust-purple
 };
-const DEFAULT_COLOR = "#94a3b8";
+const ACCENT      = "#c8503c"; // Munich-1972 warm red — used only for state
+const TEXT_INK    = "#111111";
+const TEXT_MUTED  = "#6b6b6b";
+const RULE        = "#d8d4cf"; // hairline rule colour
+const PAPER       = "#f7f5ef";
+const PAPER_SOFT  = "#efebe2";
 
+const DEFAULT_COLOR = "#9c9c9c";
 const TYPE_OPTIONS = ["PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", "CONCEPT"];
 
 interface FGNode extends GraphNode {
-  x?: number; y?: number; vx?: number; vy?: number;
-  __radius?: number;     // cached for hover hit-test
-  __highlight?: boolean; // dimmed vs. highlighted
+  x?: number; y?: number;
+  __radius?: number;
 }
 
 interface FGLink extends GraphEdge {
@@ -36,7 +44,6 @@ export function Graph() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<FGNode | null>(null);
   const [hovered, setHovered] = useState<FGNode | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [minMentions, setMinMentions] = useState(1);
   const [search, setSearch] = useState("");
   const [typesEnabled, setTypesEnabled] = useState<Set<string>>(new Set(TYPE_OPTIONS));
@@ -47,25 +54,18 @@ export function Graph() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
-  // ── Data loading ────────────────────────────────────────────────────────
   const load = async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const types = TYPE_OPTIONS.every(t => typesEnabled.has(t))
-        ? undefined
-        : Array.from(typesEnabled).join(",");
+        ? undefined : Array.from(typesEnabled).join(",");
       const r = await api.graph({ min_mentions: minMentions, types, limit_entities: 500 });
       setData(r);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(String(e)); }
+    finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Container resize
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -75,13 +75,10 @@ export function Graph() {
     return () => ro.disconnect();
   }, []);
 
-  // ── Derived graph data with search filter applied client-side ───────────
   const graphData = useMemo(() => {
-    if (!data) return { nodes: [], links: [] as FGLink[] };
+    if (!data) return { nodes: [] as FGNode[], links: [] as FGLink[] };
     const q = search.trim().toLowerCase();
-    const allKeep = new Set(data.nodes.map(n => n.id));
-    // If a search term is given, keep matching nodes + their direct neighbours
-    let keep = allKeep;
+    let keep = new Set(data.nodes.map(n => n.id));
     if (q) {
       const matches = new Set(
         data.nodes.filter(n =>
@@ -97,19 +94,19 @@ export function Graph() {
       keep = new Set([...matches, ...neighbours]);
     }
     const nodes = data.nodes.filter(n => keep.has(n.id)).map(n => ({ ...n })) as FGNode[];
-    const nodeIds = new Set(nodes.map(n => n.id));
+    const ids = new Set(nodes.map(n => n.id));
     const links: FGLink[] = data.edges
-      .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
+      .filter(e => ids.has(e.source) && ids.has(e.target))
       .map(e => ({ ...e }));
     return { nodes, links };
   }, [data, search]);
 
-  // Community → colour mapping (vibrant palette)
+  // Communities → restrained categorical palette (still desaturated)
   const communityColour = useMemo(() => {
     const palette = [
-      "#22d3ee", "#a78bfa", "#f472b6", "#fbbf24", "#34d399", "#fb7185",
-      "#60a5fa", "#c084fc", "#fb923c", "#4ade80", "#f87171", "#2dd4bf",
-      "#facc15", "#e879f9", "#38bdf8", "#a3e635", "#fb7185", "#818cf8",
+      "#5a4a6b", "#8c4a3c", "#2c4a6b", "#4a6b3a", "#8a6a3a", "#6b4a5a",
+      "#4a5a6b", "#6b5a4a", "#3a6b5a", "#6b3a5a", "#5a6b3a", "#3a4a6b",
+      "#7c4f3c", "#3c5a7c", "#6b5a3a", "#5a3a4a", "#3a6b6b", "#4a3a6b",
     ];
     const m = new Map<string, string>();
     let i = 0;
@@ -125,7 +122,6 @@ export function Graph() {
     return TYPE_COLORS[n.type] || DEFAULT_COLOR;
   };
 
-  // ── Hover highlighting: dim non-connected nodes/links ───────────────────
   const neighbourIds = useMemo(() => {
     if (!hovered || !data) return null as Set<string> | null;
     const ids = new Set<string>([hovered.id]);
@@ -148,22 +144,30 @@ export function Graph() {
     });
   };
 
-  const handleSparqlExecuted = (matchedNodeIds: string[]) => {
-    setHighlightedIds(new Set(matchedNodeIds));
-    // Recentre on the first match
-    if (matchedNodeIds.length > 0 && graphRef.current && data) {
-      const n = graphData.nodes.find(nn => nn.id === matchedNodeIds[0]);
+  const handleSparqlExecuted = (matched: string[]) => {
+    setHighlightedIds(new Set(matched));
+    if (matched.length > 0 && graphRef.current && data) {
+      const n = graphData.nodes.find(nn => nn.id === matched[0]);
       if (n && n.x != null && n.y != null) {
         graphRef.current.centerAt(n.x, n.y, 800);
-        graphRef.current.zoom(2.5, 800);
+        graphRef.current.zoom(2.0, 800);
       }
     }
   };
 
+  // Top 15 mentions get their label drawn always — Tufte: don't hide
+  // important data points behind hover.
+  const alwaysLabeled = useMemo(() => {
+    const sorted = [...graphData.nodes].sort((a, b) => b.mentions - a.mentions);
+    return new Set(sorted.slice(0, 15).map(n => n.id));
+  }, [graphData.nodes]);
+
   return (
-    <div className="flex-1 flex bg-slate-950 text-slate-100 min-h-0 overflow-hidden">
-      {/* ── Left sidebar ─────────────────────────────────────────────── */}
-      <LeftSidebar
+    <div className="flex-1 flex min-h-0 overflow-hidden"
+         style={{ background: PAPER, color: TEXT_INK,
+                  fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif" }}>
+      {/* Left rail */}
+      <LeftRail
         data={data}
         graphData={graphData}
         loading={loading}
@@ -180,163 +184,160 @@ export function Graph() {
         colourOf={colourOf}
       />
 
-      {/* ── Main: graph with overlays ────────────────────────────────── */}
-      <main ref={containerRef} className="flex-1 relative bg-[#06080f]">
-        {/* Animated star background */}
-        <StarField w={size.w} h={size.h} />
-
-        {/* Search overlay top-left */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-          <div className="relative">
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Suche Entitäten…"
-              className="w-72 pl-9 pr-3 py-2 rounded-lg bg-slate-900/70 backdrop-blur border border-cyan-500/30 text-sm placeholder-slate-500 text-slate-100 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all"
-            />
-            <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-cyan-400" viewBox="0 0 20 20" fill="none">
-              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2"/>
-              <path d="M14 14L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </div>
-          {(highlightedIds.size > 0) && (
+      {/* Canvas */}
+      <main ref={containerRef} className="flex-1 relative" style={{ background: PAPER }}>
+        {/* Search rule, top */}
+        <div className="absolute top-0 left-0 right-0 z-10 px-6 py-3 flex items-center gap-4"
+             style={{ borderBottom: `1px solid ${RULE}`, background: PAPER }}>
+          <label className="text-[10px] uppercase tracking-[0.2em]" style={{ color: TEXT_MUTED }}>
+            Suche
+          </label>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Name oder Beschreibung"
+            className="flex-1 max-w-md bg-transparent text-sm focus:outline-none"
+            style={{ borderBottom: `1px solid ${RULE}`, color: TEXT_INK, paddingBottom: "2px" }}
+            onFocus={e => e.target.style.borderBottomColor = ACCENT}
+            onBlur={e => e.target.style.borderBottomColor = RULE}
+          />
+          {highlightedIds.size > 0 && (
             <button
               onClick={() => setHighlightedIds(new Set())}
-              className="px-3 py-2 text-xs rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 backdrop-blur transition"
+              className="text-[11px] uppercase tracking-wider hover:opacity-70 transition"
+              style={{ color: ACCENT }}
             >
-              SPARQL-Highlight aufheben ({highlightedIds.size})
+              SPARQL-Auswahl auflösen ({highlightedIds.size})
             </button>
           )}
+          <div className="text-[11px]" style={{ color: TEXT_MUTED }}>
+            {graphData.nodes.length}/{data?.nodes.length ?? 0} Entitäten
+            <span className="mx-2" style={{ color: RULE }}>·</span>
+            {graphData.links.length} Relationen
+          </div>
         </div>
 
-        {/* Legend top-right */}
-        <div className="absolute top-3 right-3 z-10 bg-slate-900/70 backdrop-blur border border-slate-700/50 rounded-lg p-3 text-xs flex gap-3">
-          {TYPE_OPTIONS.map(t => (
-            <div key={t} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full" style={{
-                background: TYPE_COLORS[t],
-                boxShadow: `0 0 8px ${TYPE_COLORS[t]}`,
-              }} />
-              <span className="text-slate-300">{t}</span>
-            </div>
-          ))}
+        {/* Inline legend, bottom-left — Tufte-style with type counts */}
+        <div className="absolute bottom-4 left-6 z-10 text-[11px]" style={{ color: TEXT_MUTED }}>
+          <div className="uppercase tracking-[0.2em] mb-2" style={{ color: TEXT_INK, fontSize: "10px" }}>Legende</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            {TYPE_OPTIONS.map(t => {
+              const count = (data?.nodes || []).filter(n => n.type === t).length;
+              return (
+                <div key={t} className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: TYPE_COLORS[t] }} />
+                  <span style={{ color: TEXT_INK }}>{t}</span>
+                  <span className="font-mono" style={{ color: TEXT_MUTED }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Zoom controls bottom-right */}
-        <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1 bg-slate-900/70 backdrop-blur rounded-lg border border-slate-700/50 p-1">
-          <button title="Zoom in" onClick={() => graphRef.current?.zoom(graphRef.current.zoom() * 1.4, 300)}
-                  className="w-8 h-8 rounded text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-300 transition">+</button>
-          <button title="Zoom out" onClick={() => graphRef.current?.zoom(graphRef.current.zoom() * 0.7, 300)}
-                  className="w-8 h-8 rounded text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-300 transition">−</button>
-          <button title="Zentrieren" onClick={() => graphRef.current?.zoomToFit(600, 80)}
-                  className="w-8 h-8 rounded text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-300 transition">⤢</button>
+        {/* Zoom — three plain buttons, no decoration */}
+        <div className="absolute bottom-4 right-6 z-10 flex items-center gap-3 text-[11px] uppercase tracking-wider"
+             style={{ color: TEXT_MUTED }}>
+          <button onClick={() => graphRef.current?.zoom(graphRef.current.zoom() * 1.4, 300)}
+                  className="hover:opacity-100 transition" style={{ opacity: 0.7 }}>Heran</button>
+          <span style={{ color: RULE }}>·</span>
+          <button onClick={() => graphRef.current?.zoom(graphRef.current.zoom() * 0.7, 300)}
+                  className="hover:opacity-100 transition" style={{ opacity: 0.7 }}>Weg</button>
+          <span style={{ color: RULE }}>·</span>
+          <button onClick={() => graphRef.current?.zoomToFit(600, 80)}
+                  className="hover:opacity-100 transition" style={{ opacity: 0.7 }}>Anpassen</button>
         </div>
 
-        {/* Graph itself */}
-        <ForceGraph2D<FGNode, FGLink>
-          ref={graphRef}
-          width={size.w}
-          height={size.h}
-          backgroundColor="rgba(6,8,15,0)"
-          graphData={graphData}
-          nodeId="id"
-          nodeRelSize={1}
-          d3AlphaDecay={0.02}
-          d3VelocityDecay={0.3}
-          cooldownTicks={400}
-          warmupTicks={60}
-          enableNodeDrag={true}
-          enableZoomInteraction={true}
-          onNodeHover={(n) => setHovered(n)}
-          onNodeClick={(n, evt) => {
-            setSelected(n);
-            if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
-          }}
-          onBackgroundClick={() => setSelected(null)}
-          // Custom node rendering: glowing disk + label on hover or zoomed-in
-          nodeCanvasObjectMode={() => "replace"}
-          nodeCanvasObject={(n, ctx, scale) => {
-            const colour = colourOf(n);
-            const baseSize = 3 + Math.sqrt(n.mentions + 1) * 1.5;
-            const isHovered = hovered?.id === n.id;
-            const isSelected = selected?.id === n.id;
-            const isHighlight = highlightedIds.has(n.id);
-            const dim = isDimmed(n.id);
-            const r = isHovered ? baseSize * 1.6 : baseSize;
-            n.__radius = r;
-            ctx.save();
-            if (dim) ctx.globalAlpha = 0.18;
-            // Outer glow halo
-            const haloR = r * (isHovered || isHighlight ? 4 : 2.6);
-            const grad = ctx.createRadialGradient(n.x!, n.y!, r * 0.4, n.x!, n.y!, haloR);
-            grad.addColorStop(0, colour + (isHovered || isHighlight ? "cc" : "66"));
-            grad.addColorStop(1, colour + "00");
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(n.x!, n.y!, haloR, 0, Math.PI * 2);
-            ctx.fill();
-            // Inner disk
-            ctx.beginPath();
-            ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2);
-            ctx.fillStyle = colour;
-            ctx.fill();
-            // Crisp white core
-            ctx.beginPath();
-            ctx.arc(n.x!, n.y!, r * 0.4, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(255,255,255,0.85)";
-            ctx.fill();
-            // Selection ring
-            if (isSelected || isHighlight) {
+        {/* The graph */}
+        <div className="absolute inset-0" style={{ paddingTop: "44px" }}>
+          <ForceGraph2D<FGNode, FGLink>
+            ref={graphRef}
+            width={size.w}
+            height={size.h - 44}
+            backgroundColor={PAPER}
+            graphData={graphData}
+            nodeId="id"
+            nodeRelSize={1}
+            d3AlphaDecay={0.02}
+            d3VelocityDecay={0.3}
+            cooldownTicks={400}
+            warmupTicks={60}
+            enableNodeDrag
+            enableZoomInteraction
+            onNodeHover={(n) => setHovered(n)}
+            onNodeClick={(n) => {
+              setSelected(n);
+              if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
+            }}
+            onBackgroundClick={() => setSelected(null)}
+            // Restrained node rendering: filled disk sized by mentions,
+            // accent ring only for hover/selection/SPARQL-highlight.
+            nodeCanvasObjectMode={() => "replace"}
+            nodeCanvasObject={(n, ctx, scale) => {
+              const colour = colourOf(n);
+              const baseR = 2 + Math.sqrt(n.mentions + 1) * 1.4;
+              const isHovered = hovered?.id === n.id;
+              const isSelected = selected?.id === n.id;
+              const isHighlight = highlightedIds.has(n.id);
+              const dim = isDimmed(n.id);
+              const r = isHovered ? baseR * 1.25 : baseR;
+              n.__radius = r;
+              ctx.save();
+              if (dim) ctx.globalAlpha = 0.18;
+              // Single filled disk — no halo, no glow
               ctx.beginPath();
-              ctx.arc(n.x!, n.y!, r + 2, 0, Math.PI * 2);
-              ctx.strokeStyle = isHighlight ? "#fcd34d" : "#fde047";
-              ctx.lineWidth = 1.5 / scale;
+              ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2);
+              ctx.fillStyle = colour;
+              ctx.fill();
+              // 1-pixel accent ring for state — that's it
+              if (isHovered || isSelected || isHighlight) {
+                ctx.beginPath();
+                ctx.arc(n.x!, n.y!, r + 2.5 / scale, 0, Math.PI * 2);
+                ctx.strokeStyle = ACCENT;
+                ctx.lineWidth = 1.2 / scale;
+                ctx.stroke();
+              }
+              // Labels: always for the most-mentioned, on demand for the rest
+              const showLabel = isHovered || isSelected || alwaysLabeled.has(n.id) || scale > 1.8;
+              if (showLabel) {
+                const fontSize = (isHovered ? 12 : 10) / scale;
+                ctx.font = `${fontSize}px Inter, ui-sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "top";
+                const label = n.name.length > 32 ? n.name.slice(0, 30) + "…" : n.name;
+                // Tight crisp halo on the label, in paper colour, so it reads
+                // over edges without competing visually with the data.
+                ctx.lineWidth = 3 / scale;
+                ctx.strokeStyle = PAPER;
+                ctx.strokeText(label, n.x!, n.y! + r + 3 / scale);
+                ctx.fillStyle = TEXT_INK;
+                ctx.fillText(label, n.x!, n.y! + r + 3 / scale);
+              }
+              ctx.restore();
+            }}
+            // Edges: 1px hairline. Hover-related darker. No particles.
+            linkCanvasObjectMode={() => "replace"}
+            linkCanvasObject={(l, ctx, scale) => {
+              const src = l.source as FGNode;
+              const tgt = l.target as FGNode;
+              if (!src.x || !src.y || !tgt.x || !tgt.y) return;
+              const involved = hovered != null && (src.id === hovered.id || tgt.id === hovered.id);
+              const highlight = highlightedIds.size > 0 && (highlightedIds.has(src.id) && highlightedIds.has(tgt.id));
+              const dim = (neighbourIds && !involved && !(neighbourIds.has(src.id) && neighbourIds.has(tgt.id)))
+                       || (highlightedIds.size > 0 && !highlight && !(highlightedIds.has(src.id) || highlightedIds.has(tgt.id)));
+              ctx.save();
+              if (dim) ctx.globalAlpha = 0.16;
+              ctx.strokeStyle = highlight ? ACCENT : (involved ? "#525252" : "#cfcbc3");
+              ctx.lineWidth = (involved || highlight) ? 1 / scale : 0.5 / scale;
+              ctx.beginPath();
+              ctx.moveTo(src.x, src.y);
+              ctx.lineTo(tgt.x, tgt.y);
               ctx.stroke();
-            }
-            // Label when zoomed or hovered
-            if (isHovered || isSelected || scale > 1.6) {
-              const fontSize = isHovered ? 14 / scale : 11 / scale;
-              ctx.font = `${fontSize}px ui-sans-serif, system-ui`;
-              ctx.textAlign = "center";
-              ctx.textBaseline = "top";
-              ctx.fillStyle = "rgba(248, 250, 252, 0.95)";
-              ctx.strokeStyle = "rgba(6, 8, 15, 0.9)";
-              ctx.lineWidth = 3 / scale;
-              const label = n.name.length > 32 ? n.name.slice(0, 30) + "…" : n.name;
-              ctx.strokeText(label, n.x!, n.y! + r + 3 / scale);
-              ctx.fillText(label, n.x!, n.y! + r + 3 / scale);
-            }
-            ctx.restore();
-          }}
-          // Custom link rendering with hover-highlight
-          linkCanvasObjectMode={() => "replace"}
-          linkCanvasObject={(l, ctx, scale) => {
-            const src = l.source as FGNode;
-            const tgt = l.target as FGNode;
-            if (!src.x || !src.y || !tgt.x || !tgt.y) return;
-            const involved = hovered != null && (src.id === hovered.id || tgt.id === hovered.id);
-            const dim = (neighbourIds && !involved && !(neighbourIds.has(src.id) && neighbourIds.has(tgt.id)))
-                     || (highlightedIds.size > 0 && !(highlightedIds.has(src.id) || highlightedIds.has(tgt.id)));
-            ctx.save();
-            if (dim) ctx.globalAlpha = 0.08;
-            ctx.strokeStyle = involved ? "rgba(34, 211, 238, 0.7)" : "rgba(148, 163, 184, 0.25)";
-            ctx.lineWidth = involved ? 1.5 / scale : 0.5 / scale;
-            ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
-            ctx.lineTo(tgt.x, tgt.y);
-            ctx.stroke();
-            ctx.restore();
-          }}
-          linkDirectionalParticles={(l) => {
-            const src = l.source as FGNode; const tgt = l.target as FGNode;
-            const involved = hovered != null && (src.id === hovered.id || tgt.id === hovered.id);
-            return involved ? 3 : 0;
-          }}
-          linkDirectionalParticleWidth={2}
-          linkDirectionalParticleColor={() => "rgba(34, 211, 238, 0.9)"}
-        />
+              ctx.restore();
+            }}
+            linkDirectionalParticles={0}
+          />
+        </div>
 
-        {/* HTML tooltip on hover */}
         {hovered && (
           <NodeTooltip
             node={hovered}
@@ -345,16 +346,19 @@ export function Graph() {
           />
         )}
 
-        {/* Toggle SPARQL panel */}
         <button
           onClick={() => setSparqlOpen(o => !o)}
-          className={"absolute z-10 top-3 transition-all px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/20 backdrop-blur text-sm font-mono shadow-[0_0_15px_rgba(34,211,238,0.2)] " + (sparqlOpen ? "right-[26rem]" : "right-3 top-16")}
+          className="absolute top-2.5 z-10 text-[10px] uppercase tracking-[0.2em] hover:opacity-100 transition"
+          style={{
+            right: sparqlOpen ? "30rem" : "24px",
+            color: TEXT_MUTED,
+            opacity: 0.8,
+          }}
         >
-          {sparqlOpen ? "› SPARQL" : "‹ SPARQL"}
+          {sparqlOpen ? "SPARQL  ›" : "‹  SPARQL"}
         </button>
       </main>
 
-      {/* ── Right SPARQL console ─────────────────────────────────────── */}
       {sparqlOpen && (
         <SparqlConsole
           onResults={handleSparqlExecuted}
@@ -366,8 +370,8 @@ export function Graph() {
 }
 
 
-// ─── Left sidebar ──────────────────────────────────────────────────────────
-function LeftSidebar(props: {
+// ─── Left rail ─────────────────────────────────────────────────────────────
+function LeftRail(props: {
   data: GraphPayload | null;
   graphData: { nodes: FGNode[]; links: FGLink[] };
   loading: boolean;
@@ -384,95 +388,114 @@ function LeftSidebar(props: {
   colourOf: (n: FGNode) => string;
 }) {
   const {
-    data, graphData, loading, error, minMentions, setMinMentions, typesEnabled,
+    data, loading, error, minMentions, setMinMentions, typesEnabled,
     toggleType, colourBy, setColourBy, load, selected, communityById, colourOf,
   } = props;
   return (
-    <aside className="w-72 shrink-0 bg-slate-900/60 backdrop-blur-xl border-r border-slate-800/80 p-4 overflow-y-auto space-y-5">
-      <div>
-        <div className="text-[10px] uppercase tracking-[0.3em] text-cyan-400/70 mb-1">UC5 · Knowledge Graph</div>
-        <h3 className="font-bold text-lg text-slate-100">Apple Ontologie</h3>
-        {data ? (
-          <div className="text-xs text-slate-400 mt-2 space-y-0.5">
-            <div><span className="text-cyan-300 font-mono">{graphData.nodes.length}</span>/{data.nodes.length} Entities</div>
-            <div><span className="text-cyan-300 font-mono">{graphData.links.length}</span> Relations sichtbar</div>
-            <div><span className="text-cyan-300 font-mono">{data.communities.length}</span> Communities</div>
-          </div>
-        ) : (
-          <div className="text-xs text-slate-500 mt-2">Lade…</div>
+    <aside className="w-72 shrink-0 overflow-y-auto"
+           style={{ background: PAPER, borderRight: `1px solid ${RULE}`, color: TEXT_INK }}>
+      <div className="px-5 pt-6 pb-5" style={{ borderBottom: `1px solid ${RULE}` }}>
+        <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+          UC5 · Knowledge Graph
+        </div>
+        <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
+          Apple Ontologie
+        </h2>
+        {data && (
+          <dl className="mt-4 text-[11px]" style={{ color: TEXT_MUTED }}>
+            <Row label="Entitäten" value={`${data.nodes.length}`} />
+            <Row label="Relationen" value={`${data.edges.length}`} />
+            <Row label="Communities" value={`${data.communities.length}`} />
+          </dl>
         )}
       </div>
 
-      <div>
-        <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block mb-1.5">
-          Min. Erwähnungen: <span className="text-cyan-300">{minMentions}</span>
-        </label>
-        <input type="range" min={1} max={10} value={minMentions}
-               onChange={e => setMinMentions(Number(e.target.value))}
-               className="w-full accent-cyan-400" />
-      </div>
+      <Section title="Anzeige">
+        <Label>Mindesterwähnungen <span className="font-mono ml-2" style={{ color: TEXT_INK }}>{minMentions}</span></Label>
+        <input
+          type="range" min={1} max={10} value={minMentions}
+          onChange={e => setMinMentions(Number(e.target.value))}
+          className="w-full mt-1"
+          style={{ accentColor: ACCENT }}
+        />
+      </Section>
 
-      <div>
-        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">Entitätstypen</div>
-        <div className="space-y-1.5">
-          {TYPE_OPTIONS.map(t => (
-            <label key={t} className="flex items-center gap-2 text-sm group cursor-pointer">
-              <input type="checkbox" checked={typesEnabled.has(t)} onChange={() => toggleType(t)}
-                     className="accent-cyan-400" />
-              <span className="w-3 h-3 rounded-full" style={{
-                background: TYPE_COLORS[t],
-                boxShadow: `0 0 8px ${TYPE_COLORS[t]}80`,
-              }} />
-              <span className="text-slate-300 group-hover:text-slate-100 transition">{t}</span>
-            </label>
-          ))}
+      <Section title="Entitätstypen">
+        <div className="space-y-1">
+          {TYPE_OPTIONS.map(t => {
+            const on = typesEnabled.has(t);
+            const count = (data?.nodes || []).filter(n => n.type === t).length;
+            return (
+              <label key={t} className="flex items-center gap-2.5 cursor-pointer text-[13px]">
+                <input type="checkbox" checked={on} onChange={() => toggleType(t)}
+                       className="rounded" style={{ accentColor: ACCENT }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[t] }} />
+                <span className="flex-1" style={{ color: on ? TEXT_INK : TEXT_MUTED }}>{t}</span>
+                <span className="font-mono text-[11px]" style={{ color: TEXT_MUTED }}>{count}</span>
+              </label>
+            );
+          })}
         </div>
-      </div>
+      </Section>
 
-      <div>
-        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">Farben nach</div>
-        <div className="flex gap-1.5">
+      <Section title="Farbcodierung">
+        <div className="flex gap-1" style={{ border: `1px solid ${RULE}` }}>
           {(["type", "community"] as ColourBy[]).map(opt => (
             <button key={opt} onClick={() => setColourBy(opt)}
-                    className={"flex-1 px-2 py-1.5 text-xs rounded transition " +
-                      (colourBy === opt
-                        ? "bg-cyan-500/20 border border-cyan-400 text-cyan-200"
-                        : "bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-slate-200")}>
+                    className="flex-1 px-2 py-1.5 text-[11px] uppercase tracking-wider transition"
+                    style={{
+                      background: colourBy === opt ? TEXT_INK : "transparent",
+                      color: colourBy === opt ? PAPER : TEXT_MUTED,
+                    }}>
               {opt === "type" ? "Typ" : "Community"}
             </button>
           ))}
         </div>
+      </Section>
+
+      <div className="px-5 py-4">
+        <button onClick={load} disabled={loading}
+                className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
+                style={{
+                  border: `1px solid ${TEXT_INK}`,
+                  background: loading ? PAPER_SOFT : "transparent",
+                  color: TEXT_INK,
+                  opacity: loading ? 0.5 : 1,
+                }}
+                onMouseEnter={e => { if (!loading) { e.currentTarget.style.background = TEXT_INK; e.currentTarget.style.color = PAPER; } }}
+                onMouseLeave={e => { if (!loading) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = TEXT_INK; } }}>
+          {loading ? "Lädt …" : "Aktualisieren"}
+        </button>
       </div>
 
-      <button onClick={load} disabled={loading}
-              className="w-full px-3 py-2 text-sm rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-semibold hover:from-cyan-400 hover:to-blue-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] disabled:opacity-50 transition">
-        {loading ? "Lädt…" : "Aktualisieren"}
-      </button>
-
       {error && (
-        <div className="text-xs text-rose-300 bg-rose-950/40 border border-rose-700/50 rounded p-2">{error}</div>
+        <div className="mx-5 mb-4 text-[11px] p-2.5"
+             style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
       )}
 
       {selected && (
-        <div className="border-t border-slate-800 pt-4 space-y-2">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">Ausgewählt</div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full shrink-0" style={{
-              background: colourOf(selected),
-              boxShadow: `0 0 10px ${colourOf(selected)}`,
-            }} />
-            <span className="font-bold text-slate-100">{selected.name}</span>
+        <div className="px-5 py-5" style={{ borderTop: `1px solid ${RULE}` }}>
+          <div className="text-[10px] uppercase tracking-[0.25em] mb-2" style={{ color: TEXT_MUTED }}>
+            Ausgewählt
           </div>
-          <div className="text-xs text-slate-400 font-mono">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full" style={{ background: colourOf(selected) }} />
+            <span className="font-medium text-[15px]">{selected.name}</span>
+          </div>
+          <div className="text-[11px] font-mono" style={{ color: TEXT_MUTED }}>
             {selected.type} · {selected.mentions} Erwähnungen
             {selected.community_id && <> · {selected.community_id}</>}
           </div>
-          <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{selected.description}</p>
+          <p className="text-[13px] mt-3 leading-relaxed whitespace-pre-wrap">{selected.description}</p>
           {selected.community_id && communityById[selected.community_id] && (
-            <div className="mt-3 bg-slate-800/50 border border-slate-700/50 rounded p-2.5 text-xs">
-              <div className="font-semibold text-cyan-300 mb-1">Community {selected.community_id}</div>
-              <div className="text-slate-500 mb-1">Level {communityById[selected.community_id].level} · {communityById[selected.community_id].size} Mitglieder</div>
-              <div className="text-slate-300 leading-relaxed">{communityById[selected.community_id].summary}</div>
+            <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${RULE}` }}>
+              <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+                Community {selected.community_id}
+              </div>
+              <div className="text-[11px] mt-1 mb-2 font-mono" style={{ color: TEXT_MUTED }}>
+                Level {communityById[selected.community_id].level} · {communityById[selected.community_id].size} Mitglieder
+              </div>
+              <p className="text-[12px] leading-relaxed">{communityById[selected.community_id].summary}</p>
             </div>
           )}
         </div>
@@ -482,69 +505,58 @@ function LeftSidebar(props: {
 }
 
 
-// ─── HTML tooltip ──────────────────────────────────────────────────────────
+// ─── Tooltip (small, restrained, no glow) ───────────────────────────────────
 function NodeTooltip({ node, community, colour }: { node: FGNode; community: GraphCommunity | null; colour: string }) {
-  if (node.x == null || node.y == null) return null;
   return (
-    <div className="absolute z-20 pointer-events-none bottom-3 left-1/2 -translate-x-1/2
-                    bg-slate-900/95 backdrop-blur-md border-2 rounded-lg shadow-2xl p-3 max-w-md"
-         style={{ borderColor: colour, boxShadow: `0 0 20px ${colour}40` }}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-3 h-3 rounded-full" style={{ background: colour, boxShadow: `0 0 8px ${colour}` }} />
-        <span className="font-bold text-slate-100">{node.name}</span>
-        <span className="text-xs text-slate-500 font-mono ml-auto">{node.type}</span>
+    <div className="absolute z-20 pointer-events-none bottom-6 left-1/2 -translate-x-1/2 max-w-md p-3"
+         style={{ background: PAPER, border: `1px solid ${TEXT_INK}` }}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colour }} />
+        <span className="font-medium text-[13px]" style={{ color: TEXT_INK }}>{node.name}</span>
+        <span className="text-[10px] uppercase tracking-wider ml-auto" style={{ color: TEXT_MUTED }}>{node.type}</span>
       </div>
-      <div className="text-xs text-slate-400 mb-1.5">
-        {node.mentions} Erwähnungen
-        {community && <> · Community {community.id} ({community.size} Mitglieder)</>}
+      <div className="text-[11px] font-mono mb-1.5" style={{ color: TEXT_MUTED }}>
+        {node.mentions} Erwähnungen{community && <> · Community {community.id}</>}
       </div>
       {node.description && (
-        <p className="text-xs text-slate-300 leading-relaxed line-clamp-4">{node.description}</p>
+        <p className="text-[12px] leading-relaxed" style={{ color: TEXT_INK }}>{node.description}</p>
       )}
     </div>
   );
 }
 
 
-// ─── Animated star background ──────────────────────────────────────────────
-function StarField({ w, h }: { w: number; h: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = w; canvas.height = h;
-    const stars = Array.from({ length: 120 }, () => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      r: Math.random() * 1.2 + 0.2,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.01 + Math.random() * 0.02,
-    }));
-    let raf = 0;
-    let t = 0;
-    const draw = () => {
-      ctx.clearRect(0, 0, w, h);
-      for (const s of stars) {
-        const a = 0.3 + 0.5 * Math.abs(Math.sin(s.phase + t * s.speed));
-        ctx.fillStyle = `rgba(180,220,255,${a})`;
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-      }
-      t++;
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [w, h]);
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" style={{ width: w, height: h }} />;
+// ─── Small typographic helpers (Aicher: signage built on lockup grids) ─────
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between py-0.5">
+      <dt>{label}</dt><dd className="font-mono" style={{ color: TEXT_INK }}>{value}</dd>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="px-5 py-4" style={{ borderBottom: `1px solid ${RULE}` }}>
+      <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] uppercase tracking-wider" style={{ color: TEXT_MUTED }}>{children}</div>
+  );
 }
 
 
-// ─── SPARQL console (right panel) ──────────────────────────────────────────
+// ─── SPARQL console ────────────────────────────────────────────────────────
 const EXAMPLE_QUERIES: { label: string; sparql: string }[] = [
   {
-    label: "Alle als CEO/Founder/Designer typisierte Personen",
+    label: "Personen mit Rolle (CEO, Founder, Designer)",
     sparql: `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX apple: <http://uc5.butscher.cloud/apple#>
 SELECT DISTINCT ?name ?role WHERE {
@@ -555,7 +567,7 @@ SELECT DISTINCT ?name ?role WHERE {
   {
     label: "Subklassen-Inferenz: alle Smartphones",
     sparql: `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX apple: <http://uc5.butscher.cloud/apple#>
 SELECT DISTINCT ?name WHERE {
   ?p rdf:type/rdfs:subClassOf* apple:Smartphone ; rdfs:label ?name .
@@ -563,7 +575,7 @@ SELECT DISTINCT ?name WHERE {
   },
   {
     label: "Verteilung der Entitätstypen",
-    sparql: `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    sparql: `PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX apple: <http://uc5.butscher.cloud/apple#>
 SELECT ?type (COUNT(?s) AS ?anzahl) WHERE {
   ?s a ?type .
@@ -572,8 +584,9 @@ SELECT ?type (COUNT(?s) AS ?anzahl) WHERE {
   },
 ];
 
+
 function SparqlConsole({ onResults, nodeIds }: {
-  onResults: (matchedNodeIds: string[]) => void;
+  onResults: (matched: string[]) => void;
   nodeIds: Set<string>;
 }) {
   const [nlQuery, setNlQuery] = useState("");
@@ -601,20 +614,15 @@ function SparqlConsole({ onResults, nodeIds }: {
       const r = await api.sparqlExecute(sparql.trim());
       if (!r.ok) { setError(r.error || "Fehler"); return; }
       setResult(r.result);
-      // Highlight matching nodes on the graph by entity-URI
       const matched: string[] = [];
       const bindings = r.result?.results?.bindings || [];
       for (const b of bindings) {
         for (const v of Object.values(b) as any[]) {
           if (v?.type === "uri" && v.value.startsWith("http://uc5.butscher.cloud/apple#")) {
-            const uri = v.value;
-            // Find graph nodes whose id matches this URI. Our graph nodes' ids
-            // come from UE3 entity_key (TYPE:normalised_name); the UE4 URIs
-            // are PascalCase derivatives. Approximate match by name suffix.
-            const lastPart = uri.split("#")[1].toLowerCase();
+            const last = v.value.split("#")[1].toLowerCase();
             for (const id of nodeIds) {
               const idNorm = id.split(":")[1]?.replace(/\s+/g, "").toLowerCase();
-              if (idNorm && (idNorm === lastPart || lastPart.includes(idNorm) || idNorm.includes(lastPart))) {
+              if (idNorm && (idNorm === last || last.includes(idNorm) || idNorm.includes(last))) {
                 if (!matched.includes(id)) matched.push(id);
               }
             }
@@ -627,82 +635,98 @@ function SparqlConsole({ onResults, nodeIds }: {
   };
 
   return (
-    <aside className="w-[26rem] shrink-0 bg-slate-900/80 backdrop-blur-xl border-l border-cyan-500/20 flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-800 bg-gradient-to-r from-cyan-950/40 to-slate-900/40">
-        <div className="text-[10px] uppercase tracking-[0.3em] text-cyan-400">UE4 · Konsole</div>
-        <div className="font-bold text-slate-100">SPARQL Query</div>
+    <aside className="w-[30rem] shrink-0 flex flex-col"
+           style={{ background: PAPER, borderLeft: `1px solid ${RULE}`, color: TEXT_INK }}>
+      <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${RULE}` }}>
+        <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+          UE4 · Konsole
+        </div>
+        <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
+          SPARQL Query
+        </h2>
       </div>
 
-      <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1">
+      <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
         {/* NL → SPARQL */}
         <div>
-          <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
-            Frage in natürlicher Sprache
-          </label>
-          <div className="flex gap-2">
+          <Label>Frage in natürlicher Sprache</Label>
+          <div className="flex gap-2 mt-1.5">
             <input
               value={nlQuery}
               onChange={e => setNlQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && translate()}
-              placeholder="z.B. Wer sind die CEOs?"
-              className="flex-1 px-3 py-2 text-sm rounded bg-slate-950/70 border border-slate-700 placeholder-slate-500 text-slate-100 focus:outline-none focus:border-cyan-500 transition"
+              placeholder="Wer sind die CEOs?"
+              className="flex-1 px-0 py-2 text-[13px] bg-transparent focus:outline-none"
+              style={{ borderBottom: `1px solid ${RULE}`, color: TEXT_INK }}
+              onFocus={e => e.target.style.borderBottomColor = ACCENT}
+              onBlur={e => e.target.style.borderBottomColor = RULE}
             />
             <button onClick={translate} disabled={translating || !nlQuery.trim()}
-                    className="px-3 py-2 text-xs rounded bg-cyan-500/20 border border-cyan-500/50 text-cyan-200 hover:bg-cyan-500/30 disabled:opacity-50 transition font-mono whitespace-nowrap">
-              {translating ? "…" : "→ SPARQL"}
+                    className="px-3 py-1.5 text-[11px] uppercase tracking-wider transition disabled:opacity-30"
+                    style={{ border: `1px solid ${TEXT_INK}`, color: TEXT_INK }}
+                    onMouseEnter={e => { if (!translating && nlQuery.trim()) { e.currentTarget.style.background = TEXT_INK; e.currentTarget.style.color = PAPER; } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = TEXT_INK; }}>
+              {translating ? "…" : "Übersetzen"}
             </button>
           </div>
         </div>
 
         {/* Examples */}
         <div>
-          <details className="text-xs">
-            <summary className="cursor-pointer text-slate-400 hover:text-cyan-300 transition">
-              Beispielqueries (3)
-            </summary>
-            <div className="mt-2 space-y-1">
-              {EXAMPLE_QUERIES.map((ex, i) => (
-                <button key={i} onClick={() => setSparql(ex.sparql)}
-                        className="block w-full text-left px-2 py-1.5 rounded bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-200 transition">
-                  {ex.label}
-                </button>
-              ))}
-            </div>
-          </details>
+          <Label>Beispielqueries</Label>
+          <div className="mt-1.5 space-y-1">
+            {EXAMPLE_QUERIES.map((ex, i) => (
+              <button key={i} onClick={() => setSparql(ex.sparql)}
+                      className="block w-full text-left text-[12px] py-1.5 hover:opacity-100 transition"
+                      style={{ color: TEXT_MUTED, opacity: 0.85 }}
+                      onMouseEnter={e => e.currentTarget.style.color = ACCENT}
+                      onMouseLeave={e => e.currentTarget.style.color = TEXT_MUTED}>
+                <span className="font-mono mr-2" style={{ color: TEXT_INK }}>{(i + 1).toString().padStart(2, "0")}</span>
+                {ex.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* SPARQL editor */}
+        {/* Editor */}
         <div>
-          <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
-            SPARQL
-          </label>
+          <Label>SPARQL</Label>
           <textarea
             value={sparql}
             onChange={e => setSparql(e.target.value)}
             placeholder="SELECT ?s WHERE { ?s a apple:CEO } …"
             spellCheck={false}
-            className="w-full h-56 px-3 py-2 text-xs rounded bg-slate-950/80 border border-slate-700 text-cyan-100 font-mono leading-relaxed focus:outline-none focus:border-cyan-500 resize-none"
+            className="w-full h-56 mt-1.5 px-3 py-2.5 text-[12px] font-mono leading-relaxed focus:outline-none resize-none"
+            style={{ background: PAPER_SOFT, border: `1px solid ${RULE}`, color: TEXT_INK }}
+            onFocus={e => e.target.style.borderColor = TEXT_INK}
+            onBlur={e => e.target.style.borderColor = RULE}
           />
         </div>
 
         <div className="flex gap-2">
           <button onClick={execute} disabled={executing || !sparql.trim()}
-                  className="flex-1 px-3 py-2 text-sm rounded bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold hover:from-cyan-400 hover:to-blue-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 transition">
-            {executing ? "Läuft…" : "▶ Ausführen"}
+                  className="flex-1 px-4 py-2 text-[11px] uppercase tracking-wider transition disabled:opacity-30"
+                  style={{
+                    background: TEXT_INK, color: PAPER,
+                    border: `1px solid ${TEXT_INK}`,
+                  }}
+                  onMouseEnter={e => { if (!executing && sparql.trim()) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.borderColor = ACCENT; } }}
+                  onMouseLeave={e => { e.currentTarget.style.background = TEXT_INK; e.currentTarget.style.borderColor = TEXT_INK; }}>
+            {executing ? "Läuft …" : "Ausführen"}
           </button>
           <button onClick={() => { setSparql(""); setResult(null); setError(null); onResults([]); }}
-                  className="px-3 py-2 text-xs rounded bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 transition">
-            Reset
+                  className="px-3 py-2 text-[11px] uppercase tracking-wider hover:opacity-100 transition"
+                  style={{ color: TEXT_MUTED, opacity: 0.7 }}>
+            Zurücksetzen
           </button>
         </div>
 
         {error && (
-          <div className="text-xs text-rose-300 bg-rose-950/40 border border-rose-700/50 rounded p-2 font-mono break-all">{error}</div>
+          <div className="text-[12px] font-mono p-2.5 break-all"
+               style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
         )}
 
-        {result && (
-          <ResultTable result={result} />
-        )}
+        {result && <ResultTable result={result} />}
       </div>
     </aside>
   );
@@ -710,50 +734,52 @@ function SparqlConsole({ onResults, nodeIds }: {
 
 
 function ResultTable({ result }: { result: any }) {
-  const headVars = result?.head?.vars || [];
-  const bindings = result?.results?.bindings || [];
+  const headVars: string[] = result?.head?.vars || [];
+  const bindings: any[] = result?.results?.bindings || [];
   if (!Array.isArray(bindings)) {
-    // ASK results
     if (typeof result?.boolean === "boolean") {
       return (
-        <div className="bg-slate-950/80 border border-slate-700 rounded p-2 text-sm">
-          <span className="text-slate-400 mr-2">ASK:</span>
-          <span className={result.boolean ? "text-emerald-300 font-bold" : "text-rose-300 font-bold"}>
+        <div className="py-2" style={{ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }}>
+          <span className="text-[10px] uppercase tracking-wider mr-3" style={{ color: TEXT_MUTED }}>ASK</span>
+          <span className="font-mono text-[14px]"
+                style={{ color: result.boolean ? TEXT_INK : ACCENT }}>
             {String(result.boolean)}
           </span>
         </div>
       );
     }
-    return <div className="text-xs text-slate-400">(kein Tabellenergebnis)</div>;
+    return <div className="text-[11px]" style={{ color: TEXT_MUTED }}>(kein Tabellenergebnis)</div>;
   }
   return (
-    <div className="space-y-1.5">
-      <div className="text-[11px] text-slate-400">
-        <span className="text-cyan-300 font-mono">{bindings.length}</span> Treffer
+    <div className="space-y-2">
+      <div className="text-[10px] uppercase tracking-[0.2em]" style={{ color: TEXT_MUTED }}>
+        Ergebnis · <span className="font-mono" style={{ color: TEXT_INK }}>{bindings.length}</span> Zeilen
       </div>
-      <div className="overflow-x-auto bg-slate-950/80 border border-slate-700 rounded">
-        <table className="text-xs w-full">
+      {/* Tufte-style table: only horizontal hairlines, no vertical, sparse */}
+      <div className="overflow-x-auto" style={{ borderTop: `1px solid ${TEXT_INK}`, borderBottom: `1px solid ${TEXT_INK}` }}>
+        <table className="text-[12px] w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
-            <tr className="bg-slate-900/80">
-              {headVars.map((v: string) => (
-                <th key={v} className="text-left px-2 py-1.5 text-cyan-400 font-mono font-normal border-b border-slate-700">{v}</th>
+            <tr style={{ borderBottom: `1px solid ${RULE}` }}>
+              {headVars.map(v => (
+                <th key={v} className="text-left px-2 py-1.5 font-mono font-normal text-[10px] uppercase tracking-wider"
+                    style={{ color: TEXT_MUTED }}>{v}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {bindings.slice(0, 100).map((row: any, i: number) => (
-              <tr key={i} className="hover:bg-slate-900/50 transition">
-                {headVars.map((v: string) => {
+              <tr key={i}>
+                {headVars.map(v => {
                   const val = row[v];
-                  if (!val) return <td key={v} className="px-2 py-1 text-slate-600 border-b border-slate-800/50">—</td>;
+                  if (!val) return <td key={v} className="px-2 py-1" style={{ color: TEXT_MUTED }}>—</td>;
                   const display = val.type === "uri"
                     ? val.value.split(/[/#]/).pop()
                     : val.value;
                   return (
                     <td key={v}
                         title={val.value}
-                        className={"px-2 py-1 truncate max-w-[14rem] border-b border-slate-800/50 " +
-                          (val.type === "uri" ? "text-cyan-200 font-mono" : "text-slate-200")}>
+                        className={"px-2 py-1 truncate max-w-[16rem] " + (val.type === "uri" ? "font-mono" : "")}
+                        style={{ color: TEXT_INK }}>
                       {display}
                     </td>
                   );
@@ -761,7 +787,8 @@ function ResultTable({ result }: { result: any }) {
               </tr>
             ))}
             {bindings.length > 100 && (
-              <tr><td colSpan={headVars.length} className="text-center text-slate-500 py-1.5">… {bindings.length - 100} weitere</td></tr>
+              <tr><td colSpan={headVars.length} className="text-center text-[11px] py-1.5"
+                       style={{ color: TEXT_MUTED }}>… {bindings.length - 100} weitere</td></tr>
             )}
           </tbody>
         </table>
