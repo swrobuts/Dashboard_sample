@@ -43,11 +43,15 @@ log = logging.getLogger(__name__)
 VALID_TYPES = {"PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", "CONCEPT"}
 
 EXTRACTION_SYSTEM = (
-    "Du bist ein präziser Named-Entity- und Relations-Extraktor für ein "
-    "Knowledge-Graph-System. Du bekommst einen Textauszug aus dem deutschen "
-    "Wikipedia-Artikel über Apple. Extrahiere ausschließlich Entitäten und "
-    "Relationen, die im Text wörtlich oder klar erkennbar erwähnt werden. "
-    "Keine Halluzinationen, kein Allgemeinwissen. "
+    "Du bist ein gründlicher Named-Entity- und Relations-Extraktor für ein "
+    "Knowledge-Graph-System über das Unternehmen Apple. Sei VOLLSTÄNDIG: "
+    "extrahiere JEDE Person, jedes Produkt, jede Organisation und jeden "
+    "anderen relevanten Entity-Typ, der im Text erwähnt wird — auch wenn "
+    "nur in einem Nebensatz. Lieber zu vollständig als zu sparsam. "
+    "Halluziniere aber NICHTS dazu, was nicht im Text steht. "
+    "Bei Personen IMMER den vollen Namen verwenden (nicht nur Nachname), "
+    "und die Rolle in der Description nennen (z.B. CEO, Mitgründer, "
+    "Designer, Vorstand). "
     "Typen: PERSON, ORGANIZATION, PRODUCT, EVENT, LOCATION, CONCEPT. "
     "Antworte AUSSCHLIESSLICH mit gültigem JSON, ohne Codefence."
 )
@@ -57,17 +61,27 @@ EXTRACTION_TEMPLATE = """Auszug:
 {chunk_text}
 \"\"\"
 
-JSON-Schema:
+Beispiel — angenommen der Auszug wäre über die Apple-Gründung:
 {{
   "entities": [
-    {{"name": "Eigenname wie im Text", "type": "PERSON|ORGANIZATION|PRODUCT|EVENT|LOCATION|CONCEPT", "description": "1 Satz, ausschließlich basierend auf dem Auszug"}}
+    {{"name": "Steve Jobs", "type": "PERSON", "description": "Mitgründer von Apple und CEO von 1997 bis 2011"}},
+    {{"name": "Steve Wozniak", "type": "PERSON", "description": "Mitgründer von Apple, Entwickler des Apple I"}},
+    {{"name": "Ronald Wayne", "type": "PERSON", "description": "Dritter Mitgründer von Apple"}},
+    {{"name": "Apple", "type": "ORGANIZATION", "description": "1976 gegründetes Technologieunternehmen"}},
+    {{"name": "Apple I", "type": "PRODUCT", "description": "Erster Computer von Apple, 1976"}},
+    {{"name": "Cupertino", "type": "LOCATION", "description": "Hauptsitz von Apple in Kalifornien"}}
   ],
   "relations": [
-    {{"source": "Name aus entities", "target": "Name aus entities", "type": "kurze Verb-Phrase, z.B. GRUENDET, ARBEITET_FUER, ERSCHIEN_AM", "evidence": "knappes Zitat aus dem Auszug"}}
+    {{"source": "Steve Jobs", "target": "Apple", "type": "GRUENDET", "evidence": "Steve Jobs gründete Apple"}},
+    {{"source": "Steve Wozniak", "target": "Apple I", "type": "ENTWICKELT", "evidence": "Wozniak entwickelte den Apple I"}}
   ]
 }}
 
-Antworte nur mit dem JSON-Objekt."""
+Beachte: voller Name bei Personen ("Steve Jobs", nicht "Jobs"). Rolle in
+der Description ("CEO 1997-2011", "Mitgründer", "Designer"). JEDE im
+Text erwähnte Person als eigene Entity, auch wenn sie nur kurz vorkommt.
+
+Jetzt extrahiere alles aus dem obigen Auszug. Antworte nur mit JSON."""
 
 COMMUNITY_SYSTEM = (
     "Du beschreibst die gemeinsame Thematik einer Gruppe verwandter Entitäten "
@@ -175,6 +189,46 @@ def entity_key(name: str, type_: str) -> str:
     return f"{type_}:{normalize_entity_name(name)}"
 
 
+def _resolve_person_aliases(
+    entity_descriptions: dict[str, dict],
+    mention_counter: Counter[str],
+) -> dict[str, str]:
+    """Merge PERSON entities where one full name is a single-word subset of
+    another (e.g. "Wozniak" → "Steve Wozniak", "Jobs" → "Steve Jobs").
+    Returns {alias_key: canonical_key} mapping for callers to rewrite
+    relations. Modifies ``entity_descriptions`` and ``mention_counter``
+    in place: the alias rows are removed, their mention counts and any
+    longer description rolls into the canonical row.
+
+    Heuristic only — could over-merge if two unrelated persons share a
+    surname (rare in a single Wikipedia article on one company)."""
+    persons = sorted(
+        ((k, v) for k, v in entity_descriptions.items() if v["type"] == "PERSON"),
+        key=lambda kv: -len(kv[1]["name"]),  # longest name first → canonical
+    )
+    aliases: dict[str, str] = {}
+    for i, (long_key, long_v) in enumerate(persons):
+        if long_key in aliases:
+            continue
+        long_words = set(normalize_entity_name(long_v["name"]).split())
+        for short_key, short_v in persons[i + 1:]:
+            if short_key in aliases or short_key == long_key:
+                continue
+            short_norm = normalize_entity_name(short_v["name"])
+            if " " in short_norm:
+                continue  # only merge single-word names into multi-word ones
+            if short_norm in long_words:
+                aliases[short_key] = long_key
+                mention_counter[long_key] += mention_counter.get(short_key, 0)
+                mention_counter[short_key] = 0
+                # Prefer the longer description (more context)
+                if len(short_v["description"]) > len(long_v["description"]):
+                    long_v["description"] = short_v["description"]
+    for alias_key in aliases:
+        entity_descriptions.pop(alias_key, None)
+    return aliases
+
+
 # ── extraction loop ───────────────────────────────────────────────────────
 
 def _load_chunks() -> list[tuple[int, str, str | None]]:
@@ -249,8 +303,16 @@ def _write_to_neo4j(
     chunk_rows: list[tuple[int, str, str | None]],
     extractions: list[ChunkExtraction],
     entity_descriptions: dict[str, dict],
+    aliases: dict[str, str] | None = None,
 ) -> None:
-    """Write Chunk, Entity, MENTIONS and RELATED_TO into Neo4j in batches."""
+    """Write Chunk, Entity, MENTIONS and RELATED_TO into Neo4j in batches.
+    ``aliases`` maps merged extraction keys onto their canonical key so
+    MENTIONS/RELATED_TO edges land on the surviving Entity node."""
+    aliases = aliases or {}
+
+    def canon(k: str) -> str:
+        return aliases.get(k, k)
+
     with neo4j_session() as session:
         # Chunks
         session.run(
@@ -278,11 +340,12 @@ def _write_to_neo4j(
             rows=entity_rows,
         ).consume()
 
-        # MENTIONS edges
+        # MENTIONS edges — push through canonical-key map so merged aliases
+        # land on the surviving Entity node.
         mentions_rows = []
         for ext in extractions:
             for e in ext.entities:
-                mentions_rows.append({"cid": ext.chunk_id, "ekey": entity_key(e.name, e.type)})
+                mentions_rows.append({"cid": ext.chunk_id, "ekey": canon(entity_key(e.name, e.type))})
         if mentions_rows:
             session.run(
                 "UNWIND $rows AS r "
@@ -292,8 +355,7 @@ def _write_to_neo4j(
                 rows=mentions_rows,
             ).consume()
 
-        # RELATED_TO edges (undirected semantically, stored directed src→tgt;
-        # at query time we read both directions).
+        # RELATED_TO edges — also via canonical-key map.
         rel_rows = []
         for ext in extractions:
             name_to_type = {e.name: e.type for e in ext.entities}
@@ -302,9 +364,13 @@ def _write_to_neo4j(
                 tgt_type = name_to_type.get(r.target)
                 if not src_type or not tgt_type:
                     continue
+                src_key = canon(entity_key(r.source, src_type))
+                tgt_key = canon(entity_key(r.target, tgt_type))
+                if src_key == tgt_key:
+                    continue
                 rel_rows.append({
-                    "src": entity_key(r.source, src_type),
-                    "tgt": entity_key(r.target, tgt_type),
+                    "src": src_key,
+                    "tgt": tgt_key,
                     "type": r.type,
                     "ev": r.evidence,
                 })
@@ -431,7 +497,17 @@ def run_ue3_ingest(force: bool = False) -> UE3IngestStats:
             elif len(e.description) > len(existing["description"]):
                 existing["description"] = e.description
 
-    # Co-occurrence relation list (sum weights across chunks)
+    # ── Merge person aliases (e.g. "Wozniak" → "Steve Wozniak") ──
+    person_aliases = _resolve_person_aliases(entity_descriptions, mention_counter)
+    if person_aliases:
+        log.info("UE3 ingest: merged %d person aliases", len(person_aliases))
+
+    # Co-occurrence relation list (sum weights across chunks). Rewrites
+    # source/target through person_aliases so a relation "Wozniak →
+    # entwickelt → Apple I" lands on the canonical "Steve Wozniak" key.
+    def _canonical(k: str) -> str:
+        return person_aliases.get(k, k)
+
     rel_weights: defaultdict[tuple[str, str], int] = defaultdict(int)
     for ext in extractions:
         name_to_type = {e.name: e.type for e in ext.entities}
@@ -440,7 +516,7 @@ def run_ue3_ingest(force: bool = False) -> UE3IngestStats:
             tt = name_to_type.get(r.target)
             if not st or not tt:
                 continue
-            a, b = entity_key(r.source, st), entity_key(r.target, tt)
+            a, b = _canonical(entity_key(r.source, st)), _canonical(entity_key(r.target, tt))
             if a == b:
                 continue
             pair = (a, b) if a < b else (b, a)
@@ -452,7 +528,7 @@ def run_ue3_ingest(force: bool = False) -> UE3IngestStats:
     # ── Write Neo4j (wipe first when forcing) ──
     if force:
         _wipe_neo4j()
-    _write_to_neo4j(chunk_rows, extractions, entity_descriptions)
+    _write_to_neo4j(chunk_rows, extractions, entity_descriptions, aliases=person_aliases)
 
     # ── Community detection ──
     g = _build_networkx_graph(entity_descriptions, relations_unique)
