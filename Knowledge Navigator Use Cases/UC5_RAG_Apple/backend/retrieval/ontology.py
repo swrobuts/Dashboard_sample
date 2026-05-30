@@ -89,7 +89,7 @@ NL_TO_SPARQL_SYSTEM = (
     "Erklärung davor/danach."
 )
 
-NL_TO_SPARQL_TEMPLATE = """{ontology}
+_NL_TO_SPARQL_BODY = """__ONTOLOGY__
 
 DATEN-REALITÄTSCHECK (wichtig für die Query-Strategie):
 - Die meisten Beziehungen wurden ungenau extrahiert und liegen als
@@ -124,9 +124,17 @@ QUERY-STRATEGIE-REGELN (in dieser Reihenfolge probieren):
    - LIMIT 30 am Ende
    - PREFIX-Block am Anfang nicht vergessen (apple, rdf, rdfs, foaf, owl)
 
-Frage: {query}
+Frage: __QUERY__
 
 SPARQL:"""
+
+
+def _build_nl_to_sparql_prompt(query: str) -> str:
+    """Use literal placeholders + str.replace() so the curly braces in
+    SPARQL examples don't collide with Python's .format() syntax."""
+    return (_NL_TO_SPARQL_BODY
+            .replace("__ONTOLOGY__", ONTOLOGY_SUMMARY)
+            .replace("__QUERY__", query))
 
 
 class OntologyRAG:
@@ -179,9 +187,7 @@ class OntologyRAG:
     # ── internals ──────────────────────────────────────────────────────────
 
     def _generate_sparql(self, query: str) -> str:
-        prompt = NL_TO_SPARQL_TEMPLATE.format(
-            ontology=ONTOLOGY_SUMMARY, query=query,
-        )
+        prompt = _build_nl_to_sparql_prompt(query)
         try:
             raw, _u = self._chat.generate(NL_TO_SPARQL_SYSTEM, prompt)
         except Exception as exc:  # noqa: BLE001
