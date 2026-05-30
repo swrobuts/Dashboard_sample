@@ -14,6 +14,7 @@ All three return the standard ``RetrievalResult`` so /api/query and
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from backend.config import get_settings
@@ -26,6 +27,59 @@ from backend.retrieval.base import Chunk, RetrievalResult, SourceRef
 log = logging.getLogger(__name__)
 
 VALID_MODES = ("local", "global", "hybrid")
+
+# Tokens hinting that the user is asking about entities of a given type.
+# Keyed by type name; values are German trigger words (lowercased).
+_TYPE_HINTS: dict[str, tuple[str, ...]] = {
+    "PERSON": ("wer", "personen", "person", "mitarbeiter", "gründer", "ceo",
+               "vorstand", "manager", "chef", "designer", "entwickler"),
+    "PRODUCT": ("produkte", "produkt", "geräte", "gerät", "modell", "modelle",
+                "software", "hardware", "app", "apps"),
+    "ORGANIZATION": ("firma", "unternehmen", "konzern", "organisation",
+                     "tochterfirma", "tochterfirmen", "investor", "investoren"),
+    "EVENT": ("ereignis", "ereignisse", "veranstaltung", "event"),
+    "LOCATION": ("ort", "orte", "standort", "standorte", "stadt", "städte",
+                 "land", "länder", "region", "regionen"),
+    "CONCEPT": ("konzept", "konzepte", "technologie", "technologien"),
+}
+
+# Common German stopwords (small list — only what matters for keyword extraction).
+_STOPWORDS = {
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer", "einem", "einen", "eines",
+    "von", "vom", "zu", "zum", "zur", "in", "im", "an", "am", "auf", "für", "mit", "bei",
+    "wer", "was", "wann", "wie", "welche", "welches", "welcher", "alle", "alles", "jeder",
+    "ist", "sind", "war", "waren", "hat", "haben", "wird", "werden", "wurde", "wurden",
+    "und", "oder", "aber", "nicht", "ja", "nein", "diese", "dieses", "dieser", "diesen",
+    "nach", "vor", "über", "unter", "zwischen", "durch", "während", "seit", "bis",
+    "auch", "noch", "schon", "nur", "sehr", "mehr", "viele", "vieler", "vielen",
+    "bitte", "danke", "ich", "du", "er", "sie", "es", "wir", "ihr",
+}
+
+
+def extract_type_hints(query: str) -> list[str]:
+    """Return likely entity types the query is asking about, based on
+    German trigger words. Empty list means "no specific type — accept all"."""
+    q = query.lower()
+    hits: list[str] = []
+    for type_, words in _TYPE_HINTS.items():
+        if any(re.search(rf"\b{re.escape(w)}\b", q) for w in words):
+            hits.append(type_)
+    return hits
+
+
+def extract_keywords(query: str) -> list[str]:
+    """Pull keyword candidates from the query for ILIKE entity matching.
+    Filters out short tokens, digits, and a small German stopword list.
+    Lowercase return."""
+    tokens = re.findall(r"[A-Za-zÄÖÜäöüß]{3,}", query)
+    out: list[str] = []
+    for t in tokens:
+        tl = t.lower()
+        if tl in _STOPWORDS:
+            continue
+        if tl not in out:
+            out.append(tl)
+    return out[:8]   # cap so SQL doesn't explode
 
 
 class GraphRAG:
@@ -40,6 +94,13 @@ class GraphRAG:
     def retrieve(self, query: str, k: int | None = None) -> RetrievalResult:
         settings = get_settings()
         k = k or settings.ue3_top_k_chunks
+
+        # Parse the query first — drives both entity match (type hint) and
+        # the text-based ILIKE fallback for category questions like
+        # "Wer waren alle CEOs von Apple?" where instance-level embeddings
+        # (Steve Jobs, Tim Cook, …) don't semantically match the query.
+        type_hints = extract_type_hints(query)
+        keywords = extract_keywords(query)
 
         embedder = get_embedding_llm()
         t0 = time.perf_counter()
@@ -56,7 +117,12 @@ class GraphRAG:
 
         if self._mode in ("local", "hybrid"):
             t0 = time.perf_counter()
-            local_chunks, matched_entities = _local_retrieve(query_emb, k=k)
+            local_chunks, matched_entities = _local_retrieve(
+                query_emb=query_emb,
+                keywords=keywords,
+                type_hints=type_hints,
+                k=k,
+            )
             t_local = (time.perf_counter() - t0) * 1000
 
         if self._mode in ("global", "hybrid"):
@@ -101,9 +167,11 @@ class GraphRAG:
             "embed_ms": round(embed_ms, 1),
             "local_ms": round(t_local, 1),
             "global_ms": round(t_global, 1),
+            "query_keywords": keywords,
+            "query_type_hints": type_hints,
             "matched_entities": [
                 {"key": e["entity_key"], "name": e["name"], "type": e["type"],
-                 "distance": round(e["distance"], 4)}
+                 "distance": round(e["distance"], 4), "source": e.get("source", "?")}
                 for e in matched_entities
             ],
             "matched_communities": [
@@ -121,22 +189,58 @@ class GraphRAG:
 # ── local ──────────────────────────────────────────────────────────────────
 
 def _local_retrieve(
-    query_emb: list[float],
     *,
+    query_emb: list[float],
+    keywords: list[str],
+    type_hints: list[str],
     k: int,
 ) -> tuple[list[dict], list[dict]]:
-    """Entity match → 1-hop expand → collect MENTIONS chunks → cap k."""
+    """Entity match (embedding + text) → 1-hop expand → MENTIONS chunks.
+
+    Two retrievers, results unioned and deduped:
+    1. Embedding cosine over ue3.entity_summary — semantic match.
+    2. ILIKE on entity name + description, filtered by type hint if present —
+       catches category questions like "wer sind die CEOs" where embeddings
+       don't bridge query→instance.
+    """
     settings = get_settings()
+    n_each = settings.ue3_top_k_entities
     with session_scope() as session:
-        entity_matches = repo.topk_entities_by_embedding(
-            session, query_emb, settings.ue3_top_k_entities,
+        emb_matches = repo.topk_entities_by_embedding(session, query_emb, n_each)
+        text_matches = repo.topk_entities_by_text(
+            session, keywords, n_each, type_filter=type_hints,
         )
+
+    # Combine: text matches first (they're usually more on-topic for
+    # category questions), then embedding matches. Dedupe by entity_key.
+    seen: set[str] = set()
+    entity_matches: list[repo.EntityMatch] = []
+    source_by_key: dict[str, str] = {}
+    for e in text_matches:
+        if e.entity_key in seen:
+            continue
+        seen.add(e.entity_key)
+        source_by_key[e.entity_key] = "text"
+        entity_matches.append(e)
+    for e in emb_matches:
+        if e.entity_key in seen:
+            continue
+        seen.add(e.entity_key)
+        source_by_key[e.entity_key] = "embedding"
+        entity_matches.append(e)
+
+    # If a type hint was given, prefer matching entities of that type at the
+    # top of the list (without dropping the others — they may still help).
+    if type_hints:
+        entity_matches.sort(key=lambda e: (e.type not in type_hints, 0))
+
     if not entity_matches:
         return [], []
 
     matched_dicts = [
         {"entity_key": e.entity_key, "name": e.name, "type": e.type,
-         "description": e.description, "distance": e.distance}
+         "description": e.description, "distance": e.distance,
+         "source": source_by_key.get(e.entity_key, "?")}
         for e in entity_matches
     ]
 

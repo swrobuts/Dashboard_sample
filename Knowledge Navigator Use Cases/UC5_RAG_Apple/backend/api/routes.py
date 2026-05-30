@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 
 from backend.api.schemas import (
     CompareRequest,

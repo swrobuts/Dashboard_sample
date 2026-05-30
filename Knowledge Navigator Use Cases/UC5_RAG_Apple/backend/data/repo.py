@@ -489,6 +489,57 @@ def topk_entities_by_embedding(
     ]
 
 
+def topk_entities_by_text(
+    session: Session,
+    keywords: Sequence[str],
+    k: int,
+    type_filter: Sequence[str] | None = None,
+) -> list[EntityMatch]:
+    """Case-insensitive substring search on entity name+description.
+    Catches role/category words ("CEO", "Vorstand", "Gründer") that the
+    embedding-based search misses when the query asks about a category but
+    the graph stores instances (Steve Jobs, Tim Cook, …).
+
+    Returns rows sorted by mention_count desc (most-referenced first) with a
+    fixed pseudo-distance of 0.5 so the caller can blend with embedding hits.
+    """
+    if not keywords:
+        return []
+    params: dict[str, object] = {"k": k}
+    name_conds = []
+    desc_conds = []
+    for i, w in enumerate(keywords):
+        params[f"kw{i}"] = f"%{w}%"
+        name_conds.append(f"name ILIKE :kw{i}")
+        desc_conds.append(f"description ILIKE :kw{i}")
+    where_keyword = "(" + " OR ".join(name_conds + desc_conds) + ")"
+    where_type = ""
+    if type_filter:
+        types_csv = ", ".join(f":t{i}" for i in range(len(type_filter)))
+        for i, t in enumerate(type_filter):
+            params[f"t{i}"] = t
+        where_type = f" AND type IN ({types_csv})"
+    rows = session.execute(
+        text(
+            f"SELECT entity_key, name, type, description "
+            f"FROM ue3.entity_summary "
+            f"WHERE {where_keyword}{where_type} "
+            f"ORDER BY mention_count DESC LIMIT :k"
+        ),
+        params,
+    ).mappings().all()
+    return [
+        EntityMatch(
+            entity_key=r["entity_key"],
+            name=r["name"],
+            type=r["type"],
+            description=r["description"],
+            distance=0.5,
+        )
+        for r in rows
+    ]
+
+
 @dataclass
 class CommunityMatch:
     community_id: str
