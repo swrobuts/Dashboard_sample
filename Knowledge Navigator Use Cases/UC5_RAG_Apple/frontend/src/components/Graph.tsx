@@ -767,24 +767,40 @@ export function Graph() {
             // a glance without colour overload. Updated every frame to
             // follow the simulation. ─────────────────────────────────────
             onRenderFramePre={(ctx, scale) => {
-              // ─── Concentric layout: draw the ring guides + labels.
-              //     Without these the rings exist mathematically but the
-              //     eye can't see the structure — just a punctured cloud.
+              // ─── Concentric layout: tinted annular bands + ring
+              //     guides + labels. Each ring band is filled with its
+              //     type colour at ~7% alpha — gives the layout the
+              //     layered-target depth that pure circles alone lack,
+              //     while staying inside the Aicher restraint budget.
               if (layout === "concentric") {
                 const types = RING_ORDER.filter(t =>
                   graphData.nodes.some(n => n.type === t && !/^Apple/i.test(n.name))
                 );
                 const inner = 90, step = 60;
+                // Pass 1: filled annular bands, drawn outside-in so the
+                // wider outer ring doesn't paint over the inner ones.
+                for (let ti = types.length - 1; ti >= 0; ti--) {
+                  const r = inner + ti * step;
+                  const colour = TYPE_COLORS[types[ti]] || DEFAULT_COLOR;
+                  const bandOuter = r + step / 2;
+                  const bandInner = Math.max(0, r - step / 2);
+                  // Annulus = outer disc minus inner disc (even-odd /
+                  // counter-clockwise inner arc punches the hole).
+                  ctx.beginPath();
+                  ctx.arc(0, 0, bandOuter, 0, Math.PI * 2);
+                  ctx.arc(0, 0, bandInner, 0, Math.PI * 2, true);
+                  ctx.fillStyle = colour + "12"; // ~7% alpha
+                  ctx.fill();
+                }
+                // Pass 2: ring guide lines + labels on top of the bands
                 for (let ti = 0; ti < types.length; ti++) {
                   const r = inner + ti * step;
                   const colour = TYPE_COLORS[types[ti]] || DEFAULT_COLOR;
-                  // Faint ring line
                   ctx.beginPath();
                   ctx.arc(0, 0, r, 0, Math.PI * 2);
-                  ctx.strokeStyle = colour + "33";  // ~20% alpha
+                  ctx.strokeStyle = colour + "44";  // ~27% alpha hairline
                   ctx.lineWidth = 0.6 / scale;
                   ctx.stroke();
-                  // Ring label at the top (12 o'clock)
                   const fs = 11 / scale;
                   ctx.font = `${fs}px Inter, ui-sans-serif`;
                   ctx.textAlign = "center";
