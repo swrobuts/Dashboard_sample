@@ -27,8 +27,10 @@ from backend.data.wikipedia_loader import fetch_article
 from backend.evaluation.judge import judge_answers
 from backend.ingest.ue1_simple import run_ue1_ingest
 from backend.ingest.ue2_pageindex import run_ue2_ingest
+from backend.ingest.ue3_graphrag import run_ue3_ingest
 from backend.llm.factory import get_chat_llm
 from backend.retrieval.base import RetrievalResult
+from backend.retrieval.graphrag import GraphRAG
 from backend.retrieval.pageindex import PageIndexRAG
 from backend.retrieval.simple import SimpleRAG
 
@@ -37,6 +39,99 @@ router = APIRouter()
 
 
 # ── Health & metadata ─────────────────────────────────────────────────────
+
+@router.get("/graph")
+def graph(
+    min_mentions: int = 1,
+    types: str | None = None,
+    limit_entities: int = 250,
+) -> dict:
+    """Return the UE3 knowledge graph as a JSON node-and-edge document for the
+    frontend's force-directed visualisation.
+
+    Filters:
+      - ``min_mentions``: drop entities with fewer than this many MENTIONS edges.
+      - ``types``: comma-separated whitelist (e.g. "PERSON,PRODUCT"); empty = all.
+      - ``limit_entities``: hard cap so the browser doesn't choke on huge graphs.
+    """
+    type_filter = None
+    if types:
+        type_filter = {t.strip().upper() for t in types.split(",") if t.strip()}
+
+    # Pull entities + their community membership + mention count from Postgres
+    # (faster than Neo4j for the metadata side).
+    with session_scope() as session:
+        ent_rows = session.execute(
+            text(
+                "SELECT entity_key, name, type, description, mention_count "
+                "FROM ue3.entity_summary "
+                "WHERE mention_count >= :m "
+                "ORDER BY mention_count DESC "
+                "LIMIT :lim"
+            ),
+            {"m": min_mentions, "lim": limit_entities},
+        ).mappings().all()
+        comm_rows = session.execute(
+            text(
+                "SELECT community_id, level, size, summary, entity_keys "
+                "FROM ue3.community_summary"
+            )
+        ).mappings().all()
+
+    if type_filter is not None:
+        ent_rows = [r for r in ent_rows if r["type"] in type_filter]
+
+    keep_keys = {r["entity_key"] for r in ent_rows}
+    if not keep_keys:
+        return {"nodes": [], "edges": [], "communities": []}
+
+    # Pull RELATED_TO edges between kept entities from Neo4j.
+    from backend.data.neo4j_client import neo4j_session
+    with neo4j_session() as session:
+        rel_rows = session.run(
+            "MATCH (a:Entity)-[r:RELATED_TO]->(b:Entity) "
+            "WHERE a.id IN $keys AND b.id IN $keys "
+            "RETURN a.id AS src, b.id AS tgt, r.type AS type, r.weight AS weight",
+            keys=list(keep_keys),
+        ).data()
+
+    # Build community lookup: entity_key → community_id (first containing community).
+    entity_to_community: dict[str, str] = {}
+    for c in comm_rows:
+        for k in (c["entity_keys"] or []):
+            entity_to_community.setdefault(k, c["community_id"])
+
+    nodes = [
+        {
+            "id": r["entity_key"],
+            "name": r["name"],
+            "type": r["type"],
+            "description": r["description"],
+            "mentions": int(r["mention_count"]),
+            "community_id": entity_to_community.get(r["entity_key"]),
+        }
+        for r in ent_rows
+    ]
+    edges = [
+        {
+            "source": row["src"],
+            "target": row["tgt"],
+            "type": row["type"],
+            "weight": int(row.get("weight") or 1),
+        }
+        for row in rel_rows
+    ]
+    communities = [
+        {
+            "id": c["community_id"],
+            "level": int(c["level"]),
+            "size": int(c["size"]),
+            "summary": c["summary"],
+        }
+        for c in comm_rows
+    ]
+    return {"nodes": nodes, "edges": edges, "communities": communities}
+
 
 @router.get("/health")
 def health() -> dict:
@@ -65,7 +160,7 @@ def snapshot() -> dict:
 
 @router.get("/strategies")
 def strategies() -> dict:
-    implemented = {"ue1", "ue2"}
+    implemented = {"ue1", "ue2", "ue3"}
     out = {}
     for s in ("ue1", "ue2", "ue3"):
         with session_scope() as session:
@@ -74,8 +169,8 @@ def strategies() -> dict:
                 count = repo.ue1_chunk_count(session)
             elif s == "ue2":
                 count = repo.ue2_tree_node_count(session)
-            else:
-                count = 0
+            else:  # ue3
+                count = repo.ue3_entity_count(session)
         if run and run.get("started_at"):
             run["started_at"] = run["started_at"].isoformat()
         if run and run.get("finished_at"):
@@ -83,7 +178,7 @@ def strategies() -> dict:
         out[s] = {
             "ingested": (run is not None and run.get("status") == "ok"),
             "implemented": s in implemented,
-            "chunk_count": count,   # "chunks" for UE1, "nodes" for UE2 — same field for UI simplicity
+            "chunk_count": count,   # chunks (ue1) | tree nodes (ue2) | entities (ue3)
             "last_run": run,
         }
     return {"strategies": out}
@@ -116,6 +211,16 @@ def _run_ingest_with_record(strategy: str, run_id: int, force: bool) -> None:
                 "llm_calls": s.llm_calls,
                 "duration_ms": s.duration_ms,
             }
+        elif strategy == "ue3":
+            s = run_ue3_ingest(force=force)
+            stats = {
+                "chunks_processed": s.chunks_processed,
+                "entities_unique": s.entities_unique,
+                "relations_unique": s.relations_unique,
+                "communities": s.communities,
+                "llm_calls": s.llm_calls,
+                "duration_ms": s.duration_ms,
+            }
         else:
             raise ValueError(f"Strategy {strategy!r} not implemented")
         with session_scope() as session:
@@ -128,7 +233,7 @@ def _run_ingest_with_record(strategy: str, run_id: int, force: bool) -> None:
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest) -> dict:
-    if req.strategy not in ("ue1", "ue2"):
+    if req.strategy not in ("ue1", "ue2", "ue3"):
         raise HTTPException(status_code=400, detail=f"Strategy {req.strategy} not implemented yet")
     if _ingest_lock.locked():
         raise HTTPException(status_code=409, detail="Another ingest is already running")
@@ -201,6 +306,8 @@ def _get_strategy(name: str, llm: str):
         return SimpleRAG(llm_provider=llm)
     if name == "ue2":
         return PageIndexRAG(llm_provider=llm)
+    if name == "ue3":
+        return GraphRAG(llm_provider=llm)
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")
 
 
@@ -277,7 +384,7 @@ async def compare(req: CompareRequest) -> CompareResponse:
     seen: set[str] = set()
     strategies = [s for s in req.strategies if not (s in seen or seen.add(s))]
     for s in strategies:
-        if s not in ("ue1", "ue2"):
+        if s not in ("ue1", "ue2", "ue3"):
             raise HTTPException(400, f"Strategy {s!r} not implemented yet")
 
     t0 = time.perf_counter()

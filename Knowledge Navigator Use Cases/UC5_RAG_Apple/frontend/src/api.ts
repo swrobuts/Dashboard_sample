@@ -97,7 +97,44 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(j) as Promise<CompareResponse>,
+  graph: (params?: { min_mentions?: number; types?: string; limit_entities?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.min_mentions != null) q.set("min_mentions", String(params.min_mentions));
+    if (params?.types) q.set("types", params.types);
+    if (params?.limit_entities != null) q.set("limit_entities", String(params.limit_entities));
+    const url = "/api/graph" + (q.toString() ? `?${q.toString()}` : "");
+    return fetch(url).then(j) as Promise<GraphPayload>;
+  },
 };
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  mentions: number;
+  community_id: string | null;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+}
+
+export interface GraphCommunity {
+  id: string;
+  level: number;
+  size: number;
+  summary: string;
+}
+
+export interface GraphPayload {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  communities: GraphCommunity[];
+}
 
 export interface StreamHandlers {
   onMeta: (meta: { sources: Source[]; trace: Record<string, unknown> }) => void;
