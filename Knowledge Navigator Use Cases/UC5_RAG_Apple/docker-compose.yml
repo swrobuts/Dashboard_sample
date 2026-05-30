@@ -19,6 +19,26 @@ services:
       timeout: 3s
       retries: 10
 
+  uc5-neo4j:
+    # Renamed from "neo4j" to avoid clashing with the existing system Neo4j
+    # already running on root_default. Not exposed publicly via Traefik —
+    # the app talks to it on the internal Docker network only.
+    image: neo4j:5.24-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 1G
+    volumes:
+      - uc5_neo4jdata:/data
+    networks:
+      - traefik_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:7474 > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   app:
     build:
       context: .
@@ -27,8 +47,11 @@ services:
     env_file: .env
     environment:
       POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@db:5432/${POSTGRES_DB:-rag_apple}
+      NEO4J_URL: bolt://uc5-neo4j:7687
     depends_on:
       db:
+        condition: service_healthy
+      uc5-neo4j:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
@@ -51,6 +74,7 @@ services:
 
 volumes:
   pgdata:
+  uc5_neo4jdata:
 
 networks:
   traefik_net:

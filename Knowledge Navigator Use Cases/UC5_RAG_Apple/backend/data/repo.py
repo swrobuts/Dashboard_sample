@@ -388,6 +388,138 @@ def ue2_children_of(session: Session, parent_id: int) -> list[TreeNode]:
     return [_row_to_tree_node(r) for r in rows]
 
 
+# ── ue3: entity & community summaries ──────────────────────────────────────
+
+def delete_ue3_summaries(session: Session) -> None:
+    session.execute(text("TRUNCATE TABLE ue3.entity_summary, ue3.community_summary"))
+
+
+def upsert_entity_summary(
+    session: Session,
+    *,
+    entity_key: str,
+    name: str,
+    type_: str,
+    description: str,
+    mention_count: int,
+    embedding: list[float],
+) -> None:
+    session.execute(
+        text(
+            "INSERT INTO ue3.entity_summary "
+            "(entity_key, name, type, description, mention_count, embedding) "
+            "VALUES (:k, :n, :t, :d, :m, :e) "
+            "ON CONFLICT (entity_key) DO UPDATE SET "
+            "  name = EXCLUDED.name, "
+            "  type = EXCLUDED.type, "
+            "  description = EXCLUDED.description, "
+            "  mention_count = EXCLUDED.mention_count, "
+            "  embedding = EXCLUDED.embedding"
+        ),
+        {"k": entity_key, "n": name, "t": type_, "d": description,
+         "m": mention_count, "e": str(embedding)},
+    )
+
+
+def upsert_community_summary(
+    session: Session,
+    *,
+    community_id: str,
+    level: int,
+    size: int,
+    summary: str,
+    entity_keys: list[str],
+    embedding: list[float],
+) -> None:
+    session.execute(
+        text(
+            "INSERT INTO ue3.community_summary "
+            "(community_id, level, size, summary, entity_keys, embedding) "
+            "VALUES (:id, :l, :s, :sum, :keys, :e) "
+            "ON CONFLICT (community_id) DO UPDATE SET "
+            "  level = EXCLUDED.level, "
+            "  size = EXCLUDED.size, "
+            "  summary = EXCLUDED.summary, "
+            "  entity_keys = EXCLUDED.entity_keys, "
+            "  embedding = EXCLUDED.embedding"
+        ),
+        {"id": community_id, "l": level, "s": size, "sum": summary,
+         "keys": entity_keys, "e": str(embedding)},
+    )
+
+
+def ue3_entity_count(session: Session) -> int:
+    return int(session.execute(text("SELECT COUNT(*) FROM ue3.entity_summary")).scalar() or 0)
+
+
+def ue3_community_count(session: Session) -> int:
+    return int(session.execute(text("SELECT COUNT(*) FROM ue3.community_summary")).scalar() or 0)
+
+
+@dataclass
+class EntityMatch:
+    entity_key: str
+    name: str
+    type: str
+    description: str
+    distance: float
+
+
+def topk_entities_by_embedding(
+    session: Session, query_embedding: Sequence[float], k: int,
+) -> list[EntityMatch]:
+    rows = session.execute(
+        text(
+            "SELECT entity_key, name, type, description, "
+            "       embedding <=> CAST(:q AS vector) AS distance "
+            "FROM ue3.entity_summary "
+            "ORDER BY distance ASC LIMIT :k"
+        ),
+        {"q": str(list(query_embedding)), "k": k},
+    ).mappings().all()
+    return [
+        EntityMatch(
+            entity_key=r["entity_key"],
+            name=r["name"],
+            type=r["type"],
+            description=r["description"],
+            distance=float(r["distance"]),
+        )
+        for r in rows
+    ]
+
+
+@dataclass
+class CommunityMatch:
+    community_id: str
+    level: int
+    summary: str
+    distance: float
+
+
+def topk_communities_by_embedding(
+    session: Session, query_embedding: Sequence[float], k: int,
+) -> list[CommunityMatch]:
+    rows = session.execute(
+        text(
+            "SELECT community_id, level, summary, "
+            "       embedding <=> CAST(:q AS vector) AS distance "
+            "FROM ue3.community_summary "
+            "ORDER BY distance ASC LIMIT :k"
+        ),
+        {"q": str(list(query_embedding)), "k": k},
+    ).mappings().all()
+    return [
+        CommunityMatch(
+            community_id=r["community_id"],
+            level=int(r["level"]),
+            summary=r["summary"],
+            distance=float(r["distance"]),
+        )
+        for r in rows
+    ]
+
+
 def latest_document_id_for_url(session: Session, url: str) -> int | None:
     """Walk raw → clean to find the document for the most recent snapshot."""
     row = session.execute(

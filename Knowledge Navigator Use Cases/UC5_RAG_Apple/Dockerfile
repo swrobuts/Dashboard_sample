@@ -27,5 +27,5 @@ COPY --from=frontend /fe/dist /app/backend/static
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
-# Apply migrations on every container start (idempotent), then serve.
-CMD ["sh", "-c", "python -m backend.data.migrate && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+# Apply migrations (Postgres + Neo4j, both idempotent), then serve.
+CMD ["sh", "-c", "python -m backend.data.migrate && python -m backend.data.neo4j_client && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

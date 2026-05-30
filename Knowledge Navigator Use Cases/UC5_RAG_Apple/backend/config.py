@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     pipeline_mmr_enabled: bool = Field(default=True)
     pipeline_mmr_lambda: float = Field(default=0.7)  # 1.0 = relevance only, 0.0 = diversity only
 
+    # UE3 — GraphRAG
+    ue3_top_k_entities: int = Field(default=8)     # how many entities to surface per query (local mode)
+    ue3_top_k_communities: int = Field(default=3)  # global mode
+    ue3_top_k_chunks: int = Field(default=8)
+    ue3_default_mode: str = Field(default="hybrid")  # local | global | hybrid
+    ue3_max_chunks_per_entity: int = Field(default=4)  # cap how many MENTIONS chunks per matched entity
+
 
 @lru_cache
 def get_settings() -> Settings:

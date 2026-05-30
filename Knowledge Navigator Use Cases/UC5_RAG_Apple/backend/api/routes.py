@@ -20,6 +20,7 @@ from backend.api.schemas import (
 )
 from backend.config import get_settings
 from backend.data import repo
+from backend.data.neo4j_client import ping as neo4j_ping
 from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
@@ -43,6 +44,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "db_ok": pg_ping(),
+        "neo4j_ok": neo4j_ping(),
         "gemini_configured": bool(settings.gemini_api_key),
         "local_llm_url": settings.local_llm_url,
         "wikipedia_url": settings.wikipedia_url,
