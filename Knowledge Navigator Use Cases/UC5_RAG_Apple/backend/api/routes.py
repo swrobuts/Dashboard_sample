@@ -137,6 +137,20 @@ def graph(
     return {"nodes": nodes, "edges": edges, "communities": communities}
 
 
+@router.post("/sparql")
+def sparql(body: dict) -> dict:
+    """Debug/teaching endpoint: send a raw SPARQL query against the UE4
+    GraphDB repo and get the JSON results back. Bypasses the LLM."""
+    from backend.data import graphdb_client
+    q = (body.get("query") or "").strip()
+    if not q:
+        raise HTTPException(400, "missing 'query' field")
+    try:
+        return {"ok": True, "result": graphdb_client.select(q)}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @router.get("/health")
 def health() -> dict:
     settings = get_settings()
