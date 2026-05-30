@@ -1,4 +1,4 @@
-export type Strategy = "ue1" | "ue2" | "ue3";
+export type Strategy = "ue1" | "ue2" | "ue3" | "ue4";
 export type LLMProvider = "gemini" | "local";
 
 export interface Source {

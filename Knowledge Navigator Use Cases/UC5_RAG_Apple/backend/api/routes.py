@@ -21,6 +21,7 @@ from backend.api.schemas import (
 )
 from backend.config import get_settings
 from backend.data import repo
+from backend.data.graphdb_client import ping as graphdb_ping
 from backend.data.neo4j_client import ping as neo4j_ping
 from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
@@ -29,9 +30,11 @@ from backend.evaluation.judge import judge_answers
 from backend.ingest.ue1_simple import run_ue1_ingest
 from backend.ingest.ue2_pageindex import run_ue2_ingest
 from backend.ingest.ue3_graphrag import run_ue3_ingest
+from backend.ingest.ue4_ontology import run_ue4_ingest
 from backend.llm.factory import get_chat_llm
 from backend.retrieval.base import RetrievalResult
 from backend.retrieval.graphrag import GraphRAG
+from backend.retrieval.ontology import OntologyRAG
 from backend.retrieval.pageindex import PageIndexRAG
 from backend.retrieval.simple import SimpleRAG
 
@@ -141,6 +144,7 @@ def health() -> dict:
         "status": "ok",
         "db_ok": pg_ping(),
         "neo4j_ok": neo4j_ping(),
+        "graphdb_ok": graphdb_ping(),
         "gemini_configured": bool(settings.gemini_api_key),
         "local_llm_url": settings.local_llm_url,
         "wikipedia_url": settings.wikipedia_url,
@@ -161,17 +165,22 @@ def snapshot() -> dict:
 
 @router.get("/strategies")
 def strategies() -> dict:
-    implemented = {"ue1", "ue2", "ue3"}
+    implemented = {"ue1", "ue2", "ue3", "ue4"}
     out = {}
-    for s in ("ue1", "ue2", "ue3"):
+    for s in ("ue1", "ue2", "ue3", "ue4"):
         with session_scope() as session:
             run = repo.latest_ingest_run(session, s)
             if s == "ue1":
                 count = repo.ue1_chunk_count(session)
             elif s == "ue2":
                 count = repo.ue2_tree_node_count(session)
-            else:  # ue3
+            elif s == "ue3":
                 count = repo.ue3_entity_count(session)
+            else:  # ue4 — triples in GraphDB (cheap to query)
+                try:
+                    count = graphdb_triple_count()
+                except Exception:  # noqa: BLE001
+                    count = 0
         if run and run.get("started_at"):
             run["started_at"] = run["started_at"].isoformat()
         if run and run.get("finished_at"):
@@ -179,10 +188,15 @@ def strategies() -> dict:
         out[s] = {
             "ingested": (run is not None and run.get("status") == "ok"),
             "implemented": s in implemented,
-            "chunk_count": count,   # chunks (ue1) | tree nodes (ue2) | entities (ue3)
+            "chunk_count": count,   # chunks(ue1) | nodes(ue2) | entities(ue3) | triples(ue4)
             "last_run": run,
         }
     return {"strategies": out}
+
+
+def graphdb_triple_count() -> int:
+    from backend.data.graphdb_client import count_triples
+    return count_triples()
 
 
 # ── Ingest ─────────────────────────────────────────────────────────────────
@@ -222,6 +236,16 @@ def _run_ingest_with_record(strategy: str, run_id: int, force: bool) -> None:
                 "llm_calls": s.llm_calls,
                 "duration_ms": s.duration_ms,
             }
+        elif strategy == "ue4":
+            s = run_ue4_ingest(force=force)
+            stats = {
+                "entities_typed": s.entities_typed,
+                "relations_inserted": s.relations_inserted,
+                "sameas_links": s.sameas_links,
+                "llm_calls": s.llm_calls,
+                "triples_after": s.triples_after,
+                "duration_ms": s.duration_ms,
+            }
         else:
             raise ValueError(f"Strategy {strategy!r} not implemented")
         with session_scope() as session:
@@ -234,7 +258,7 @@ def _run_ingest_with_record(strategy: str, run_id: int, force: bool) -> None:
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest) -> dict:
-    if req.strategy not in ("ue1", "ue2", "ue3"):
+    if req.strategy not in ("ue1", "ue2", "ue3", "ue4"):
         raise HTTPException(status_code=400, detail=f"Strategy {req.strategy} not implemented yet")
     if _ingest_lock.locked():
         raise HTTPException(status_code=409, detail="Another ingest is already running")
@@ -309,6 +333,8 @@ def _get_strategy(name: str, llm: str):
         return PageIndexRAG(llm_provider=llm)
     if name == "ue3":
         return GraphRAG(llm_provider=llm)
+    if name == "ue4":
+        return OntologyRAG(llm_provider=llm)
     raise HTTPException(400, f"Strategy {name!r} not implemented yet")
 
 
@@ -385,7 +411,7 @@ async def compare(req: CompareRequest) -> CompareResponse:
     seen: set[str] = set()
     strategies = [s for s in req.strategies if not (s in seen or seen.add(s))]
     for s in strategies:
-        if s not in ("ue1", "ue2", "ue3"):
+        if s not in ("ue1", "ue2", "ue3", "ue4"):
             raise HTTPException(400, f"Strategy {s!r} not implemented yet")
 
     t0 = time.perf_counter()

@@ -26,6 +26,10 @@ tiktoken==0.8.0
 neo4j==5.27.0
 networkx==3.4.2
 
+# RDF / SPARQL (UE4)
+rdflib==7.1.1
+SPARQLWrapper==2.0.0
+
 # Dev / Test
 pytest==8.3.4
 pytest-asyncio==0.25.0

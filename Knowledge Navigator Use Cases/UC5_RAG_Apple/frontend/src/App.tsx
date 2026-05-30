@@ -11,6 +11,7 @@ const STRATEGIES: { id: Strategy; label: string; subtitle: string }[] = [
   { id: "ue1", label: "UE1", subtitle: "Simple RAG" },
   { id: "ue2", label: "UE2", subtitle: "+ PageIndex" },
   { id: "ue3", label: "UE3", subtitle: "+ GraphRAG" },
+  { id: "ue4", label: "UE4", subtitle: "+ Ontology" },
 ];
 
 export default function App() {

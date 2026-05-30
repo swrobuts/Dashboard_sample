@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type SnapshotInfo, type Strategy, type StrategyInfo } from "../api";
 
-const STRATS: Strategy[] = ["ue1", "ue2", "ue3"];
+const STRATS: Strategy[] = ["ue1", "ue2", "ue3", "ue4"];
 
 export function Admin() {
   const [snapshot, setSnapshot] = useState<SnapshotInfo["snapshot"] | null>(null);

@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Strategy = Literal["ue1", "ue2", "ue3"]
+Strategy = Literal["ue1", "ue2", "ue3", "ue4"]
 LLMProvider = Literal["gemini", "local"]
 
 

@@ -27,5 +27,7 @@ COPY --from=frontend /fe/dist /app/backend/static
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
-# Apply migrations (Postgres + Neo4j, both idempotent), then serve.
-CMD ["sh", "-c", "python -m backend.data.migrate && python -m backend.data.neo4j_client && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+# Apply migrations (Postgres + Neo4j + GraphDB, all idempotent), then serve.
+# GraphDB setup creates the repo if missing and uploads the apple ontology;
+# if GraphDB is unreachable we DON'T crash — UE1/UE2/UE3 still work.
+CMD ["sh", "-c", "python -m backend.data.migrate && python -m backend.data.neo4j_client && (python -m backend.data.graphdb_client || echo 'GraphDB setup skipped — UE4 will be unavailable') && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

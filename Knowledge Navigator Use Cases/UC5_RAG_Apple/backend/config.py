@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     ue3_default_mode: str = Field(default="hybrid")  # local | global | hybrid
     ue3_max_chunks_per_entity: int = Field(default=4)  # cap how many MENTIONS chunks per matched entity
 
+    # UE4 — Ontology-RAG (OWL/SPARQL via GraphDB)
+    graphdb_url: str = Field(default="http://graphdb:7200")
+    graphdb_repo: str = Field(default="uc5_rag_apple")
+    graphdb_user: str = Field(default="")          # leave empty if no auth
+    graphdb_password: str = Field(default="")
+    ue4_top_k_results: int = Field(default=20)     # SPARQL result rows to pull
+    ue4_max_chunks_per_entity: int = Field(default=2)  # supplemental text chunks
+
 
 @lru_cache
 def get_settings() -> Settings:
