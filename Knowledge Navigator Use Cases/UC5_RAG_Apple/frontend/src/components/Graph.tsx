@@ -28,6 +28,7 @@ const TYPE_OPTIONS = ["PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", 
 
 interface FGNode extends GraphNode {
   x?: number; y?: number;
+  fx?: number | null; fy?: number | null;
   __radius?: number;
 }
 
@@ -37,6 +38,78 @@ interface FGLink extends GraphEdge {
 }
 
 type ColourBy = "type" | "community";
+type Layout   = "cluster" | "concentric";
+
+// Ring order for concentric layout — closest to Apple = most directly
+// related types (persons running the company, then orgs, then products
+// they make, then events shaping the firm, then peripheral location/
+// concept references on the outer rings).
+const RING_ORDER = ["PERSON", "ORGANIZATION", "PRODUCT", "EVENT", "LOCATION", "CONCEPT"];
+
+// ─── Geometry helpers (no extra deps) ──────────────────────────────────────
+
+/** Graham-scan convex hull, returns the boundary points in order.
+ *  Input: array of [x, y]; output: subset of those points forming the hull.
+ *  Returns at most the input (fewer when many points are collinear). */
+function convexHull(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points.slice();
+  const sorted = [...points].sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+/** BFS shortest path on the link list (unweighted, undirected).
+ *  Returns ids in order from→to, or [] if unreachable / same. */
+function shortestPath(nodes: FGNode[], links: FGLink[], from: string, to: string): string[] {
+  if (from === to) return [from];
+  const idOf = (x: string | FGNode) => typeof x === "string" ? x : x.id;
+  const adj = new Map<string, Set<string>>();
+  for (const n of nodes) adj.set(n.id, new Set());
+  for (const l of links) {
+    const a = idOf(l.source), b = idOf(l.target);
+    adj.get(a)?.add(b); adj.get(b)?.add(a);
+  }
+  const prev = new Map<string, string>();
+  const seen = new Set<string>([from]);
+  const queue = [from];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur === to) {
+      const path = [to];
+      let p = to;
+      while (prev.has(p)) { p = prev.get(p)!; path.push(p); }
+      return path.reverse();
+    }
+    for (const nb of adj.get(cur) || []) {
+      if (seen.has(nb)) continue;
+      seen.add(nb); prev.set(nb, cur); queue.push(nb);
+    }
+  }
+  return [];
+}
+
+/** Find the entity considered the "centre of the graph" — Apple Inc.
+ *  Falls back to the most-mentioned ORGANIZATION if no exact match. */
+function findCentreNode(nodes: FGNode[]): FGNode | null {
+  const exact = nodes.find(n => /^Apple($| Inc)/i.test(n.name));
+  if (exact) return exact;
+  const orgs = nodes.filter(n => n.type === "ORGANIZATION");
+  if (!orgs.length) return null;
+  return orgs.reduce((best, n) => n.mentions > best.mentions ? n : best, orgs[0]);
+}
 
 export function Graph() {
   const [data, setData] = useState<GraphPayload | null>(null);
@@ -48,6 +121,11 @@ export function Graph() {
   const [search, setSearch] = useState("");
   const [typesEnabled, setTypesEnabled] = useState<Set<string>>(new Set(TYPE_OPTIONS));
   const [colourBy, setColourBy] = useState<ColourBy>("type");
+  const [layout, setLayout] = useState<Layout>("cluster");
+  const [showHulls, setShowHulls] = useState(true);
+  const [pathMode, setPathMode] = useState(false);
+  const [pathFrom, setPathFrom] = useState<FGNode | null>(null);
+  const [pathIds, setPathIds] = useState<string[]>([]);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [sparqlOpen, setSparqlOpen] = useState(true);
   const graphRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
@@ -75,6 +153,51 @@ export function Graph() {
     return () => ro.disconnect();
   }, []);
 
+  // ─── Cluster force: in cluster mode, pull each node toward its
+  // community's centroid. Without this, d3-force produces the classic
+  // "hairball"; with it, communities visibly separate into islands.
+  // We compute centroids on every tick from current node positions.
+  useEffect(() => {
+    if (!graphRef.current) return;
+    const charge = graphRef.current.d3Force("charge") as any;
+    if (charge && typeof charge.strength === "function") {
+      charge.strength(layout === "concentric" ? 0 : -90);
+    }
+    const link = graphRef.current.d3Force("link") as any;
+    if (link && typeof link.distance === "function") {
+      link.distance(layout === "concentric" ? 1 : 36);
+    }
+
+    if (layout === "concentric") {
+      // remove the cluster force if previously installed
+      graphRef.current.d3Force("cluster", null as any);
+    } else {
+      // custom alpha-decaying cluster force
+      const clusterForce = (alpha: number) => {
+        if (!data) return;
+        // Group current nodes by community and compute centroid each tick.
+        const buckets = new Map<string, { x: number; y: number; n: number }>();
+        for (const n of graphData.nodes) {
+          if (!n.community_id || n.x == null || n.y == null) continue;
+          const b = buckets.get(n.community_id) || { x: 0, y: 0, n: 0 };
+          b.x += n.x; b.y += n.y; b.n += 1;
+          buckets.set(n.community_id, b);
+        }
+        for (const [, b] of buckets) { b.x /= b.n; b.y /= b.n; }
+        const k = 0.6 * alpha; // gentle pull, scales with simulation cooling
+        for (const n of graphData.nodes) {
+          if (!n.community_id || n.x == null || n.y == null) continue;
+          const c = buckets.get(n.community_id);
+          if (!c) continue;
+          (n as any).vx = ((n as any).vx || 0) + (c.x - n.x) * k;
+          (n as any).vy = ((n as any).vy || 0) + (c.y - n.y) * k;
+        }
+      };
+      graphRef.current.d3Force("cluster", clusterForce as any);
+    }
+    graphRef.current.d3ReheatSimulation();
+  }, [layout, graphData.nodes, data]);
+
   const graphData = useMemo(() => {
     if (!data) return { nodes: [] as FGNode[], links: [] as FGLink[] };
     const q = search.trim().toLowerCase();
@@ -98,8 +221,41 @@ export function Graph() {
     const links: FGLink[] = data.edges
       .filter(e => ids.has(e.source) && ids.has(e.target))
       .map(e => ({ ...e }));
+
+    // ─── Concentric layout: pin nodes to type-stratified rings ──────────
+    //
+    // Aicher-grade radial composition: Apple at the centre, then rings by
+    // type. Within each ring, sort by mentions (most-mentioned at 12
+    // o'clock, rotating clockwise) so the eye lands on important nodes
+    // immediately. fx/fy are honoured by d3-force as fixed positions.
+    if (layout === "concentric") {
+      const centre = findCentreNode(nodes);
+      const ringRadius = Math.max(120, Math.min(size.w, size.h) * 0.08);
+      const types = RING_ORDER.filter(t => nodes.some(n => n.type === t && n !== centre));
+      const radiusFor = (typeIdx: number) => ringRadius + typeIdx * ringRadius * 0.85;
+      for (const n of nodes) {
+        if (n === centre) {
+          n.fx = 0; n.fy = 0;
+          continue;
+        }
+        const typeIdx = types.indexOf(n.type);
+        if (typeIdx < 0) { n.fx = null; n.fy = null; continue; }
+        const peers = nodes
+          .filter(m => m.type === n.type && m !== centre)
+          .sort((a, b) => b.mentions - a.mentions);
+        const peerIdx = peers.indexOf(n);
+        const r = radiusFor(typeIdx);
+        const theta = -Math.PI / 2 + (peerIdx / peers.length) * Math.PI * 2;
+        n.fx = r * Math.cos(theta);
+        n.fy = r * Math.sin(theta);
+      }
+    } else {
+      // Cluster mode — release pinning so the force simulation runs.
+      for (const n of nodes) { n.fx = null; n.fy = null; }
+    }
+
     return { nodes, links };
-  }, [data, search]);
+  }, [data, search, layout, size.w, size.h]);
 
   // Communities → restrained categorical palette (still desaturated)
   const communityColour = useMemo(() => {
@@ -155,6 +311,56 @@ export function Graph() {
     }
   };
 
+  // Fly camera to the top fuzzy-match when the search field changes.
+  useEffect(() => {
+    if (!search.trim() || !graphRef.current) return;
+    const q = search.trim().toLowerCase();
+    const match = graphData.nodes
+      .filter(n => n.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        // Prefer label-startsWith, then by mentions
+        const sa = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const sb = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return sa - sb || b.mentions - a.mentions;
+      })[0];
+    if (match && match.x != null && match.y != null) {
+      graphRef.current.centerAt(match.x, match.y, 700);
+      graphRef.current.zoom(2.4, 700);
+    }
+  }, [search, graphData.nodes]);
+
+  const handleNodeClick = (n: FGNode) => {
+    if (pathMode) {
+      if (!pathFrom) {
+        setPathFrom(n); setPathIds([n.id]); setSelected(n);
+        return;
+      }
+      const path = shortestPath(graphData.nodes, graphData.links, pathFrom.id, n.id);
+      if (path.length > 0) {
+        setPathIds(path);
+        // Frame the path: fit the bbox of pathway nodes
+        const pts = path
+          .map(id => graphData.nodes.find(nn => nn.id === id))
+          .filter((nn): nn is FGNode => !!nn && nn.x != null && nn.y != null);
+        if (pts.length > 0 && graphRef.current) {
+          const xs = pts.map(p => p.x!), ys = pts.map(p => p.y!);
+          const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+          const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+          graphRef.current.centerAt(cx, cy, 800);
+        }
+      } else {
+        setPathIds([pathFrom.id, n.id]); // unreachable visualised as endpoints only
+      }
+      setPathFrom(null);
+      setSelected(n);
+      return;
+    }
+    setSelected(n);
+    if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
+  };
+
+  const pathIdSet = useMemo(() => new Set(pathIds), [pathIds]);
+
   // Top 15 mentions get their label drawn always — Tufte: don't hide
   // important data points behind hover.
   const alwaysLabeled = useMemo(() => {
@@ -178,6 +384,15 @@ export function Graph() {
         toggleType={toggleType}
         colourBy={colourBy}
         setColourBy={setColourBy}
+        layout={layout}
+        setLayout={setLayout}
+        showHulls={showHulls}
+        setShowHulls={setShowHulls}
+        pathMode={pathMode}
+        setPathMode={(v) => { setPathMode(v); if (!v) { setPathFrom(null); setPathIds([]); } }}
+        pathFrom={pathFrom}
+        pathIds={pathIds}
+        clearPath={() => { setPathFrom(null); setPathIds([]); }}
         load={load}
         selected={selected}
         communityById={Object.fromEntries((data?.communities || []).map(c => [c.id, c]))}
@@ -257,77 +472,134 @@ export function Graph() {
             graphData={graphData}
             nodeId="id"
             nodeRelSize={1}
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.3}
-            cooldownTicks={400}
-            warmupTicks={60}
-            enableNodeDrag
+            d3AlphaDecay={layout === "concentric" ? 0.06 : 0.018}
+            d3VelocityDecay={layout === "concentric" ? 0.5 : 0.28}
+            cooldownTicks={layout === "concentric" ? 60 : 500}
+            warmupTicks={layout === "concentric" ? 0 : 80}
+            enableNodeDrag={layout === "cluster"}
             enableZoomInteraction
             onNodeHover={(n) => setHovered(n)}
-            onNodeClick={(n) => {
-              setSelected(n);
-              if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
+            onNodeClick={(n) => handleNodeClick(n as FGNode)}
+            onBackgroundClick={() => {
+              setSelected(null);
+              if (pathMode) { setPathFrom(null); setPathIds([]); }
             }}
-            onBackgroundClick={() => setSelected(null)}
+            onEngineStop={() => {
+              // Frame the graph nicely after the first layout settles
+              if (!graphRef.current) return;
+              graphRef.current.zoomToFit(600, 60);
+            }}
+
+            // ─── Hulls (cluster mode only): one soft convex polygon per
+            // community, drawn UNDER nodes and edges so structure reads at
+            // a glance without colour overload. Updated every frame to
+            // follow the simulation. ─────────────────────────────────────
+            onRenderFramePre={(ctx, scale) => {
+              if (layout !== "cluster" || !showHulls) return;
+              const groups = new Map<string, [number, number][]>();
+              for (const n of graphData.nodes) {
+                if (!n.community_id || n.x == null || n.y == null) continue;
+                if (!groups.has(n.community_id)) groups.set(n.community_id, []);
+                groups.get(n.community_id)!.push([n.x, n.y]);
+              }
+              for (const [cid, pts] of groups) {
+                if (pts.length < 3) continue;
+                const hull = convexHull(pts);
+                if (hull.length < 3) continue;
+                const colour = communityColour.get(cid) || DEFAULT_COLOR;
+                // Expand the hull outward a bit for breathing room.
+                const cx = hull.reduce((s, p) => s + p[0], 0) / hull.length;
+                const cy = hull.reduce((s, p) => s + p[1], 0) / hull.length;
+                const pad = 14 / scale;
+                ctx.beginPath();
+                hull.forEach((p, i) => {
+                  const dx = p[0] - cx, dy = p[1] - cy;
+                  const len = Math.hypot(dx, dy) || 1;
+                  const x = p[0] + dx / len * pad, y = p[1] + dy / len * pad;
+                  if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.closePath();
+                ctx.fillStyle   = colour + "0d";   // ~5% alpha
+                ctx.strokeStyle = colour + "55";   // ~33% alpha hairline
+                ctx.lineWidth   = 0.6 / scale;
+                ctx.fill();
+                ctx.stroke();
+              }
+            }}
+
             // Restrained node rendering: filled disk sized by mentions,
-            // accent ring only for hover/selection/SPARQL-highlight.
+            // accent ring only for hover/selection/SPARQL-highlight/path.
             nodeCanvasObjectMode={() => "replace"}
             nodeCanvasObject={(n, ctx, scale) => {
               const colour = colourOf(n);
-              const baseR = 2 + Math.sqrt(n.mentions + 1) * 1.4;
+              // Bigger base so they read on a busy canvas — addresses
+              // "optisch zu klein". sqrt scaling keeps top nodes legible
+              // without crushing the long tail.
+              const baseR = 3.2 + Math.sqrt(n.mentions + 1) * 2.1;
               const isHovered = hovered?.id === n.id;
               const isSelected = selected?.id === n.id;
               const isHighlight = highlightedIds.has(n.id);
-              const dim = isDimmed(n.id);
-              const r = isHovered ? baseR * 1.25 : baseR;
+              const isOnPath = pathIdSet.has(n.id);
+              const isPathFrom = pathFrom?.id === n.id;
+              const dim = isDimmed(n.id) || (pathIds.length > 1 && !isOnPath);
+              const r = isHovered ? baseR * 1.3 : baseR;
               n.__radius = r;
               ctx.save();
-              if (dim) ctx.globalAlpha = 0.18;
+              if (dim) ctx.globalAlpha = 0.15;
               // Single filled disk — no halo, no glow
               ctx.beginPath();
               ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2);
-              ctx.fillStyle = colour;
+              ctx.fillStyle = isOnPath ? ACCENT : colour;
               ctx.fill();
-              // 1-pixel accent ring for state — that's it
-              if (isHovered || isSelected || isHighlight) {
+              // Accent ring for state
+              if (isHovered || isSelected || isHighlight || isOnPath || isPathFrom) {
                 ctx.beginPath();
-                ctx.arc(n.x!, n.y!, r + 2.5 / scale, 0, Math.PI * 2);
+                ctx.arc(n.x!, n.y!, r + 3 / scale, 0, Math.PI * 2);
                 ctx.strokeStyle = ACCENT;
-                ctx.lineWidth = 1.2 / scale;
+                ctx.lineWidth = (isPathFrom ? 1.8 : 1.2) / scale;
                 ctx.stroke();
               }
-              // Labels: always for the most-mentioned, on demand for the rest
-              const showLabel = isHovered || isSelected || alwaysLabeled.has(n.id) || scale > 1.8;
+              // Labels
+              const showLabel = isHovered || isSelected || isOnPath || alwaysLabeled.has(n.id) || scale > 1.6;
               if (showLabel) {
-                const fontSize = (isHovered ? 12 : 10) / scale;
+                const fontSize = (isHovered || isOnPath ? 13 : 11) / scale;
                 ctx.font = `${fontSize}px Inter, ui-sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
                 const label = n.name.length > 32 ? n.name.slice(0, 30) + "…" : n.name;
-                // Tight crisp halo on the label, in paper colour, so it reads
-                // over edges without competing visually with the data.
-                ctx.lineWidth = 3 / scale;
+                ctx.lineWidth = 3.5 / scale;
                 ctx.strokeStyle = PAPER;
                 ctx.strokeText(label, n.x!, n.y! + r + 3 / scale);
-                ctx.fillStyle = TEXT_INK;
+                ctx.fillStyle = isOnPath ? ACCENT : TEXT_INK;
                 ctx.fillText(label, n.x!, n.y! + r + 3 / scale);
               }
               ctx.restore();
             }}
-            // Edges: 1px hairline. Hover-related darker. No particles.
+            // Edges
             linkCanvasObjectMode={() => "replace"}
             linkCanvasObject={(l, ctx, scale) => {
               const src = l.source as FGNode;
               const tgt = l.target as FGNode;
               if (!src.x || !src.y || !tgt.x || !tgt.y) return;
               const involved = hovered != null && (src.id === hovered.id || tgt.id === hovered.id);
-              const highlight = highlightedIds.size > 0 && (highlightedIds.has(src.id) && highlightedIds.has(tgt.id));
-              const dim = (neighbourIds && !involved && !(neighbourIds.has(src.id) && neighbourIds.has(tgt.id)))
-                       || (highlightedIds.size > 0 && !highlight && !(highlightedIds.has(src.id) || highlightedIds.has(tgt.id)));
+              const sparqlHl = highlightedIds.size > 0 && (highlightedIds.has(src.id) && highlightedIds.has(tgt.id));
+              // path: an edge is "on path" if both endpoints AND they are
+              // adjacent in the path sequence
+              const pathHl = (() => {
+                if (pathIds.length < 2) return false;
+                for (let i = 0; i < pathIds.length - 1; i++) {
+                  if ((pathIds[i] === src.id && pathIds[i+1] === tgt.id) ||
+                      (pathIds[i] === tgt.id && pathIds[i+1] === src.id)) return true;
+                }
+                return false;
+              })();
+              const dim = ((neighbourIds && !involved && !(neighbourIds.has(src.id) && neighbourIds.has(tgt.id)))
+                       || (highlightedIds.size > 0 && !sparqlHl && !(highlightedIds.has(src.id) || highlightedIds.has(tgt.id)))
+                       || (pathIds.length > 1 && !pathHl));
               ctx.save();
-              if (dim) ctx.globalAlpha = 0.16;
-              ctx.strokeStyle = highlight ? ACCENT : (involved ? "#525252" : "#cfcbc3");
-              ctx.lineWidth = (involved || highlight) ? 1 / scale : 0.5 / scale;
+              if (dim) ctx.globalAlpha = 0.14;
+              ctx.strokeStyle = (pathHl || sparqlHl) ? ACCENT : (involved ? "#525252" : "#cfcbc3");
+              ctx.lineWidth = (pathHl ? 2 : (involved || sparqlHl) ? 1 : 0.5) / scale;
               ctx.beginPath();
               ctx.moveTo(src.x, src.y);
               ctx.lineTo(tgt.x, tgt.y);
@@ -382,6 +654,15 @@ function LeftRail(props: {
   toggleType: (t: string) => void;
   colourBy: ColourBy;
   setColourBy: (c: ColourBy) => void;
+  layout: Layout;
+  setLayout: (l: Layout) => void;
+  showHulls: boolean;
+  setShowHulls: (v: boolean) => void;
+  pathMode: boolean;
+  setPathMode: (v: boolean) => void;
+  pathFrom: FGNode | null;
+  pathIds: string[];
+  clearPath: () => void;
   load: () => void;
   selected: FGNode | null;
   communityById: Record<string, GraphCommunity>;
@@ -389,7 +670,9 @@ function LeftRail(props: {
 }) {
   const {
     data, loading, error, minMentions, setMinMentions, typesEnabled,
-    toggleType, colourBy, setColourBy, load, selected, communityById, colourOf,
+    toggleType, colourBy, setColourBy, layout, setLayout, showHulls, setShowHulls,
+    pathMode, setPathMode, pathFrom, pathIds, clearPath,
+    load, selected, communityById, colourOf,
   } = props;
   return (
     <aside className="w-72 shrink-0 overflow-y-auto"
@@ -451,6 +734,65 @@ function LeftRail(props: {
             </button>
           ))}
         </div>
+      </Section>
+
+      <Section title="Layout">
+        <div className="flex gap-1 mb-3" style={{ border: `1px solid ${RULE}` }}>
+          {(["cluster", "concentric"] as Layout[]).map(opt => (
+            <button key={opt} onClick={() => setLayout(opt)}
+                    className="flex-1 px-2 py-1.5 text-[11px] uppercase tracking-wider transition"
+                    style={{
+                      background: layout === opt ? TEXT_INK : "transparent",
+                      color: layout === opt ? PAPER : TEXT_MUTED,
+                    }}>
+              {opt === "cluster" ? "Cluster" : "Konzentrik"}
+            </button>
+          ))}
+        </div>
+        {layout === "cluster" && (
+          <label className="flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: TEXT_INK }}>
+            <input type="checkbox" checked={showHulls}
+                   onChange={e => setShowHulls(e.target.checked)}
+                   className="rounded" style={{ accentColor: ACCENT }} />
+            Community-Polygone zeigen
+          </label>
+        )}
+        {layout === "concentric" && (
+          <p className="text-[11px] leading-relaxed mt-1" style={{ color: TEXT_MUTED }}>
+            Apple im Zentrum, Ringe nach Typ. Innerhalb eines Rings
+            sortiert nach Erwähnungen (12 Uhr = häufigste).
+          </p>
+        )}
+      </Section>
+
+      <Section title="Pfad-Modus">
+        <button onClick={() => setPathMode(!pathMode)}
+                className="w-full px-3 py-1.5 text-[11px] uppercase tracking-wider transition"
+                style={{
+                  border: `1px solid ${pathMode ? ACCENT : TEXT_INK}`,
+                  background: pathMode ? ACCENT : "transparent",
+                  color: pathMode ? PAPER : TEXT_INK,
+                }}>
+          {pathMode ? "aktiv  ·  beenden" : "aktivieren"}
+        </button>
+        {pathMode && (
+          <p className="text-[11px] leading-relaxed mt-2" style={{ color: TEXT_MUTED }}>
+            {pathFrom == null && pathIds.length === 0 && "Klicke den Startknoten."}
+            {pathFrom != null && (
+              <>Start: <span style={{ color: TEXT_INK }}>{pathFrom.name}</span> · klicke Ziel.</>
+            )}
+            {pathIds.length > 1 && (
+              <>Pfad mit <span className="font-mono" style={{ color: TEXT_INK }}>{pathIds.length}</span> Knoten · {pathIds.length - 1} Schritte.</>
+            )}
+          </p>
+        )}
+        {pathIds.length > 0 && (
+          <button onClick={clearPath}
+                  className="mt-2 text-[10px] uppercase tracking-wider hover:opacity-100 transition"
+                  style={{ color: TEXT_MUTED, opacity: 0.7 }}>
+            Pfad löschen
+          </button>
+        )}
       </Section>
 
       <div className="px-5 py-4">
