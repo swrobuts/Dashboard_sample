@@ -75,13 +75,13 @@ def test_lookup_entity_parses_predecessor_and_successor():
 def test_lookup_entity_coalesces_multiple_rows_per_entity():
     """OPTIONAL queries can yield multiple rows per subject."""
     fake = {"results": {"bindings": [
-        {"s": {"value": "x"}, "l": {"value": "X"},
+        {"s": {"value": "x"}, "l": {"value": "Foo"},
          "pred": {"value": "p1"}, "predLabel": {"value": "P1"}},
-        {"s": {"value": "x"}, "l": {"value": "X"},
+        {"s": {"value": "x"}, "l": {"value": "Foo"},
          "succ": {"value": "s1"}, "succLabel": {"value": "S1"}},
     ]}}
     with patch.object(dl, "_dbpedia_query", return_value=fake):
-        out = dl.lookup_entity("X")
+        out = dl.lookup_entity("Foo")  # label must be ≥3 chars
     assert len(out) == 1
     assert out[0]["predecessor_label"] == "P1"
     assert out[0]["successor_label"] == "S1"
