@@ -902,15 +902,18 @@ export function Graph() {
     }
   };
 
-  // Focus-mode camera: whenever the selected entity changes while focus
-  // is active, fit the camera to the new ego network. Small delay so
-  // graphData has time to recompute and the simulation to settle.
+  // Focus-mode camera: centre on (0,0) where the selected entity is
+  // pinned, then zoomToFit the ego ring. Two-step so the camera moves
+  // deliberately rather than the zoomToFit defaulting to old positions.
   useEffect(() => {
     if (!focusMode || !selected || !graphRef.current) return;
-    const t = setTimeout(() => {
-      graphRef.current?.zoomToFit(600, 100);
-    }, 80);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => {
+      graphRef.current?.centerAt(0, 0, 400);
+    }, 40);
+    const t2 = setTimeout(() => {
+      graphRef.current?.zoomToFit(500, 80);
+    }, 250);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [focusMode, selected]);
 
   // Fly camera to the top fuzzy-match when the search field changes.
@@ -1043,6 +1046,21 @@ export function Graph() {
             >
               SPARQL-Auswahl auflösen ({highlightedIds.size})
             </button>
+          )}
+          {focusMode && selected && (
+            <div className="text-[11px] uppercase tracking-wider flex items-center gap-2"
+                 style={{ color: ACCENT }}>
+              <span className="opacity-70">EGO ·</span>
+              <span style={{ color: TEXT_INK }}>{selected.name}</span>
+              <button
+                onClick={() => { setFocusMode(false); setSelected(null);
+                  setTimeout(() => graphRef.current?.zoomToFit(600, 60), 80); }}
+                className="ml-1 hover:opacity-70 transition"
+                title="zurück zur Übersicht"
+              >
+                ✕
+              </button>
+            </div>
           )}
           <div className="text-[11px]" style={{ color: TEXT_MUTED }}>
             {graphData.nodes.length}/{data?.nodes.length ?? 0} Entitäten
@@ -1187,6 +1205,12 @@ export function Graph() {
             // a glance without colour overload. Updated every frame to
             // follow the simulation. ─────────────────────────────────────
             onRenderFramePre={(ctx, scale) => {
+              // Ego mode skips ALL hulls — the type-cluster polygons
+              // from the cluster layout would otherwise still draw
+              // around wherever the ego nodes happen to land, looking
+              // like leftover cobwebs from the previous view.
+              if (focusMode && selected) return;
+
               // ─── Concentric layout: tinted annular bands + ring
               //     guides + labels. Each ring band is filled with its
               //     type colour at ~7% alpha — gives the layout the
