@@ -152,13 +152,23 @@ class GraphRAG:
         # (deduped) — we don't replace, because graph chunks may still
         # carry useful structural context.
         text_fallback_used = False
-        only_canonical = (
-            bool(matched_entities)
-            and all((e.get("key") or e.get("entity_key") or "").startswith("CANON:")
-                    for e in matched_entities)
+        # ANY CANON match → augment (CANON entities have no associated
+        # text chunks, only a 1-line synthetic description, so the LLM
+        # needs real article text to answer).
+        any_canonical = any(
+            (e.get("key") or e.get("entity_key") or "").startswith("CANON:")
+            for e in matched_entities
         )
         thin_match = len(merged) < max(1, k // 2)
-        if not merged or thin_match or only_canonical:
+        # Also check: does any of the existing chunks actually mention
+        # the question's key terms? Cheap substring test against the
+        # query (split into 3+ char words). If none do → augment.
+        query_terms = [w.lower() for w in re.findall(r"\w{3,}", query)]
+        chunks_match_query = any(
+            any(t in (c.get("text") or "").lower() for t in query_terms)
+            for c in merged
+        )
+        if not merged or thin_match or any_canonical or not chunks_match_query:
             try:
                 from backend.retrieval.simple import SimpleRAG
                 fb = SimpleRAG(llm_provider=self._llm_provider).retrieve(query, k=k)
