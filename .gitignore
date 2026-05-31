@@ -5,3 +5,8 @@ __pycache__/
 .DS_Store
 .env
 .idea/
+
+# Playwright artifacts
+.playwright-mcp/
+*.png
+!Knowledge*Navigator*/**/*.png
