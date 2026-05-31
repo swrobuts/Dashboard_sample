@@ -191,6 +191,38 @@ class OntologyRAG:
         # ── Phase 3: turn bindings into chunks + supplementary text chunks ──
         chunks, sources = self._bindings_to_chunks(bindings)
 
+        # ── Phase 4: text fallback when SPARQL returned nothing ──
+        #
+        # Real-world gap: the SPARQL the LLM wrote is syntactically fine,
+        # but the UE3 extractor only populates apple:associatedWith for
+        # 87 % of relations (the specific ones — predecessorOf, designedBy
+        # etc. — are nearly empty). So queries like "Vorgängerprodukt vom
+        # PowerBook 165" always 0-bind. Rather than just hand the
+        # answering LLM an empty result, we fall back to the UE1 hybrid
+        # retrieval on the original NL question. The user gets *some*
+        # grounded answer from the Wikipedia text instead of "I don't know",
+        # and the trace tells them why we had to fall back.
+        fallback_used = False
+        if not bindings and not sparql_err:
+            try:
+                from backend.retrieval.simple import SimpleRAG
+                fb = SimpleRAG(llm_provider=self._llm_provider).retrieve(query, k=k)
+                if fb.chunks:
+                    fallback_chunks = [Chunk(
+                        text="HINWEIS: Die Ontologie-Query lieferte keine "
+                             "Treffer im Knowledge Graph (Beziehung möglicherweise "
+                             "nicht populiert). Folgende Textstellen aus dem "
+                             "Wikipedia-Artikel enthalten relevante Schlüsselwörter:",
+                        section_path="UE4 Text-Fallback",
+                        chunk_id=None,
+                    )]
+                    fallback_chunks.extend(fb.chunks)
+                    chunks = fallback_chunks
+                    sources = fb.sources
+                    fallback_used = True
+            except Exception as exc:  # noqa: BLE001
+                log.warning("UE4 text fallback failed: %s", exc)
+
         trace = {
             "strategy": self.name,
             "llm_provider": self._llm_provider,
@@ -202,6 +234,7 @@ class OntologyRAG:
             "sparql_gen_ms": round(sparql_gen_ms, 1),
             "sparql_exec_ms": round(sparql_exec_ms, 1),
             "chunk_count": len(chunks),
+            "text_fallback_used": fallback_used,
         }
         return RetrievalResult(chunks=chunks, sources=sources, trace=trace)
 

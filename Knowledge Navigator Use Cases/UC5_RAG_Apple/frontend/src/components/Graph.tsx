@@ -927,7 +927,15 @@ export function Graph() {
     }
     if (selected && selected.id !== n.id) setHistory(h => [...h.slice(-9), selected]);
     setSelected(n);
-    if (n.x != null && n.y != null) graphRef.current?.centerAt(n.x, n.y, 500);
+    // Auto-enter ego-network mode on click. This is what the user
+    // expects from "Klick auf Knoten" — the graph rebuilds with this
+    // node as the new centre, neighbours arranged around. Background
+    // click exits the mode and returns to the cluster overview.
+    setFocusMode(true);
+    // No explicit centerAt — the focus-mode useEffect will zoomToFit
+    // the new ego network after the layout pins. Calling centerAt here
+    // would conflict with that and produce the "graph just shifts"
+    // jankiness the user reported.
   };
 
   const pathIdSet = useMemo(() => new Set(pathIds), [pathIds]);
@@ -1115,7 +1123,10 @@ export function Graph() {
             onNodeClick={(n) => handleNodeClick(n as FGNode)}
             onBackgroundClick={() => {
               setSelected(null);
+              setFocusMode(false);   // exit ego, return to overview
               if (pathMode) { setPathFrom(null); setPathIds([]); }
+              // Refit camera to show the full overview again
+              setTimeout(() => graphRef.current?.zoomToFit(600, 60), 80);
             }}
             onEngineStop={() => {
               // Frame the graph nicely after the first layout settles
@@ -1828,14 +1839,13 @@ function ConnectionPanel(props: {
                 background: focusMode ? ACCENT : "transparent",
                 color: focusMode ? PAPER : TEXT_MUTED,
               }}>
-        {focusMode ? "Fokus aktiv · auflösen" : "Ego-Netzwerk anzeigen"}
+        {focusMode ? "Übersicht zeigen" : "Ego-Netzwerk anzeigen"}
       </button>
-      {focusMode && (
-        <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: TEXT_MUTED }}>
-          Graph zeigt nur diesen Knoten + direkte Nachbarn, gruppiert nach
-          Beziehungstyp. Klick auf Nachbar → er wird neuer Mittelpunkt.
-        </p>
-      )}
+      <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: TEXT_MUTED }}>
+        {focusMode
+          ? "Klick auf einen Nachbar wandert weiter. Klick auf leere Fläche kehrt zur Übersicht zurück."
+          : "Klick auf den Knoten zeigt Ego-Netzwerk. Hover ohne Klick lässt die Übersicht stehen."}
+      </p>
 
       {/* Connections grouped by relation type */}
       <div className="mt-5">
