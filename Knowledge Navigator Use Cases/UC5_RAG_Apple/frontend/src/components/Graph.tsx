@@ -1923,62 +1923,111 @@ function ConnectionPanel(props: {
 }
 
 
-// ─── DBpedia validator — cross-checks UE3 extractions against DBpedia ─────
+// ─── DBpedia enrichment — persons validator + products chronology ─────────
 function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
-  const [running, setRunning] = useState(false);
+  const [runningP, setRunningP] = useState(false);
+  const [runningR, setRunningR] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<null | {
+  const [statsP, setStatsP] = useState<null | {
     canonical_persons_fetched: number;
     canonical_persons_added: number;
     unverified_persons_total: number;
     persons_confirmed: number;
     persons_demoted: number;
   }>(null);
+  const [statsR, setStatsR] = useState<null | {
+    products_fetched: number;
+    products_added: number;
+    successor_added: number;
+    predecessor_added: number;
+  }>(null);
 
-  const run = async () => {
-    setRunning(true); setError(null); setStats(null);
+  const runPersons = async () => {
+    setRunningP(true); setError(null); setStatsP(null);
     try {
       const r = await api.ue4Validate();
       if (!r.ok) { setError(r.error || "Validator fehlgeschlagen"); return; }
-      setStats(r.stats || null);
+      setStatsP(r.stats || null);
       onComplete();
     } catch (e) { setError(String(e)); }
-    finally { setRunning(false); }
+    finally { setRunningP(false); }
+  };
+
+  const runProducts = async () => {
+    setRunningR(true); setError(null); setStatsR(null);
+    try {
+      const r = await api.ue4EnrichProducts();
+      if (!r.ok) { setError(r.error || "Anreicherung fehlgeschlagen"); return; }
+      setStatsR(r.stats || null);
+      onComplete();
+    } catch (e) { setError(String(e)); }
+    finally { setRunningR(false); }
   };
 
   return (
     <div className="px-5 py-4" style={{ borderTop: `1px solid ${RULE}` }}>
       <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
-        DBpedia · Validierung
+        DBpedia · Anreicherung
       </div>
-      <p className="text-[11px] leading-relaxed mb-3" style={{ color: TEXT_MUTED }}>
-        Holt kanonische Apple-Personen aus DBpedia und entfernt Kontext-only
-        Personen aus den Rollen-Queries.
+
+      {/* Persons */}
+      <p className="text-[11px] leading-relaxed mb-2" style={{ color: TEXT_MUTED }}>
+        Personen: kanonische Apple-Personen aus DBpedia + Kontext-only
+        rauswerfen.
       </p>
-      <button onClick={run} disabled={running}
+      <button onClick={runPersons} disabled={runningP || runningR}
               className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
               style={{
                 border: `1px solid ${ACCENT}`,
-                background: running ? PAPER_SOFT : "transparent",
+                background: runningP ? PAPER_SOFT : "transparent",
                 color: ACCENT,
-                opacity: running ? 0.5 : 1,
+                opacity: (runningP || runningR) ? 0.5 : 1,
               }}
-              onMouseEnter={e => { if (!running) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
-              onMouseLeave={e => { if (!running) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
-        {running ? "Validiert …" : "DBpedia validieren"}
+              onMouseEnter={e => { if (!runningP && !runningR) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
+              onMouseLeave={e => { if (!runningP && !runningR) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
+        {runningP ? "Validiert …" : "Personen validieren"}
       </button>
+      {statsP && (
+        <dl className="mt-2 mb-4 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
+          <Row label="geholt"      value={String(statsP.canonical_persons_fetched)} />
+          <Row label="eingefügt"   value={String(statsP.canonical_persons_added)} />
+          <Row label="ungeprüft"   value={String(statsP.unverified_persons_total)} />
+          <Row label="bestätigt"   value={String(statsP.persons_confirmed)} />
+          <Row label="demoted"     value={String(statsP.persons_demoted)} />
+        </dl>
+      )}
+
+      {/* Products */}
+      <div className="mt-3 mb-2" style={{ borderTop: `1px solid ${RULE}` }} />
+      <p className="text-[11px] leading-relaxed mb-2 mt-2" style={{ color: TEXT_MUTED }}>
+        Produkte: 40 + Apple-Produkte mit Vorgänger-/Nachfolger-Kette
+        aus DBpedia ziehen. Schließt die Reasoning-Lücke bei Produkt-
+        Chronologie-Fragen.
+      </p>
+      <button onClick={runProducts} disabled={runningP || runningR}
+              className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
+              style={{
+                border: `1px solid ${ACCENT}`,
+                background: runningR ? PAPER_SOFT : "transparent",
+                color: ACCENT,
+                opacity: (runningP || runningR) ? 0.5 : 1,
+              }}
+              onMouseEnter={e => { if (!runningP && !runningR) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
+              onMouseLeave={e => { if (!runningP && !runningR) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
+        {runningR ? "Reichert an …" : "Produkte anreichern"}
+      </button>
+      {statsR && (
+        <dl className="mt-2 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
+          <Row label="geholt"                value={String(statsR.products_fetched)} />
+          <Row label="Produkte neu"          value={String(statsR.products_added)} />
+          <Row label="Nachfolger-Triples"    value={String(statsR.successor_added)} />
+          <Row label="Vorgänger-Triples"     value={String(statsR.predecessor_added)} />
+        </dl>
+      )}
+
       {error && (
         <div className="mt-3 text-[11px] font-mono p-2 break-all"
              style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
-      )}
-      {stats && (
-        <dl className="mt-3 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
-          <Row label="aus DBpedia geholt" value={String(stats.canonical_persons_fetched)} />
-          <Row label="neu eingefügt"      value={String(stats.canonical_persons_added)} />
-          <Row label="ungeprüft (Start)"  value={String(stats.unverified_persons_total)} />
-          <Row label="bestätigt"          value={String(stats.persons_confirmed)} />
-          <Row label="demoted"            value={String(stats.persons_demoted)} />
-        </dl>
       )}
     </div>
   );

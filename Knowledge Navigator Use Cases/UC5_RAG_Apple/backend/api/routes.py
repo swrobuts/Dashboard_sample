@@ -27,6 +27,7 @@ from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
 from backend.evaluation.judge import judge_answers
+from backend.ingest.dbpedia_products import enrich_products
 from backend.ingest.dbpedia_validator import validate_and_enrich
 from backend.ingest.ue1_simple import run_ue1_ingest
 from backend.ingest.ue2_pageindex import run_ue2_ingest
@@ -255,6 +256,24 @@ def sparql(body: dict) -> dict:
         return {"ok": True, "kind": "query", "result": graphdb_client.select(q)}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:500], "kind": "update" if is_update else "query"}
+
+
+@router.post("/ue4/enrich-products")
+def ue4_enrich_products() -> dict:
+    """Pull Apple product chronology (predecessor/successor) from DBpedia
+    into the local GraphDB. Idempotent — re-running re-uploads the same
+    triples (GraphDB deduplicates).
+
+    Adds 40+ Apple products + ~40 chronology relations to the graph in
+    one shot. Closes the UE3 data gap: queries like "Was ist der
+    Vorgänger des iPhone 4?" suddenly work via SPARQL on real triples
+    instead of falling back to text retrieval."""
+    try:
+        stats = enrich_products()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("DBpedia product enrichment failed")
+        return {"ok": False, "error": str(exc)[:500]}
 
 
 @router.post("/ue4/validate")

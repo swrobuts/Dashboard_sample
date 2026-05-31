@@ -140,6 +140,26 @@ QUERY-STRATEGIE-REGELN (verbindlich):
        ?p rdfs:label ?label .
      }
 
+4. FÜR PRODUKT-CHRONOLOGIE (Vorgänger / Nachfolger):
+   Konvention: ``?A apple:predecessorOf ?B`` heißt „A ist Vorgänger von B"
+   (A kommt zuerst, B danach). ``?A apple:successorOf ?B`` heißt
+   „A ist Nachfolger von B" (A kommt danach). Beide sind owl:inverseOf.
+
+   Für „Vorgänger von X" — Y suchen mit Y apple:predecessorOf X:
+     SELECT DISTINCT (STR(?n) AS ?name) WHERE {
+       ?x rdfs:label "iPhone 4"@en .
+       ?pred apple:predecessorOf ?x .
+       ?pred rdfs:label ?n .
+     } LIMIT 10
+
+   Für „Nachfolger von X" — Y suchen mit Y apple:successorOf X (oder
+   inverse-aware: X apple:predecessorOf Y):
+     SELECT DISTINCT (STR(?n) AS ?name) WHERE {
+       ?x rdfs:label "iPhone 4"@en .
+       ?succ apple:successorOf ?x .
+       ?succ rdfs:label ?n .
+     } LIMIT 10
+
 4. IMMER:
    - rdfs:label für lesbare Namen
    - LIMIT 30 am Ende

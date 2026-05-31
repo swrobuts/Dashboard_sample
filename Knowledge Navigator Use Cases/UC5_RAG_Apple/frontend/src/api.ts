@@ -127,6 +127,17 @@ export const api = {
       };
       error?: string;
     }>,
+  ue4EnrichProducts: () =>
+    fetch("/api/ue4/enrich-products", { method: "POST" }).then(j) as Promise<{
+      ok: boolean;
+      stats?: {
+        products_fetched: number;
+        products_added: number;
+        successor_added: number;
+        predecessor_added: number;
+      };
+      error?: string;
+    }>,
 };
 
 export interface GraphNode {
