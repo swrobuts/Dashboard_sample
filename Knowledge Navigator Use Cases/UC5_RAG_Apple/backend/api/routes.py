@@ -27,6 +27,8 @@ from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
 from backend.evaluation.judge import judge_answers
+from backend.ingest.cooccurrence import enrich_cooccurrence
+from backend.ingest.dbpedia_edges import enrich_edges
 from backend.ingest.dbpedia_products import enrich_products
 from backend.ingest.dbpedia_validator import validate_and_enrich
 from backend.ingest.ue1_simple import run_ue1_ingest
@@ -256,6 +258,28 @@ def sparql(body: dict) -> dict:
         return {"ok": True, "kind": "query", "result": graphdb_client.select(q)}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:500], "kind": "update" if is_update else "query"}
+
+
+@router.post("/ue4/enrich-edges")
+def ue4_enrich_edges() -> dict:
+    """Pull DBpedia cross-edges between entities we already have.
+    Inserts as Neo4j RELATED_TO edges so they appear in /api/graph."""
+    try:
+        return {"ok": True, "stats": enrich_edges()}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("DBpedia edge enrichment failed")
+        return {"ok": False, "error": str(exc)[:500]}
+
+
+@router.post("/ue3/enrich-cooccurrence")
+def ue3_enrich_cooccurrence() -> dict:
+    """Add edges between entities mentioned in the same Wikipedia
+    section. No external API — pure Postgres → Neo4j transform."""
+    try:
+        return {"ok": True, "stats": enrich_cooccurrence()}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Co-occurrence enrichment failed")
+        return {"ok": False, "error": str(exc)[:500]}
 
 
 @router.post("/ue4/enrich-products")

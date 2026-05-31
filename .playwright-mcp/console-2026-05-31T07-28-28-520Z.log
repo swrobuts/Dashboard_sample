@@ -1,0 +1,3 @@
+[     401ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://rag-apple.butscher.cloud/favicon.ico:0
+[  750395ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://rag-apple.butscher.cloud/api/strategies:0
+[  755399ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://rag-apple.butscher.cloud/api/strategies:0

@@ -138,6 +138,27 @@ export const api = {
       };
       error?: string;
     }>,
+  ue4EnrichEdges: () =>
+    fetch("/api/ue4/enrich-edges", { method: "POST" }).then(j) as Promise<{
+      ok: boolean;
+      stats?: {
+        edges_fetched: number;
+        edges_upserted: number;
+        by_relation: Record<string, number>;
+      };
+      error?: string;
+    }>,
+  ue3EnrichCooccurrence: () =>
+    fetch("/api/ue3/enrich-cooccurrence", { method: "POST" }).then(j) as Promise<{
+      ok: boolean;
+      stats?: {
+        pairs_total: number;
+        pairs_above_threshold: number;
+        pairs_below_threshold: number;
+        threshold: number;
+      };
+      error?: string;
+    }>,
 };
 
 export interface GraphNode {

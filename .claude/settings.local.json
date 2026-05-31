@@ -4,7 +4,15 @@
       "Bash(python3:*)",
       "Bash(source:*)",
       "Bash(pip3 list:*)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(cp .env.example .env)",
+      "Bash(docker compose *)",
+      "Bash(xargs -0 python3 -m py_compile)",
+      "Bash(python3.12 -m venv .venv)",
+      "Bash(git commit *)",
+      "Bash(ls -la \"/Users/robert/Library/CloudStorage/OneDrive-Persönlich/Vorlesungen/Datenbasierte Fallstudien/RAG-Demo/.claude\" 2>&1 | head -15)"
     ]
   }
 }

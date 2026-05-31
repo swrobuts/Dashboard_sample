@@ -1,0 +1,50 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: UC5 · RAG über de.wikipedia.org/wiki/Apple
+      - navigation [ref=e7]:
+        - button "chat" [ref=e8] [cursor=pointer]
+        - button "vergleich" [ref=e9] [cursor=pointer]
+        - button "graph" [ref=e10] [cursor=pointer]
+        - button "admin" [ref=e11] [cursor=pointer]
+    - generic [ref=e12]:
+      - tablist "Strategie" [ref=e13]:
+        - button "UE1 Simple RAG" [ref=e14] [cursor=pointer]:
+          - generic [ref=e15]: UE1
+          - generic [ref=e16]: Simple RAG
+        - button "UE2 + PageIndex" [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: UE2
+          - generic [ref=e19]: + PageIndex
+        - button "UE3 + GraphRAG" [ref=e20] [cursor=pointer]:
+          - generic [ref=e21]: UE3
+          - generic [ref=e22]: + GraphRAG
+        - button "UE4 + Ontology" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: UE4
+          - generic [ref=e25]: + Ontology
+      - generic [ref=e27]:
+        - text: "LLM:"
+        - combobox "LLM:" [ref=e28]:
+          - option "Gemini" [selected]
+          - option "Lokal (LM Studio)"
+  - main [ref=e29]:
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e36]:
+          - text: Stelle eine Frage zum deutschen Wikipedia-Artikel über
+          - emphasis [ref=e37]: Apple
+          - text: ". Beispiele:"
+          - list [ref=e38]:
+            - listitem [ref=e39]: Wer hat Apple gegründet und wann?
+            - listitem [ref=e40]: Was sind die wichtigsten Produktlinien?
+            - listitem [ref=e41]: Welche Rolle spielte Steve Jobs in der Unternehmensgeschichte?
+        - generic [ref=e43]:
+          - textbox "Frage stellen…" [ref=e44]
+          - button "Senden" [disabled] [ref=e45]
+      - complementary [ref=e46]:
+        - generic [ref=e47]:
+          - generic [ref=e48]: Trace
+          - generic [ref=e49]: "{}"
+        - generic [ref=e50]:
+          - generic [ref=e51]: Quellen (0)
+          - list [ref=e52]:
+            - listitem [ref=e53]: Noch keine Quellen.

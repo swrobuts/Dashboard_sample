@@ -410,6 +410,10 @@ export function Graph() {
   const [nodeSizeScale, setNodeSizeScale] = useState(1.0);
   const [edgeStrokeScale, setEdgeStrokeScale] = useState(1.0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Time-filter slider: when active, hides EVENT entities whose name
+  // does not contain the chosen year. Apple + non-EVENT stay visible.
+  // null = inactive (show everything).
+  const [yearFilter, setYearFilter] = useState<number | null>(null);
   const graphRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -525,6 +529,22 @@ export function Graph() {
 
     const q = search.trim().toLowerCase();
     let keep = new Set(data.nodes.map(n => n.id));
+
+    // Year filter: when active, drop EVENT entities whose name doesn't
+    // contain the year. Non-EVENT nodes stay (they have no year metadata
+    // and we don't want to lose Apple, products, persons just because
+    // the user picked 2010). This is the lightweight version — once
+    // the backend exposes release_year / birth_year on entities the
+    // filter can be tightened.
+    if (yearFilter != null) {
+      const yearStr = String(yearFilter);
+      keep = new Set(
+        data.nodes.filter(n =>
+          n.type !== "EVENT" || n.name.includes(yearStr)
+        ).map(n => n.id)
+      );
+    }
+
     if (q) {
       const matches = new Set(
         data.nodes.filter(n =>
@@ -657,7 +677,7 @@ export function Graph() {
     }
 
     return { nodes, links };
-  }, [data, search, layout, colourBy, size.w, size.h, focusMode, selected]);
+  }, [data, search, layout, colourBy, size.w, size.h, focusMode, selected, yearFilter]);
 
   // ─── Cluster force: in cluster mode, pull each node toward its
   // community's centroid. Without this, d3-force produces the classic
@@ -1437,10 +1457,16 @@ export function Graph() {
               // colour, 2 px line. Used to be a faint #525252 hairline.
               // Path/SPARQL stay accent, regular edges stay hairline grey.
               ctx.strokeStyle = (pathHl || sparqlHl || involved) ? ACCENT : "#cfcbc3";
+              // Edge weight → thickness. Edges with stronger evidence
+              // (multiple co-occurrences, multiple supporting facts)
+              // draw thicker so the eye sees the spine of the graph.
+              // sqrt scaling so 10× weight isn't 10× the line width.
+              const w = (l as any).weight ?? 1;
+              const weightFactor = Math.min(2.5, Math.sqrt(Math.max(w, 1)) * 0.8);
               const baseW = pathHl ? 2.4
                           : involved ? 1.8
                           : sparqlHl ? 1.4
-                          : 0.5;
+                          : 0.5 * weightFactor;
               ctx.lineWidth = (baseW * edgeStrokeScale) / scale;
               ctx.beginPath();
               ctx.moveTo(src.x, src.y);
@@ -1682,6 +1708,34 @@ function LeftRail(props: {
           className="w-full mt-1"
           style={{ accentColor: ACCENT }}
         />
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <Label>Zeitfilter (EVENT)
+              <span className="font-mono ml-2" style={{ color: TEXT_INK }}>
+                {yearFilter ?? "—"}
+              </span>
+            </Label>
+            {yearFilter != null && (
+              <button onClick={() => setYearFilter(null)}
+                      className="text-[10px] uppercase tracking-wider hover:opacity-100"
+                      style={{ color: ACCENT, opacity: 0.85 }}>
+                aus
+              </button>
+            )}
+          </div>
+          <input
+            type="range" min={1976} max={2025} step={1}
+            value={yearFilter ?? 2000}
+            onChange={e => setYearFilter(Number(e.target.value))}
+            className="w-full mt-1"
+            style={{ accentColor: ACCENT }}
+          />
+          {yearFilter != null && (
+            <p className="text-[10px] mt-1" style={{ color: TEXT_MUTED }}>
+              EVENT-Knoten ohne {yearFilter} im Namen sind ausgeblendet.
+            </p>
+          )}
+        </div>
       </Section>
 
       <Section title="Entitätstypen">
@@ -2005,6 +2059,8 @@ function ConnectionPanel(props: {
 function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
   const [runningP, setRunningP] = useState(false);
   const [runningR, setRunningR] = useState(false);
+  const [runningE, setRunningE] = useState(false);
+  const [runningC, setRunningC] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statsP, setStatsP] = useState<null | {
     canonical_persons_fetched: number;
@@ -2019,6 +2075,18 @@ function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
     successor_added: number;
     predecessor_added: number;
   }>(null);
+  const [statsE, setStatsE] = useState<null | {
+    edges_fetched: number;
+    edges_upserted: number;
+    by_relation: Record<string, number>;
+  }>(null);
+  const [statsC, setStatsC] = useState<null | {
+    pairs_total: number;
+    pairs_above_threshold: number;
+    pairs_below_threshold: number;
+    threshold: number;
+  }>(null);
+  const busy = runningP || runningR || runningE || runningC;
 
   const runPersons = async () => {
     setRunningP(true); setError(null); setStatsP(null);
@@ -2040,6 +2108,28 @@ function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
       onComplete();
     } catch (e) { setError(String(e)); }
     finally { setRunningR(false); }
+  };
+
+  const runEdges = async () => {
+    setRunningE(true); setError(null); setStatsE(null);
+    try {
+      const r = await api.ue4EnrichEdges();
+      if (!r.ok) { setError(r.error || "Edge-Anreicherung fehlgeschlagen"); return; }
+      setStatsE(r.stats || null);
+      onComplete();
+    } catch (e) { setError(String(e)); }
+    finally { setRunningE(false); }
+  };
+
+  const runCooccurrence = async () => {
+    setRunningC(true); setError(null); setStatsC(null);
+    try {
+      const r = await api.ue3EnrichCooccurrence();
+      if (!r.ok) { setError(r.error || "Co-Occurrence fehlgeschlagen"); return; }
+      setStatsC(r.stats || null);
+      onComplete();
+    } catch (e) { setError(String(e)); }
+    finally { setRunningC(false); }
   };
 
   return (
@@ -2100,6 +2190,62 @@ function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
           <Row label="Produkte neu"          value={String(statsR.products_added)} />
           <Row label="Nachfolger-Triples"    value={String(statsR.successor_added)} />
           <Row label="Vorgänger-Triples"     value={String(statsR.predecessor_added)} />
+        </dl>
+      )}
+
+      {/* DBpedia Cross-Edges */}
+      <div className="mt-3 mb-2" style={{ borderTop: `1px solid ${RULE}` }} />
+      <p className="text-[11px] leading-relaxed mb-2 mt-2" style={{ color: TEXT_MUTED }}>
+        Cross-Edges: alle DBpedia-Relationen zwischen bereits bekannten
+        Entitäten holen (Steve Jobs → Apple founder; Ive → iPhone
+        designer; …). Verdichtet den Graphen erheblich.
+      </p>
+      <button onClick={runEdges} disabled={busy}
+              className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
+              style={{
+                border: `1px solid ${ACCENT}`,
+                background: runningE ? PAPER_SOFT : "transparent",
+                color: ACCENT,
+                opacity: busy ? 0.5 : 1,
+              }}
+              onMouseEnter={e => { if (!busy) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
+              onMouseLeave={e => { if (!busy) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
+        {runningE ? "Reichert an …" : "Cross-Edges holen"}
+      </button>
+      {statsE && (
+        <dl className="mt-2 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
+          <Row label="DBpedia-Treffer"   value={String(statsE.edges_fetched)} />
+          <Row label="Neue Edges"        value={String(statsE.edges_upserted)} />
+          {Object.entries(statsE.by_relation).slice(0, 6).map(([rel, n]) => (
+            <Row key={rel} label={`· ${rel}`} value={String(n)} />
+          ))}
+        </dl>
+      )}
+
+      {/* Co-Occurrence */}
+      <div className="mt-3 mb-2" style={{ borderTop: `1px solid ${RULE}` }} />
+      <p className="text-[11px] leading-relaxed mb-2 mt-2" style={{ color: TEXT_MUTED }}>
+        Co-Occurrence: Entitäten verbinden, die im gleichen Wikipedia-
+        Abschnitt genannt werden (Schwelle: 2 Sektionen). Keine externen
+        Daten — nutzt nur den UE1-Korpus.
+      </p>
+      <button onClick={runCooccurrence} disabled={busy}
+              className="w-full px-3 py-2 text-[11px] uppercase tracking-wider transition"
+              style={{
+                border: `1px solid ${ACCENT}`,
+                background: runningC ? PAPER_SOFT : "transparent",
+                color: ACCENT,
+                opacity: busy ? 0.5 : 1,
+              }}
+              onMouseEnter={e => { if (!busy) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.color = PAPER; } }}
+              onMouseLeave={e => { if (!busy) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = ACCENT; } }}>
+        {runningC ? "Berechnet …" : "Co-Occurrence berechnen"}
+      </button>
+      {statsC && (
+        <dl className="mt-2 text-[11px] space-y-0.5" style={{ color: TEXT_MUTED }}>
+          <Row label="Paare gesamt"      value={String(statsC.pairs_total)} />
+          <Row label={`≥ ${statsC.threshold} Sektionen`} value={String(statsC.pairs_above_threshold)} />
+          <Row label="unter Schwelle"    value={String(statsC.pairs_below_threshold)} />
         </dl>
       )}
 
