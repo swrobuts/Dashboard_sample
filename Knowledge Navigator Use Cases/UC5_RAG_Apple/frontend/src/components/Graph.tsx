@@ -385,6 +385,10 @@ export function Graph() {
   // technically in the article but produce a noisy scatter of isolated
   // 1-node communities.
   const [minMentions, setMinMentions] = useState(2);
+  // Default 3: co-occurrence pass produces lots of weak (weight=2)
+  // edges that turn the overview into a hairball. weight ≥ 3 keeps
+  // semantically strong connections only.
+  const [minEdgeWeight, setMinEdgeWeight] = useState(3);
   const [search, setSearch] = useState("");
   const [typesEnabled, setTypesEnabled] = useState<Set<string>>(new Set(TYPE_OPTIONS));
   const [colourBy, setColourBy] = useState<ColourBy>("type");
@@ -423,12 +427,19 @@ export function Graph() {
     try {
       const types = TYPE_OPTIONS.every(t => typesEnabled.has(t))
         ? undefined : Array.from(typesEnabled).join(",");
-      const r = await api.graph({ min_mentions: minMentions, types, limit_entities: 500 });
+      const r = await api.graph({ min_mentions: minMentions, types, limit_entities: 500, min_edge_weight: minEdgeWeight });
       setData(r);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload graph data when the edge-weight filter changes (cheap,
+  // backend just adds a WHERE clause).
+  useEffect(() => {
+    if (data) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minEdgeWeight]);
 
   // Konzentrik: edges cross all rings and are visual noise → default OFF.
   // Cluster: edges show inter-cluster structure → default ON.
@@ -1020,6 +1031,8 @@ export function Graph() {
         error={error}
         minMentions={minMentions}
         setMinMentions={setMinMentions}
+        minEdgeWeight={minEdgeWeight}
+        setMinEdgeWeight={setMinEdgeWeight}
         typesEnabled={typesEnabled}
         toggleType={toggleType}
         colourBy={colourBy}
@@ -1649,6 +1662,8 @@ function LeftRail(props: {
   error: string | null;
   minMentions: number;
   setMinMentions: (n: number) => void;
+  minEdgeWeight: number;
+  setMinEdgeWeight: (n: number) => void;
   typesEnabled: Set<string>;
   toggleType: (t: string) => void;
   colourBy: ColourBy;
@@ -1678,7 +1693,9 @@ function LeftRail(props: {
   setFocusMode: (v: boolean) => void;
 }) {
   const {
-    data, loading, error, minMentions, setMinMentions, typesEnabled,
+    data, loading, error, minMentions, setMinMentions,
+    minEdgeWeight, setMinEdgeWeight,
+    typesEnabled,
     toggleType, colourBy, setColourBy, layout, setLayout, showHulls, setShowHulls,
     showEdges, setShowEdges, yearFilter, setYearFilter,
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
@@ -1712,6 +1729,18 @@ function LeftRail(props: {
           className="w-full mt-1"
           style={{ accentColor: ACCENT }}
         />
+        <div className="mt-3">
+          <Label>Min. Kantengewicht <span className="font-mono ml-2" style={{ color: TEXT_INK }}>{minEdgeWeight}</span></Label>
+          <input
+            type="range" min={1} max={10} value={minEdgeWeight}
+            onChange={e => setMinEdgeWeight(Number(e.target.value))}
+            className="w-full mt-1"
+            style={{ accentColor: ACCENT }}
+          />
+          <p className="text-[10px] mt-1" style={{ color: TEXT_MUTED }}>
+            1 = alle Kanten · ≥3 versteckt schwache Co-Occurrence
+          </p>
+        </div>
         <div className="mt-4">
           <div className="flex items-center justify-between">
             <Label>Zeitfilter (EVENT)

@@ -123,6 +123,7 @@ def graph(
     min_mentions: int = 1,
     types: str | None = None,
     limit_entities: int = 250,
+    min_edge_weight: int = 1,
 ) -> dict:
     """Return the UE3 knowledge graph as a JSON node-and-edge document for the
     frontend's force-directed visualisation.
@@ -131,6 +132,9 @@ def graph(
       - ``min_mentions``: drop entities with fewer than this many MENTIONS edges.
       - ``types``: comma-separated whitelist (e.g. "PERSON,PRODUCT"); empty = all.
       - ``limit_entities``: hard cap so the browser doesn't choke on huge graphs.
+      - ``min_edge_weight``: drop edges with weight below this. Lets the
+        frontend hide weak co-occurrence noise while keeping strong
+        relations (default 1 = keep everything; UI defaults to 3).
     """
     type_filter = None
     if types:
@@ -169,8 +173,9 @@ def graph(
         rel_rows = session.run(
             "MATCH (a:Entity)-[r:RELATED_TO]->(b:Entity) "
             "WHERE a.id IN $keys AND b.id IN $keys "
+            "  AND COALESCE(r.weight, 1) >= $min_w "
             "RETURN a.id AS src, b.id AS tgt, r.type AS type, r.weight AS weight",
-            keys=list(keep_keys),
+            keys=list(keep_keys), min_w=min_edge_weight,
         ).data()
 
     # Build community lookup: entity_key → community_id (first containing community).

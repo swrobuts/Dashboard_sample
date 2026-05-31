@@ -97,11 +97,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(j) as Promise<CompareResponse>,
-  graph: (params?: { min_mentions?: number; types?: string; limit_entities?: number }) => {
+  graph: (params?: { min_mentions?: number; types?: string; limit_entities?: number; min_edge_weight?: number }) => {
     const q = new URLSearchParams();
     if (params?.min_mentions != null) q.set("min_mentions", String(params.min_mentions));
     if (params?.types) q.set("types", params.types);
     if (params?.limit_entities != null) q.set("limit_entities", String(params.limit_entities));
+    if (params?.min_edge_weight != null) q.set("min_edge_weight", String(params.min_edge_weight));
     const url = "/api/graph" + (q.toString() ? `?${q.toString()}` : "");
     return fetch(url).then(j) as Promise<GraphPayload>;
   },
