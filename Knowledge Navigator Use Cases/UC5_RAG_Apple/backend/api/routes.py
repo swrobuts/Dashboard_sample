@@ -63,6 +63,129 @@ _NARRATIVE_ROLES = {
 }
 
 
+# Mapping OWL parent class → broad type used by /api/graph
+_GRAPHDB_TYPE_MAP = {
+    "Person":       "PERSON",
+    "Organization": "ORGANIZATION",
+    "Company":      "ORGANIZATION",
+    "Product":      "PRODUCT",
+    "HardwareProduct": "PRODUCT",
+    "SoftwareProduct": "PRODUCT",
+    "Event":        "EVENT",
+    "Era":          "EVENT",
+    "Location":     "LOCATION",
+    "Concept":      "CONCEPT",
+}
+
+
+def _fetch_canonical_entities(exclude_keys: set[str]) -> list[dict]:
+    """Pull entities that live ONLY in GraphDB (DBpedia-validator and
+    products enrichments inserted them) so they appear in the graph
+    visualisation too — not just in SPARQL results.
+
+    Maps each apple:URI to a synthetic entity_key ``CANON:<localname>``
+    and the broadest applicable type from _GRAPHDB_TYPE_MAP. Excludes
+    anything whose synthesised key collides with the UE3 set or whose
+    name (case-insensitive) already exists in UE3.
+    """
+    from backend.data import graphdb_client
+    APPLE_NS = "http://uc5.butscher.cloud/apple#"
+    q = f"""
+PREFIX apple: <{APPLE_NS}>
+PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT ?s ?label ?cls WHERE {{
+  ?s a ?cls ;
+     rdfs:label ?label .
+  FILTER(STRSTARTS(STR(?s), "{APPLE_NS}"))
+  FILTER(STRSTARTS(STR(?cls), "{APPLE_NS}"))
+  FILTER(LANG(?label) = "en")
+}}
+"""
+    try:
+        res = graphdb_client.select(q)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_fetch_canonical_entities: GraphDB query failed: %s", exc)
+        return []
+    # Collect: for each subject, pick the broad type and the best label.
+    by_uri: dict[str, dict] = {}
+    for b in res.get("results", {}).get("bindings", []):
+        uri    = b["s"]["value"]
+        label  = b["label"]["value"]
+        cls    = b["cls"]["value"].rsplit("#", 1)[-1]
+        broad  = _GRAPHDB_TYPE_MAP.get(cls)
+        item = by_uri.setdefault(uri, {
+            "uri": uri, "label": label, "broad": None,
+        })
+        if broad and not item["broad"]:
+            item["broad"] = broad
+    out: list[dict] = []
+    seen_names = {k.split(":", 1)[1].lower() for k in exclude_keys if ":" in k}
+    for uri, e in by_uri.items():
+        if not e["broad"]:
+            continue
+        local = uri.rsplit("#", 1)[-1]
+        # Skip "UnrelatedPerson" + bookkeeping classes via UnrelatedPerson set
+        # — they're typed apple:Person too but flagged as off-topic.
+        if e["label"].lower() in seen_names:
+            continue
+        out.append({
+            "entity_key":    f"CANON:{local}",
+            "name":          e["label"],
+            "type":          e["broad"],
+            "description":   "",   # canonical seed doesn't carry abstracts here
+            "mention_count": 1,
+            "uri":           uri,
+        })
+    return out
+
+
+def _fetch_canonical_relations(uri_to_key: dict[str, str]) -> list[dict]:
+    """Pull predecessor/successor/founded/designedBy/wasCEOOf relations
+    from GraphDB and translate to /api/graph edge dicts using uri_to_key.
+
+    Both ends must be in uri_to_key — we don't insert phantom nodes."""
+    from backend.data import graphdb_client
+    APPLE_NS = "http://uc5.butscher.cloud/apple#"
+    q = f"""
+PREFIX apple: <{APPLE_NS}>
+SELECT ?s ?p ?o WHERE {{
+  ?s ?p ?o .
+  FILTER(STRSTARTS(STR(?s), "{APPLE_NS}"))
+  FILTER(STRSTARTS(STR(?o), "{APPLE_NS}"))
+  FILTER(?p IN (
+    apple:predecessorOf, apple:successorOf,
+    apple:founded, apple:foundedBy,
+    apple:designedBy, apple:designed,
+    apple:wasCEOOf, apple:hasCEO,
+    apple:worksFor, apple:hasEmployee,
+    apple:manufactures, apple:manufacturedBy,
+    apple:associatedWith
+  ))
+}}
+"""
+    try:
+        res = graphdb_client.select(q)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_fetch_canonical_relations: GraphDB query failed: %s", exc)
+        return []
+    out: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for b in res.get("results", {}).get("bindings", []):
+        s, p, o = b["s"]["value"], b["p"]["value"], b["o"]["value"]
+        if s == o: continue
+        src_k = uri_to_key.get(s)
+        tgt_k = uri_to_key.get(o)
+        if not src_k or not tgt_k:
+            continue
+        rel = p.rsplit("#", 1)[-1]
+        key = (src_k, tgt_k, rel)
+        if key in seen: continue
+        seen.add(key)
+        out.append({"src": src_k, "tgt": tgt_k, "type": rel, "weight": 1})
+    return out
+
+
 def _fetch_entity_roles(entity_keys: list[str]) -> dict[str, list[str]]:
     """For each UE3 entity_key, return the list of OWL sub-class names
     asserted in GraphDB (e.g. "CEO", "Designer", "Smartphone").
@@ -164,6 +287,33 @@ def graph(
         ent_rows = [r for r in ent_rows if r["type"] in type_filter]
 
     keep_keys = {r["entity_key"] for r in ent_rows}
+
+    # Augment with canonical entities that live in GraphDB only
+    # (DBpedia-validator + products enrichment + canonical-persons TTL).
+    # Their entity_keys are CANON:<localname> so they don't collide.
+    canonical = _fetch_canonical_entities(keep_keys)
+    if type_filter is not None:
+        canonical = [c for c in canonical if c["type"] in type_filter]
+    # Filter by mention threshold too (canonical entries default to 1)
+    canonical = [c for c in canonical if c["mention_count"] >= min_mentions]
+    ent_rows = list(ent_rows) + [
+        {"entity_key": c["entity_key"], "name": c["name"], "type": c["type"],
+         "description": c["description"], "mention_count": c["mention_count"]}
+        for c in canonical
+    ]
+    keep_keys = {r["entity_key"] for r in ent_rows}
+    # uri_to_key map for canonical relations (UE3-extracted entities use
+    # backend.ingest.ue4_ontology._entity_uri to compute their URI).
+    from backend.ingest.ue4_ontology import _entity_uri
+    uri_to_key: dict[str, str] = {}
+    for r in ent_rows:
+        if r["entity_key"].startswith("CANON:"):
+            # canonical's URI is apple:<localname>
+            local = r["entity_key"].split(":", 1)[1]
+            uri_to_key[f"http://uc5.butscher.cloud/apple#{local}"] = r["entity_key"]
+        else:
+            uri_to_key[_entity_uri(r["entity_key"])] = r["entity_key"]
+
     if not keep_keys:
         return {"nodes": [], "edges": [], "communities": []}
 
@@ -177,6 +327,10 @@ def graph(
             "RETURN a.id AS src, b.id AS tgt, r.type AS type, r.weight AS weight",
             keys=list(keep_keys), min_w=min_edge_weight,
         ).data()
+    # Augment with GraphDB apple:* relations between visible entities.
+    # Covers predecessorOf / successorOf / founded / designedBy /
+    # wasCEOOf / worksFor / manufactures + the catch-all associatedWith.
+    rel_rows = list(rel_rows) + _fetch_canonical_relations(uri_to_key)
 
     # Build community lookup: entity_key → community_id (first containing community).
     entity_to_community: dict[str, str] = {}
