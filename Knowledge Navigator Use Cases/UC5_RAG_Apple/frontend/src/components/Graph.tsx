@@ -846,7 +846,13 @@ export function Graph() {
 
   const isDimmed = (id: string) => {
     if (highlightedIds.size > 0) return !highlightedIds.has(id);
-    if (focusMode && selectedEgoIds) return !selectedEgoIds.has(id);
+    // In ego mode the graph is ALREADY filtered to the focused subset
+    // (selected + 1-hop, possibly + 2-hop). Every visible node is by
+    // definition "in focus" — don't grey out the outer ring just
+    // because it isn't 1-hop. Only hover-dim still applies inside ego.
+    if (focusMode && selected) {
+      return neighbourIds != null ? !neighbourIds.has(id) : false;
+    }
     if (neighbourIds != null) return !neighbourIds.has(id);
     if (selectedEgoIds != null) return !selectedEgoIds.has(id);
     return false;
