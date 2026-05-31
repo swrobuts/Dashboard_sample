@@ -243,6 +243,38 @@ class OntologyRAG:
             except Exception as exc:  # noqa: BLE001
                 log.warning("UE4 text fallback failed: %s", exc)
 
+        # ── Phase 5: live DBpedia lookup as third-tier fallback ──
+        #
+        # If the local SPARQL was empty AND the UE1 text retrieval found
+        # nothing useful (just the "HINWEIS" chunk = 1 chunk, or actual
+        # 0-result chunks where the answering LLM would still say "I
+        # don't know"), try DBpedia directly. Uses the entity labels
+        # the LLM put into the SPARQL as anchors. Latency-bounded —
+        # 8s timeout, 1 retry, fails silently.
+        live_dbpedia_used = False
+        needs_live_lookup = (
+            not bindings and not sparql_err
+            # The text fallback either failed or returned only the marker
+            and (not fallback_used or len(chunks) <= 1)
+        )
+        if needs_live_lookup:
+            try:
+                from backend.retrieval.dbpedia_live import lookup_to_chunks
+                live_chunks, live_sources = lookup_to_chunks(sparql)
+                if live_chunks:
+                    intro = Chunk(
+                        text=("HINWEIS: Weder die lokale Ontologie noch der "
+                              "Wikipedia-Apple-Artikel haben Treffer geliefert. "
+                              "Folgende Fakten kommen LIVE aus DBpedia:"),
+                        section_path="UE4 Live-DBpedia-Fallback",
+                        chunk_id=None,
+                    )
+                    chunks = [intro] + live_chunks
+                    sources = live_sources
+                    live_dbpedia_used = True
+            except Exception as exc:  # noqa: BLE001
+                log.warning("UE4 live DBpedia fallback failed: %s", exc)
+
         trace = {
             "strategy": self.name,
             "llm_provider": self._llm_provider,
@@ -255,6 +287,7 @@ class OntologyRAG:
             "sparql_exec_ms": round(sparql_exec_ms, 1),
             "chunk_count": len(chunks),
             "text_fallback_used": fallback_used,
+            "live_dbpedia_used": live_dbpedia_used,
         }
         return RetrievalResult(chunks=chunks, sources=sources, trace=trace)
 
