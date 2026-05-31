@@ -405,6 +405,11 @@ export function Graph() {
   // noise without adding much — default OFF for Konzentrik. In Cluster
   // they show the inter-cluster structure — default ON.
   const [showEdges, setShowEdges] = useState(true);
+  // User-adjustable size scales — exposed via the settings gear so the
+  // user can dial node/edge weight up or down for their screen.
+  const [nodeSizeScale, setNodeSizeScale] = useState(1.0);
+  const [edgeStrokeScale, setEdgeStrokeScale] = useState(1.0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const graphRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -438,6 +443,59 @@ export function Graph() {
 
   const graphData = useMemo(() => {
     if (!data) return { nodes: [] as FGNode[], links: [] as FGLink[] };
+
+    // ─── Ego-Network layout (focusMode + selected) ──────────────────────
+    // When the user has activated focus AND has a node selected, the
+    // canvas becomes a pure ego-net: selected at the centre, 1-hop
+    // neighbours arranged on a circle around it grouped by the relation
+    // type they connect through. Click any neighbour → that neighbour
+    // becomes the new centre (Wikipedia-style hyperlinked walking).
+    if (focusMode && selected) {
+      const egoIds = new Set<string>([selected.id]);
+      for (const e of data.edges) {
+        if (e.source === selected.id) egoIds.add(e.target);
+        if (e.target === selected.id) egoIds.add(e.source);
+      }
+      const nodes = data.nodes
+        .filter(n => egoIds.has(n.id))
+        .map(n => ({ ...n })) as FGNode[];
+      const links: FGLink[] = data.edges
+        .filter(e => egoIds.has(e.source) && egoIds.has(e.target))
+        .map(e => ({ ...e }));
+      const centre = nodes.find(n => n.id === selected.id);
+      if (centre) { centre.fx = 0; centre.fy = 0; }
+      // Group neighbours by the relation TYPE they connect through.
+      // For each neighbour, pick the (first) relation type whose edge
+      // touches the centre.
+      const relOf = new Map<string, string>();
+      for (const e of links) {
+        if (e.source === selected.id) relOf.set(e.target as string, e.type);
+        if (e.target === selected.id) relOf.set(e.source as string, e.type);
+      }
+      const neighbours = nodes.filter(n => n.id !== selected.id);
+      const buckets = new Map<string, FGNode[]>();
+      for (const n of neighbours) {
+        const rel = relOf.get(n.id) || "_other";
+        if (!buckets.has(rel)) buckets.set(rel, []);
+        buckets.get(rel)!.push(n);
+      }
+      const sectors = Array.from(buckets.entries())
+        .sort((a, b) => b[1].length - a[1].length);
+      const R = Math.max(160, Math.min(neighbours.length * 18, 280));
+      let theta = -Math.PI / 2;
+      for (const [, members] of sectors) {
+        const angle = (members.length / neighbours.length) * Math.PI * 2;
+        members.sort((a, b) => b.mentions - a.mentions);
+        for (let i = 0; i < members.length; i++) {
+          const t2 = theta + ((i + 0.5) / members.length) * angle;
+          members[i].fx = R * Math.cos(t2);
+          members[i].fy = R * Math.sin(t2);
+        }
+        theta += angle;
+      }
+      return { nodes, links };
+    }
+
     const q = search.trim().toLowerCase();
     let keep = new Set(data.nodes.map(n => n.id));
     if (q) {
@@ -572,7 +630,7 @@ export function Graph() {
     }
 
     return { nodes, links };
-  }, [data, search, layout, colourBy, size.w, size.h]);
+  }, [data, search, layout, colourBy, size.w, size.h, focusMode, selected]);
 
   // ─── Cluster force: in cluster mode, pull each node toward its
   // community's centroid. Without this, d3-force produces the classic
@@ -580,10 +638,12 @@ export function Graph() {
   // We compute centroids on every tick from current node positions.
   useEffect(() => {
     if (!graphRef.current) return;
-    // When positions are pinned (concentric, OR cluster+type pack),
-    // disable all the drift-producing forces.
+    // When positions are pinned (concentric, OR cluster+type pack,
+    // OR ego-network when focusing on a selection), disable all
+    // drift-producing forces.
     const allPinned = layout === "concentric" ||
-                      (layout === "cluster" && colourBy === "type");
+                      (layout === "cluster" && colourBy === "type") ||
+                      (focusMode && selected != null);
     const charge = graphRef.current.d3Force("charge") as any;
     if (charge && typeof charge.strength === "function") {
       charge.strength(allPinned ? 0 : -120);
@@ -679,7 +739,7 @@ export function Graph() {
       graphRef.current.d3Force("cluster", clusterForce as any);
     }
     graphRef.current.d3ReheatSimulation();
-  }, [layout, colourBy, graphData.nodes, data]);
+  }, [layout, colourBy, graphData.nodes, data, focusMode, selected]);
 
   // Cluster bubbles (centre + radius per type) for the pack-layout mode.
   // Empty when we're in concentric or community-cluster mode.
@@ -809,6 +869,17 @@ export function Graph() {
       }
     }
   };
+
+  // Focus-mode camera: whenever the selected entity changes while focus
+  // is active, fit the camera to the new ego network. Small delay so
+  // graphData has time to recompute and the simulation to settle.
+  useEffect(() => {
+    if (!focusMode || !selected || !graphRef.current) return;
+    const t = setTimeout(() => {
+      graphRef.current?.zoomToFit(600, 100);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [focusMode, selected]);
 
   // Fly camera to the top fuzzy-match when the search field changes.
   useEffect(() => {
@@ -955,6 +1026,59 @@ export function Graph() {
               );
             })}
           </div>
+        </div>
+
+        {/* Settings gear — floating top-right of canvas, opens a small
+            panel with sliders for node size and edge thickness. */}
+        <div className="absolute top-2 right-2 z-20" style={{ marginRight: sparqlOpen ? "0" : 0 }}>
+          <button
+            onClick={() => setSettingsOpen(o => !o)}
+            className="w-8 h-8 flex items-center justify-center text-[16px] transition hover:opacity-100"
+            style={{
+              opacity: settingsOpen ? 1 : 0.6,
+              color: settingsOpen ? ACCENT : TEXT_INK,
+              background: settingsOpen ? PAPER : "transparent",
+              border: `1px solid ${settingsOpen ? ACCENT : RULE}`,
+            }}
+            title="Darstellung anpassen"
+          >
+            ⚙
+          </button>
+          {settingsOpen && (
+            <div className="absolute top-9 right-0 w-64 p-4"
+                 style={{ background: PAPER, border: `1px solid ${TEXT_INK}` }}>
+              <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
+                Darstellung
+              </div>
+              <Label>
+                Knotengröße
+                <span className="font-mono ml-2" style={{ color: TEXT_INK }}>
+                  {nodeSizeScale.toFixed(1)}×
+                </span>
+              </Label>
+              <input type="range" min={0.5} max={2.5} step={0.1}
+                     value={nodeSizeScale}
+                     onChange={e => setNodeSizeScale(parseFloat(e.target.value))}
+                     className="w-full mt-1 mb-3"
+                     style={{ accentColor: ACCENT }} />
+              <Label>
+                Kantenstärke
+                <span className="font-mono ml-2" style={{ color: TEXT_INK }}>
+                  {edgeStrokeScale.toFixed(1)}×
+                </span>
+              </Label>
+              <input type="range" min={0.5} max={4.0} step={0.1}
+                     value={edgeStrokeScale}
+                     onChange={e => setEdgeStrokeScale(parseFloat(e.target.value))}
+                     className="w-full mt-1"
+                     style={{ accentColor: ACCENT }} />
+              <button onClick={() => { setNodeSizeScale(1); setEdgeStrokeScale(1); }}
+                      className="mt-3 text-[10px] uppercase tracking-wider hover:opacity-100 transition"
+                      style={{ color: TEXT_MUTED, opacity: 0.7 }}>
+                Zurücksetzen
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Zoom — three plain buttons, no decoration */}
@@ -1140,8 +1264,9 @@ export function Graph() {
               const colour = colourOf(n);
               // Bigger base so they read on a busy canvas — addresses
               // "optisch zu klein". sqrt scaling keeps top nodes legible
-              // without crushing the long tail.
-              const baseR = 3.2 + Math.sqrt(n.mentions + 1) * 2.1;
+              // without crushing the long tail. Multiplied by user-
+              // adjustable nodeSizeScale from the settings gear.
+              const baseR = (3.2 + Math.sqrt(n.mentions + 1) * 2.1) * nodeSizeScale;
               const isHovered = hovered?.id === n.id;
               const isSelected = selected?.id === n.id;
               const isHighlight = highlightedIds.has(n.id);
@@ -1219,8 +1344,15 @@ export function Graph() {
                        || (pathIds.length > 1 && !pathHl));
               ctx.save();
               if (dim) ctx.globalAlpha = 0.14;
-              ctx.strokeStyle = (pathHl || sparqlHl) ? ACCENT : (involved ? "#525252" : "#cfcbc3");
-              ctx.lineWidth = (pathHl ? 2 : (involved || sparqlHl) ? 1 : 0.5) / scale;
+              // Hover-incident edges now read MUCH more strongly: accent
+              // colour, 2 px line. Used to be a faint #525252 hairline.
+              // Path/SPARQL stay accent, regular edges stay hairline grey.
+              ctx.strokeStyle = (pathHl || sparqlHl || involved) ? ACCENT : "#cfcbc3";
+              const baseW = pathHl ? 2.4
+                          : involved ? 1.8
+                          : sparqlHl ? 1.4
+                          : 0.5;
+              ctx.lineWidth = (baseW * edgeStrokeScale) / scale;
               ctx.beginPath();
               ctx.moveTo(src.x, src.y);
               ctx.lineTo(tgt.x, tgt.y);
@@ -1696,8 +1828,14 @@ function ConnectionPanel(props: {
                 background: focusMode ? ACCENT : "transparent",
                 color: focusMode ? PAPER : TEXT_MUTED,
               }}>
-        {focusMode ? "Fokus aktiv · auflösen" : "Nur Nachbarschaft zeigen"}
+        {focusMode ? "Fokus aktiv · auflösen" : "Ego-Netzwerk anzeigen"}
       </button>
+      {focusMode && (
+        <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: TEXT_MUTED }}>
+          Graph zeigt nur diesen Knoten + direkte Nachbarn, gruppiert nach
+          Beziehungstyp. Klick auf Nachbar → er wird neuer Mittelpunkt.
+        </p>
+      )}
 
       {/* Connections grouped by relation type */}
       <div className="mt-5">
