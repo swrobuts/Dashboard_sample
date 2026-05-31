@@ -141,6 +141,24 @@ class GraphRAG:
             merged.append(c)
         merged = merged[:k]
 
+        # ── Text fallback: when neither local nor global matched (because
+        # the entity isn't in UE3's extracted set or the question doesn't
+        # latch onto any community), reuse UE1's hybrid retrieval on the
+        # raw question text. Closes the gap on names UE3 missed during
+        # extraction (e.g. "Gil Amelio" — appears in the Apple Wikipedia
+        # article but UE3 never extracted him as an entity).
+        text_fallback_used = False
+        if not merged:
+            try:
+                from backend.retrieval.simple import SimpleRAG
+                fb = SimpleRAG(llm_provider=self._llm_provider).retrieve(query, k=k)
+                if fb.chunks:
+                    chunks = fb.chunks
+                    sources = fb.sources
+                    text_fallback_used = True
+            except Exception as exc:  # noqa: BLE001
+                log.warning("UE3 text fallback failed: %s", exc)
+
         chunks = [
             Chunk(
                 text=c["text"],
@@ -148,7 +166,7 @@ class GraphRAG:
                 chunk_id=c.get("chunk_id"),
             )
             for c in merged
-        ]
+        ] if not text_fallback_used else chunks  # keep fallback chunks
         sources = [
             SourceRef(
                 chunk_id=c.get("chunk_id"),
@@ -157,7 +175,7 @@ class GraphRAG:
                 distance=c.get("distance"),
             )
             for c in merged
-        ]
+        ] if not text_fallback_used else sources
 
         trace = {
             "strategy": self.name,
@@ -181,7 +199,8 @@ class GraphRAG:
             ],
             "local_chunk_count": len(local_chunks),
             "global_chunk_count": len(global_chunks),
-            "final_chunk_count": len(merged),
+            "final_chunk_count": len(chunks),
+            "text_fallback_used": text_fallback_used,
         }
         return RetrievalResult(chunks=chunks, sources=sources, trace=trace)
 

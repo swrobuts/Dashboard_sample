@@ -27,6 +27,7 @@ from backend.data.pg import ping as pg_ping
 from backend.data.pg import session_scope
 from backend.data.wikipedia_loader import fetch_article
 from backend.evaluation.judge import judge_answers
+from backend.ingest.canonical_to_ue3 import push_to_ue3
 from backend.ingest.cooccurrence import enrich_cooccurrence
 from backend.ingest.dbpedia_edges import enrich_edges
 from backend.ingest.dbpedia_products import enrich_products
@@ -417,6 +418,19 @@ def sparql(body: dict) -> dict:
         return {"ok": True, "kind": "query", "result": graphdb_client.select(q)}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:500], "kind": "update" if is_update else "query"}
+
+
+@router.post("/ue3/sync-canonical")
+def ue3_sync_canonical() -> dict:
+    """Push every canonical GraphDB-only entity (DBpedia-validator +
+    products + canonical-persons TTL) into Postgres ue3.entity_summary
+    AND Neo4j Entity nodes. Lets UE3 GraphRAG retrieval find them too.
+    Idempotent; safe to re-run."""
+    try:
+        return {"ok": True, "stats": push_to_ue3()}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("UE3 canonical sync failed")
+        return {"ok": False, "error": str(exc)[:500]}
 
 
 @router.post("/ue4/enrich-edges")

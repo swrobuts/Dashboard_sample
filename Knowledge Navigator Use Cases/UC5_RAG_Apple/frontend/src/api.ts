@@ -160,6 +160,17 @@ export const api = {
       };
       error?: string;
     }>,
+  ue3SyncCanonical: () =>
+    fetch("/api/ue3/sync-canonical", { method: "POST" }).then(j) as Promise<{
+      ok: boolean;
+      stats?: {
+        canonical_fetched: number;
+        pg_inserted: number;
+        neo4j_inserted: number;
+        skipped: number;
+      };
+      error?: string;
+    }>,
 };
 
 export interface GraphNode {
