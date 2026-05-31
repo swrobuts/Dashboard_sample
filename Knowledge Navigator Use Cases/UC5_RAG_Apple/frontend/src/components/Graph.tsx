@@ -414,6 +414,15 @@ export function Graph() {
   const [nodeSizeScale, setNodeSizeScale] = useState(1.0);
   const [edgeStrokeScale, setEdgeStrokeScale] = useState(1.0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Show relation labels on hover/path edges? Default off — too noisy
+  // for browsing. Users who want them turn on via the gear.
+  const [showEdgeLabels, setShowEdgeLabels] = useState(false);
+  // Background theme. "paper" = warm off-white (Aicher/Tufte default),
+  // "white" = pure white for high-contrast presentations / print.
+  const [theme, setTheme] = useState<"paper" | "white">("paper");
+  // Collapse the LeftRail entirely for presentation mode → canvas
+  // gets the freed space.
+  const [leftRailOpen, setLeftRailOpen] = useState(true);
   // Time-filter slider: when active, hides EVENT entities whose name
   // does not contain the chosen year. Apple + non-EVENT stay visible.
   // null = inactive (show everything).
@@ -1019,12 +1028,57 @@ export function Graph() {
     return new Set(sorted.slice(0, 15).map(n => n.id));
   }, [graphData.nodes]);
 
+  // Theme-derived background. PAPER constant stays for tooltips and
+  // smaller surfaces that should always feel "warm" — but main canvas,
+  // root container and sidebars switch to white when the user picks it.
+  const bgMain = theme === "white" ? "#ffffff" : PAPER;
+
+  // Keyboard shortcuts: "/" focuses the search, "Esc" exits ego/clears.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "/") {
+        e.preventDefault();
+        (document.querySelector(
+          'input[placeholder="Name oder Beschreibung"]'
+        ) as HTMLInputElement | null)?.focus();
+      } else if (e.key === "Escape") {
+        if (selected || focusMode) {
+          setSelected(null); setFocusMode(false);
+          setTimeout(() => graphRef.current?.zoomToFit(600, 60), 60);
+        } else if (highlightedIds.size > 0) {
+          setHighlightedIds(new Set());
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, focusMode, highlightedIds.size]);
+
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden"
-         style={{ background: PAPER, color: TEXT_INK,
+         style={{ background: bgMain, color: TEXT_INK,
                   fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif" }}>
-      {/* Left rail */}
-      <LeftRail
+      {/* Left rail — collapsible. Closed = thin 18px sliver with a
+          chevron to re-open. Keeps the canvas the dominant surface
+          in presentation mode. */}
+      {!leftRailOpen && (
+        <button
+          onClick={() => setLeftRailOpen(true)}
+          className="shrink-0 flex items-center justify-center"
+          style={{
+            width: "18px",
+            background: bgMain,
+            borderRight: `1px solid ${RULE}`,
+            color: TEXT_MUTED,
+          }}
+          title="Seitenleiste einblenden"
+        >
+          ›
+        </button>
+      )}
+      {leftRailOpen && <LeftRail
         data={data}
         graphData={graphData}
         loading={loading}
@@ -1060,13 +1114,14 @@ export function Graph() {
         goBack={goBack}
         focusMode={focusMode}
         setFocusMode={setFocusMode}
-      />
+        onCollapse={() => setLeftRailOpen(false)}
+      />}
 
       {/* Canvas */}
-      <main ref={containerRef} className="flex-1 relative" style={{ background: PAPER }}>
+      <main ref={containerRef} className="flex-1 relative" style={{ background: bgMain }}>
         {/* Search rule, top */}
         <div className="absolute top-0 left-0 right-0 z-10 px-6 py-3 flex items-center gap-4"
-             style={{ borderBottom: `1px solid ${RULE}`, background: PAPER }}>
+             style={{ borderBottom: `1px solid ${RULE}`, background: bgMain }}>
           <label className="text-[10px] uppercase tracking-[0.2em]" style={{ color: TEXT_MUTED }}>
             Suche
           </label>
@@ -1171,7 +1226,39 @@ export function Graph() {
                      onChange={e => setEdgeStrokeScale(parseFloat(e.target.value))}
                      className="w-full mt-1"
                      style={{ accentColor: ACCENT }} />
-              <button onClick={() => { setNodeSizeScale(1); setEdgeStrokeScale(1); }}
+              <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${RULE}` }}>
+                <label className="flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: TEXT_INK }}>
+                  <input type="checkbox" checked={showEdgeLabels}
+                         onChange={e => setShowEdgeLabels(e.target.checked)}
+                         className="rounded" style={{ accentColor: ACCENT }} />
+                  Kanten-Beschriftungen zeigen
+                </label>
+                <p className="text-[10px] mt-0.5 ml-6" style={{ color: TEXT_MUTED }}>
+                  Pfad-Modus zeigt sie immer.
+                </p>
+              </div>
+              <div className="mt-3">
+                <Label>Hintergrund</Label>
+                <div className="flex gap-1 mt-1" style={{ border: `1px solid ${RULE}` }}>
+                  {(["paper", "white"] as const).map(opt => (
+                    <button key={opt} onClick={() => setTheme(opt)}
+                            className="flex-1 px-2 py-1.5 text-[11px] uppercase tracking-wider transition"
+                            style={{
+                              background: theme === opt ? TEXT_INK : "transparent",
+                              color: theme === opt ? PAPER : TEXT_MUTED,
+                            }}>
+                      {opt === "paper" ? "Papier" : "Weiß"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 pt-3 text-[10px]"
+                   style={{ borderTop: `1px solid ${RULE}`, color: TEXT_MUTED }}>
+                <span style={{ color: TEXT_INK }}>/</span> Suche fokussieren
+                <span className="mx-2">·</span>
+                <span style={{ color: TEXT_INK }}>Esc</span> Auswahl auflösen
+              </div>
+              <button onClick={() => { setNodeSizeScale(1); setEdgeStrokeScale(1); setShowEdgeLabels(false); setTheme("paper"); }}
                       className="mt-3 text-[10px] uppercase tracking-wider hover:opacity-100 transition"
                       style={{ color: TEXT_MUTED, opacity: 0.7 }}>
                 Zurücksetzen
@@ -1199,7 +1286,7 @@ export function Graph() {
             ref={graphRef}
             width={size.w}
             height={size.h - 44}
-            backgroundColor={PAPER}
+            backgroundColor={bgMain}
             graphData={graphData}
             nodeId="id"
             nodeRelSize={1}
@@ -1549,12 +1636,10 @@ export function Graph() {
               }
 
               // ─── Edge-label pass ─────────────────────────────────────
-              // Labels shown for:
-              //   • The hovered edge (when no path is active)
-              //   • All edges incident to the hovered node
-              //   • All edges on the highlighted path (permanent)
-              // Drawn at the midpoint of the segment, rotated to match
-              // the edge direction, in the accent colour when on-path.
+              // Path edges always labelled (the user explicitly picked
+              // them and needs to read the path as a sentence). Hover/
+              // hover-incident labels are opt-in via showEdgeLabels —
+              // off by default because they clutter dense ego networks.
               const edgesToLabel: FGLink[] = [];
               const pushUnique = (l: FGLink) => {
                 if (!edgesToLabel.includes(l)) edgesToLabel.push(l);
@@ -1572,16 +1657,18 @@ export function Graph() {
                   }
                 }
               }
-              // Hover-node-incident edges.
-              if (hovered) {
-                for (const l of graphData.links) {
-                  const sid = typeof l.source === "string" ? l.source : (l.source as FGNode).id;
-                  const tid = typeof l.target === "string" ? l.target : (l.target as FGNode).id;
-                  if (sid === hovered.id || tid === hovered.id) pushUnique(l);
+              // Hover-node-incident edges + directly hovered edge are
+              // ONLY labelled when the user has opted in.
+              if (showEdgeLabels) {
+                if (hovered) {
+                  for (const l of graphData.links) {
+                    const sid = typeof l.source === "string" ? l.source : (l.source as FGNode).id;
+                    const tid = typeof l.target === "string" ? l.target : (l.target as FGNode).id;
+                    if (sid === hovered.id || tid === hovered.id) pushUnique(l);
+                  }
                 }
+                if (hoveredLink) pushUnique(hoveredLink);
               }
-              // Directly hovered edge.
-              if (hoveredLink) pushUnique(hoveredLink);
 
               for (const l of edgesToLabel) {
                 const src = l.source as FGNode;
@@ -1691,6 +1778,7 @@ function LeftRail(props: {
   goBack: () => void;
   focusMode: boolean;
   setFocusMode: (v: boolean) => void;
+  onCollapse: () => void;
 }) {
   const {
     data, loading, error, minMentions, setMinMentions,
@@ -1701,17 +1789,28 @@ function LeftRail(props: {
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
     load, selected, communityById, colourOf,
     connections, navigateTo, history, goBack, focusMode, setFocusMode,
+    onCollapse,
   } = props;
   return (
     <aside className="w-72 shrink-0 overflow-y-auto"
            style={{ background: PAPER, borderRight: `1px solid ${RULE}`, color: TEXT_INK }}>
       <div className="px-5 pt-6 pb-5" style={{ borderBottom: `1px solid ${RULE}` }}>
-        <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
-          UC5 · Knowledge Graph
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+              UC5 · Knowledge Graph
+            </div>
+            <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
+              Apple Ontologie
+            </h2>
+          </div>
+          <button onClick={onCollapse}
+                  className="text-[12px] hover:opacity-100 transition px-1.5"
+                  style={{ color: TEXT_MUTED, opacity: 0.7 }}
+                  title="Seitenleiste einklappen">
+            ‹
+          </button>
         </div>
-        <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
-          Apple Ontologie
-        </h2>
         {data && (
           <dl className="mt-4 text-[11px]" style={{ color: TEXT_MUTED }}>
             <Row label="Entitäten" value={`${data.nodes.length}`} />
@@ -2166,11 +2265,7 @@ function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
   };
 
   return (
-    <div className="px-5 py-4" style={{ borderTop: `1px solid ${RULE}` }}>
-      <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
-        DBpedia · Anreicherung
-      </div>
-
+    <Section title="DBpedia · Anreicherung" defaultOpen={false}>
       {/* Persons */}
       <p className="text-[11px] leading-relaxed mb-2" style={{ color: TEXT_MUTED }}>
         Personen: kanonische Apple-Personen aus DBpedia + Kontext-only
@@ -2286,7 +2381,7 @@ function DBpediaValidator({ onComplete }: { onComplete: () => void }) {
         <div className="mt-3 text-[11px] font-mono p-2 break-all"
              style={{ border: `1px solid ${ACCENT}`, color: ACCENT }}>{error}</div>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -2321,13 +2416,22 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, defaultOpen = true }:
+                 { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="px-5 py-4" style={{ borderBottom: `1px solid ${RULE}` }}>
-      <div className="text-[10px] uppercase tracking-[0.25em] mb-3" style={{ color: TEXT_MUTED }}>
-        {title}
-      </div>
-      {children}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between text-[10px] uppercase tracking-[0.25em] mb-3 hover:opacity-100 transition"
+        style={{ color: TEXT_MUTED }}
+      >
+        <span>{title}</span>
+        <span style={{ color: TEXT_MUTED, fontFamily: "monospace" }}>
+          {open ? "−" : "+"}
+        </span>
+      </button>
+      {open && children}
     </div>
   );
 }
