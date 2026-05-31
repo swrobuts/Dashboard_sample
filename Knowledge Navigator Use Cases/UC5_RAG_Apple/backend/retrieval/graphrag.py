@@ -141,20 +141,42 @@ class GraphRAG:
             merged.append(c)
         merged = merged[:k]
 
-        # ── Text fallback: when neither local nor global matched (because
-        # the entity isn't in UE3's extracted set or the question doesn't
-        # latch onto any community), reuse UE1's hybrid retrieval on the
-        # raw question text. Closes the gap on names UE3 missed during
-        # extraction (e.g. "Gil Amelio" — appears in the Apple Wikipedia
-        # article but UE3 never extracted him as an entity).
+        # ── Text fallback / augmentation ─────────────────────────────────
+        # Trigger when:
+        #   a) merged is empty (no graph hit at all), OR
+        #   b) merged is "thin" — fewer than ½·k chunks, OR
+        #   c) every matched_entity is a CANON: stub (synced from GraphDB
+        #      with only a 1-line description) and we'd otherwise feed
+        #      the LLM just those stubs.
+        # The fallback AUGMENTS the graph chunks with UE1 text chunks
+        # (deduped) — we don't replace, because graph chunks may still
+        # carry useful structural context.
         text_fallback_used = False
-        if not merged:
+        only_canonical = (
+            bool(matched_entities)
+            and all((e.get("key") or e.get("entity_key") or "").startswith("CANON:")
+                    for e in matched_entities)
+        )
+        thin_match = len(merged) < max(1, k // 2)
+        if not merged or thin_match or only_canonical:
             try:
                 from backend.retrieval.simple import SimpleRAG
                 fb = SimpleRAG(llm_provider=self._llm_provider).retrieve(query, k=k)
                 if fb.chunks:
-                    chunks = fb.chunks
-                    sources = fb.sources
+                    # Dedup by chunk_id (graph chunks first → text fills gaps)
+                    have_ids = {c.chunk_id for c in (
+                        [Chunk(text=c["text"], section_path=c.get("section_path"),
+                               chunk_id=c.get("chunk_id")) for c in merged]
+                    ) if c.chunk_id is not None}
+                    augment = [c for c in fb.chunks if c.chunk_id not in have_ids]
+                    # Build final chunks: graph first, then text augment
+                    chunks = [Chunk(text=c["text"], section_path=c.get("section_path"),
+                                    chunk_id=c.get("chunk_id")) for c in merged] + augment[: k]
+                    sources = [SourceRef(chunk_id=c.get("chunk_id"),
+                                          section_path=c.get("section_path") or c.get("kind"),
+                                          text=c["text"], distance=c.get("distance"))
+                               for c in merged] + [s for s in fb.sources
+                                                     if s.chunk_id not in have_ids][: k]
                     text_fallback_used = True
             except Exception as exc:  # noqa: BLE001
                 log.warning("UE3 text fallback failed: %s", exc)
