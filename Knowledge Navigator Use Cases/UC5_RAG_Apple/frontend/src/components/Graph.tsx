@@ -1030,6 +1030,8 @@ export function Graph() {
         setShowHulls={setShowHulls}
         showEdges={showEdges}
         setShowEdges={setShowEdges}
+        yearFilter={yearFilter}
+        setYearFilter={setYearFilter}
         pathMode={pathMode}
         setPathMode={(v) => { setPathMode(v); if (!v) { setPathFrom(null); setPathIds([]); } }}
         pathFrom={pathFrom}
@@ -1657,6 +1659,8 @@ function LeftRail(props: {
   setShowHulls: (v: boolean) => void;
   showEdges: boolean;
   setShowEdges: (v: boolean) => void;
+  yearFilter: number | null;
+  setYearFilter: (v: number | null) => void;
   pathMode: boolean;
   setPathMode: (v: boolean) => void;
   pathFrom: FGNode | null;
@@ -1676,7 +1680,7 @@ function LeftRail(props: {
   const {
     data, loading, error, minMentions, setMinMentions, typesEnabled,
     toggleType, colourBy, setColourBy, layout, setLayout, showHulls, setShowHulls,
-    showEdges, setShowEdges,
+    showEdges, setShowEdges, yearFilter, setYearFilter,
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
     load, selected, communityById, colourOf,
     connections, navigateTo, history, goBack, focusMode, setFocusMode,
