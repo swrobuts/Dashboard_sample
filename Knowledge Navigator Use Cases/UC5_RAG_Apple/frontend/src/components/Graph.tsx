@@ -1060,22 +1060,25 @@ export function Graph() {
     <div className="flex-1 flex min-h-0 overflow-hidden"
          style={{ background: bgMain, color: TEXT_INK,
                   fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif" }}>
-      {/* Left rail — collapsible. Closed = thin 18px sliver with a
-          chevron to re-open. Keeps the canvas the dominant surface
-          in presentation mode. */}
+      {/* Left rail — collapsible. Closed = clear, accent-bordered tab
+          along the edge so it's obvious you can re-open it. */}
       {!leftRailOpen && (
         <button
           onClick={() => setLeftRailOpen(true)}
-          className="shrink-0 flex items-center justify-center"
+          className="shrink-0 flex flex-col items-center justify-center gap-2 hover:opacity-100 transition group"
           style={{
-            width: "18px",
+            width: "28px",
             background: bgMain,
-            borderRight: `1px solid ${RULE}`,
-            color: TEXT_MUTED,
+            borderRight: `2px solid ${ACCENT}`,
+            color: ACCENT,
           }}
           title="Seitenleiste einblenden"
         >
-          ›
+          <span className="text-[18px] font-light">›</span>
+          <span className="text-[9px] uppercase tracking-[0.25em]"
+                style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
+            Filter
+          </span>
         </button>
       )}
       {leftRailOpen && <LeftRail
@@ -1115,6 +1118,7 @@ export function Graph() {
         focusMode={focusMode}
         setFocusMode={setFocusMode}
         onCollapse={() => setLeftRailOpen(false)}
+        bgMain={bgMain}
       />}
 
       {/* Canvas */}
@@ -1717,24 +1721,37 @@ export function Graph() {
           />
         )}
 
-        <button
-          onClick={() => setSparqlOpen(o => !o)}
-          className="absolute top-2.5 z-10 text-[10px] uppercase tracking-[0.2em] hover:opacity-100 transition"
-          style={{
-            right: sparqlOpen ? "30rem" : "24px",
-            color: TEXT_MUTED,
-            opacity: 0.8,
-          }}
-        >
-          {sparqlOpen ? "SPARQL  ›" : "‹  SPARQL"}
-        </button>
+        {/* When SPARQL panel is OPEN, show an in-panel collapse handle
+            (rendered inside the panel itself, below). When CLOSED, the
+            sliver to the right of <main> shows a re-open button. */}
       </main>
 
       {sparqlOpen && (
         <SparqlConsole
           onResults={handleSparqlExecuted}
           nodeIds={new Set(graphData.nodes.map(n => n.id))}
+          onCollapse={() => setSparqlOpen(false)}
+          bgMain={bgMain}
         />
+      )}
+      {!sparqlOpen && (
+        <button
+          onClick={() => setSparqlOpen(true)}
+          className="shrink-0 flex flex-col items-center justify-center gap-2 hover:opacity-100 transition"
+          style={{
+            width: "28px",
+            background: bgMain,
+            borderLeft: `2px solid ${ACCENT}`,
+            color: ACCENT,
+          }}
+          title="SPARQL-Konsole einblenden"
+        >
+          <span className="text-[18px] font-light">‹</span>
+          <span className="text-[9px] uppercase tracking-[0.25em]"
+                style={{ writingMode: "vertical-rl" }}>
+            SPARQL
+          </span>
+        </button>
       )}
     </div>
   );
@@ -1779,6 +1796,7 @@ function LeftRail(props: {
   focusMode: boolean;
   setFocusMode: (v: boolean) => void;
   onCollapse: () => void;
+  bgMain: string;
 }) {
   const {
     data, loading, error, minMentions, setMinMentions,
@@ -1789,11 +1807,11 @@ function LeftRail(props: {
     pathMode, setPathMode, pathFrom, pathIds, clearPath,
     load, selected, communityById, colourOf,
     connections, navigateTo, history, goBack, focusMode, setFocusMode,
-    onCollapse,
+    onCollapse, bgMain,
   } = props;
   return (
     <aside className="w-72 shrink-0 overflow-y-auto"
-           style={{ background: PAPER, borderRight: `1px solid ${RULE}`, color: TEXT_INK }}>
+           style={{ background: bgMain, borderRight: `1px solid ${RULE}`, color: TEXT_INK }}>
       <div className="px-5 pt-6 pb-5" style={{ borderBottom: `1px solid ${RULE}` }}>
         <div className="flex items-start justify-between">
           <div>
@@ -1805,8 +1823,15 @@ function LeftRail(props: {
             </h2>
           </div>
           <button onClick={onCollapse}
-                  className="text-[12px] hover:opacity-100 transition px-1.5"
-                  style={{ color: TEXT_MUTED, opacity: 0.7 }}
+                  className="text-[16px] leading-none flex items-center justify-center transition"
+                  style={{
+                    width: "26px", height: "26px",
+                    border: `1px solid ${RULE}`,
+                    color: TEXT_INK,
+                    background: bgMain,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.color = ACCENT; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = RULE; e.currentTarget.style.color = TEXT_INK; }}
                   title="Seitenleiste einklappen">
             ‹
           </button>
@@ -2423,11 +2448,16 @@ function Section({ title, children, defaultOpen = true }:
     <div className="px-5 py-4" style={{ borderBottom: `1px solid ${RULE}` }}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between text-[10px] uppercase tracking-[0.25em] mb-3 hover:opacity-100 transition"
+        className="w-full flex items-center justify-between text-[10px] uppercase tracking-[0.25em] mb-3 transition group"
         style={{ color: TEXT_MUTED }}
+        title={open ? "einklappen" : "ausklappen"}
       >
-        <span>{title}</span>
-        <span style={{ color: TEXT_MUTED, fontFamily: "monospace" }}>
+        <span className="group-hover:text-current" style={{ color: open ? TEXT_INK : TEXT_MUTED }}>{title}</span>
+        <span className="font-mono text-[14px] leading-none w-5 h-5 flex items-center justify-center transition"
+              style={{
+                color: open ? ACCENT : TEXT_INK,
+                border: `1px solid ${open ? ACCENT : RULE}`,
+              }}>
           {open ? "−" : "+"}
         </span>
       </button>
@@ -2475,9 +2505,11 @@ SELECT ?type (COUNT(?s) AS ?anzahl) WHERE {
 ];
 
 
-function SparqlConsole({ onResults, nodeIds }: {
+function SparqlConsole({ onResults, nodeIds, onCollapse, bgMain }: {
   onResults: (matched: string[]) => void;
   nodeIds: Set<string>;
+  onCollapse: () => void;
+  bgMain: string;
 }) {
   const [nlQuery, setNlQuery] = useState("");
   const [sparql, setSparql] = useState("");
@@ -2534,14 +2566,31 @@ function SparqlConsole({ onResults, nodeIds }: {
 
   return (
     <aside className="w-[30rem] shrink-0 flex flex-col"
-           style={{ background: PAPER, borderLeft: `1px solid ${RULE}`, color: TEXT_INK }}>
+           style={{ background: bgMain, borderLeft: `1px solid ${RULE}`, color: TEXT_INK }}>
       <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${RULE}` }}>
-        <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
-          UE4 · Konsole
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: TEXT_MUTED }}>
+              UE4 · Konsole
+            </div>
+            <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
+              SPARQL Query
+            </h2>
+          </div>
+          <button onClick={onCollapse}
+                  className="text-[16px] leading-none flex items-center justify-center transition"
+                  style={{
+                    width: "26px", height: "26px",
+                    border: `1px solid ${RULE}`,
+                    color: TEXT_INK,
+                    background: bgMain,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.color = ACCENT; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = RULE; e.currentTarget.style.color = TEXT_INK; }}
+                  title="SPARQL-Konsole einklappen">
+            ›
+          </button>
         </div>
-        <h2 className="font-medium text-base mt-1" style={{ letterSpacing: "-0.01em" }}>
-          SPARQL Query
-        </h2>
       </div>
 
       <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
