@@ -445,17 +445,26 @@ export function Graph() {
     if (!data) return { nodes: [] as FGNode[], links: [] as FGLink[] };
 
     // ─── Ego-Network layout (focusMode + selected) ──────────────────────
-    // When the user has activated focus AND has a node selected, the
-    // canvas becomes a pure ego-net: selected at the centre, 1-hop
-    // neighbours arranged on a circle around it grouped by the relation
-    // type they connect through. Click any neighbour → that neighbour
-    // becomes the new centre (Wikipedia-style hyperlinked walking).
+    // Selected at (0,0), 1-hop neighbours on an inner ring. When 1-hop
+    // is sparse (< 5 — common on this graph because UE3 emits ~20
+    // edges total for 40 nodes), automatically expand to a 2-hop ring
+    // so the user sees real context instead of just "Macintosh — Apple"
+    // and a giant empty canvas.
     if (focusMode && selected) {
-      const egoIds = new Set<string>([selected.id]);
+      const hop1 = new Set<string>([selected.id]);
       for (const e of data.edges) {
-        if (e.source === selected.id) egoIds.add(e.target);
-        if (e.target === selected.id) egoIds.add(e.source);
+        if (e.source === selected.id) hop1.add(e.target);
+        if (e.target === selected.id) hop1.add(e.source);
       }
+      const expand2Hop = hop1.size < 5;
+      const hop2 = new Set<string>(hop1);
+      if (expand2Hop) {
+        for (const e of data.edges) {
+          if (hop1.has(e.source)) hop2.add(e.target);
+          if (hop1.has(e.target)) hop2.add(e.source);
+        }
+      }
+      const egoIds = hop2;
       const nodes = data.nodes
         .filter(n => egoIds.has(n.id))
         .map(n => ({ ...n })) as FGNode[];
@@ -464,34 +473,52 @@ export function Graph() {
         .map(e => ({ ...e }));
       const centre = nodes.find(n => n.id === selected.id);
       if (centre) { centre.fx = 0; centre.fy = 0; }
-      // Group neighbours by the relation TYPE they connect through.
-      // For each neighbour, pick the (first) relation type whose edge
-      // touches the centre.
+
+      // Inner ring = 1-hop neighbours, grouped by relation type into
+      // angular sectors. Outer ring (only if 2-hop expansion was needed)
+      // = 2-hop neighbours, sorted by mentions on the ring.
+      const innerNeighbours = nodes.filter(n => n.id !== selected.id && hop1.has(n.id));
+      const outerNeighbours = expand2Hop
+        ? nodes.filter(n => !hop1.has(n.id))
+        : [];
+
+      // Inner ring: bucket by relation type the edge to selected uses.
       const relOf = new Map<string, string>();
       for (const e of links) {
         if (e.source === selected.id) relOf.set(e.target as string, e.type);
         if (e.target === selected.id) relOf.set(e.source as string, e.type);
       }
-      const neighbours = nodes.filter(n => n.id !== selected.id);
-      const buckets = new Map<string, FGNode[]>();
-      for (const n of neighbours) {
+      const innerBuckets = new Map<string, FGNode[]>();
+      for (const n of innerNeighbours) {
         const rel = relOf.get(n.id) || "_other";
-        if (!buckets.has(rel)) buckets.set(rel, []);
-        buckets.get(rel)!.push(n);
+        if (!innerBuckets.has(rel)) innerBuckets.set(rel, []);
+        innerBuckets.get(rel)!.push(n);
       }
-      const sectors = Array.from(buckets.entries())
+      const Rinner = 150;
+      const innerTotal = Math.max(innerNeighbours.length, 1);
+      const sectors = Array.from(innerBuckets.entries())
         .sort((a, b) => b[1].length - a[1].length);
-      const R = Math.max(160, Math.min(neighbours.length * 18, 280));
       let theta = -Math.PI / 2;
       for (const [, members] of sectors) {
-        const angle = (members.length / neighbours.length) * Math.PI * 2;
+        const angle = (members.length / innerTotal) * Math.PI * 2;
         members.sort((a, b) => b.mentions - a.mentions);
         for (let i = 0; i < members.length; i++) {
           const t2 = theta + ((i + 0.5) / members.length) * angle;
-          members[i].fx = R * Math.cos(t2);
-          members[i].fy = R * Math.sin(t2);
+          members[i].fx = Rinner * Math.cos(t2);
+          members[i].fy = Rinner * Math.sin(t2);
         }
         theta += angle;
+      }
+
+      // Outer ring: 2-hop neighbours, evenly distributed by mention rank.
+      if (outerNeighbours.length > 0) {
+        const Router = 260;
+        outerNeighbours.sort((a, b) => b.mentions - a.mentions);
+        for (let i = 0; i < outerNeighbours.length; i++) {
+          const t2 = -Math.PI / 2 + (i / outerNeighbours.length) * Math.PI * 2;
+          outerNeighbours[i].fx = Router * Math.cos(t2);
+          outerNeighbours[i].fy = Router * Math.sin(t2);
+        }
       }
       return { nodes, links };
     }
@@ -738,7 +765,12 @@ export function Graph() {
       };
       graphRef.current.d3Force("cluster", clusterForce as any);
     }
-    graphRef.current.d3ReheatSimulation();
+    // Re-heat the simulation only when there's actually a force to settle.
+    // In ego mode every node is pinned, so a reheat just wastes ticks and
+    // produces the jittery "verschiebt sich" feeling the user reported.
+    if (!(focusMode && selected)) {
+      graphRef.current.d3ReheatSimulation();
+    }
   }, [layout, colourBy, graphData.nodes, data, focusMode, selected]);
 
   // Cluster bubbles (centre + radius per type) for the pack-layout mode.
@@ -1112,10 +1144,26 @@ export function Graph() {
             graphData={graphData}
             nodeId="id"
             nodeRelSize={1}
-            d3AlphaDecay={layout === "concentric" ? 0.06 : 0.018}
-            d3VelocityDecay={layout === "concentric" ? 0.5 : 0.28}
-            cooldownTicks={layout === "concentric" ? 60 : 500}
-            warmupTicks={layout === "concentric" ? 0 : 80}
+            d3AlphaDecay={
+              focusMode && selected ? 0.15
+              : layout === "concentric" ? 0.06
+              : 0.018
+            }
+            d3VelocityDecay={
+              focusMode && selected ? 0.7
+              : layout === "concentric" ? 0.5
+              : 0.28
+            }
+            cooldownTicks={
+              focusMode && selected ? 20
+              : layout === "concentric" ? 60
+              : 500
+            }
+            warmupTicks={
+              focusMode && selected ? 0
+              : layout === "concentric" ? 0
+              : 80
+            }
             enableNodeDrag={layout === "cluster" && colourBy === "community"}
             enableZoomInteraction
             onNodeHover={(n) => setHovered(n)}
