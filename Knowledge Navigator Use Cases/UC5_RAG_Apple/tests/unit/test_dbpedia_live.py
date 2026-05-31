@@ -27,8 +27,10 @@ def test_extract_anchors_handles_multiple_unique_literals():
 
 
 def test_extract_anchors_dedups():
-    sparql = '"X"@en "X"@de "X"'
-    assert dl.extract_anchors(sparql) == ["X"]
+    """Same label appearing multiple times with different lang tags →
+    one entry only."""
+    sparql = '"iPhone 4"@en "iPhone 4"@de "iPhone 4"'
+    assert dl.extract_anchors(sparql) == ["iPhone 4"]
 
 
 def test_extract_anchors_ignores_short_labels():
