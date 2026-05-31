@@ -64,7 +64,9 @@ export function Compare({ llm, strategies }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+      {/* Wide container so all 4 strategy columns fit comfortably side-by-
+          side without the 4th getting clipped. ~1600px target. */}
+      <div className="max-w-[1600px] mx-auto space-y-6">
         <section className="bg-white border border-slate-200 rounded-lg p-5">
           <h3 className="font-semibold mb-3">Vergleich</h3>
           <p className="text-sm text-slate-600 mb-4">
@@ -159,7 +161,7 @@ function ResultsTable({ data }: { data: CompareResponse }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full border-collapse text-sm" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr>
               <th className="text-left text-slate-500 font-medium w-40 align-bottom py-2 pr-3 border-b border-slate-200">
