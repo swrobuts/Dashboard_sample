@@ -114,18 +114,18 @@ WHERE has_factor_decomposition;
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_data_quality AS
 SELECT
-    year,
-    COUNT(*)                                      AS n_countries,
-    COUNT(*) FILTER (WHERE has_factor_decomposition) AS n_with_factors,
-    ROUND(100.0 * COUNT(*) FILTER (WHERE has_factor_decomposition) / COUNT(*), 1)
-                                                  AS pct_with_factors,
-    MIN(life_evaluation)                          AS min_score,
-    MAX(life_evaluation)                          AS max_score,
-    MAX(ingested_at)                              AS last_ingested
-FROM v_happiness
-JOIN happiness USING (iso3, year)
-GROUP BY year
-ORDER BY year;
+    vh.year,
+    COUNT(*)                                            AS n_countries,
+    COUNT(*) FILTER (WHERE vh.has_factor_decomposition) AS n_with_factors,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE vh.has_factor_decomposition)
+                  / COUNT(*), 1)                        AS pct_with_factors,
+    MIN(vh.life_evaluation)                             AS min_score,
+    MAX(vh.life_evaluation)                             AS max_score,
+    MAX(h.ingested_at)                                  AS last_ingested
+FROM v_happiness  vh
+         JOIN happiness    h  USING (iso3, year)
+GROUP BY vh.year
+ORDER BY vh.year;
 
 COMMENT ON VIEW v_data_quality IS
     'Health-Check-Cockpit. Im Frontend als kleine "Über die Daten"-Seite ausgespielt.';
