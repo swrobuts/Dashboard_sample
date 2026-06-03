@@ -1,7 +1,6 @@
 import { Fragment } from 'react'
 import type { CSSProperties } from 'react'
 import { Sparkline } from '../components/Sparkline'
-import { ConnectivityCheck } from '../components/ConnectivityCheck'
 
 // Finnland 2011–2025 (echte Werte aus dem WHR-Datensatz, ohne 2013)
 const finlandData = [
@@ -43,7 +42,7 @@ const colors = [
 
 export function Styleguide() {
     return (
-        <main style={{ maxWidth: 'var(--content-max)', margin: '0 auto', padding: 'var(--pad)' }}>
+        <>
             {/* Kopfzeile */}
             <p style={microLabel}>Happiness Dashboard · Stilkachel</p>
             <h1 style={{
@@ -208,15 +207,10 @@ export function Styleguide() {
                 </div>
             </section>
 
-            {/* Daten-Konnektivität */}
-            <section style={section}>
-                <p style={microLabel}>Daten-Konnektivität · live aus Supabase</p>
-                <ConnectivityCheck />
-            </section>
             {/* Fußnote */}
             <p style={{ ...microLabel, marginTop: 'calc(var(--grid) * 10)' }}>
                 Tufte · Few · Aicher · v0
             </p>
-        </main>
+        </>
     )
 }
